@@ -21,7 +21,7 @@ OpenStack:
 
 Keylime:
   registrar/verifier/tenant: csri10
-  agent:                     csri9
+  agent:                     csri9 / csri8
 
 Trusted trait:
   CUSTOM_KEYLIME_ATTESTED
@@ -48,7 +48,7 @@ deploy/examples/
   command snippets for private trusted flavor and verification
 
 deploy/frontend/
-  read-only frontend for real-time compute-node trust monitoring
+  frontend for compute-node trust monitoring and TPM PCR policy management
 ```
 
 ## Completed Cases
@@ -101,15 +101,27 @@ block any new workload from scheduling to the untrusted host
 
 When Keylime returns to `PASS_FRESH`, the prototype can re-enable the compute service if it was disabled by the controller.
 
-### Case 5: Read-only Trust Monitor Frontend
+### Case 5: Trust Monitor Frontend
 
-The first frontend module provides a read-only dashboard for compute-node trust status:
+The first frontend module provides a dashboard for compute-node trust status:
 
 ```text
 auto-discover nova-compute services
 show node IP, hosted VM count, trust state, and service state
 mark trusted / untrusted / no-agent nodes with green / red / yellow status
 expand node cards for details
+```
+
+### Case 6: TPM PCR Policy Management Frontend
+
+The second frontend module manages lab TPM PCR policies:
+
+```text
+create / edit / delete TPM PCR policies
+store policy JSON under /var/lib/keylime-openstack-sync/
+bind policies to compute nodes by Keylime agent UUID
+apply one policy to one node or all configured agent nodes
+call keylime-tenant delete + add with --tpm_policy for verifier enrollment
 ```
 
 ## Important Security Notes
@@ -143,3 +155,4 @@ add alerting, dampening, and human approval for host quarantine
 6. `docs/keylime_openstack_phase3_private_flavor_project_auth.md`
 7. `docs/keylime_openstack_case4_host_quarantine.md`
 8. `docs/keylime_openstack_frontend_trust_monitor_baseline.md`
+9. `docs/keylime_openstack_frontend_tpm_pcr_policy_management.md`

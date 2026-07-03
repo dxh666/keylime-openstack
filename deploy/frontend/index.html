@@ -3,24 +3,25 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>计算节点可信状态实时监控</title>
+  <title>可信云管理系统</title>
   <style>
     :root {
-      --bg: #f3f6f7;
+      --bg: #f4f7f7;
       --panel: #ffffff;
-      --sidebar: #14232d;
-      --sidebar-soft: #203340;
-      --line: #d9e0e5;
-      --text: #16212b;
-      --muted: #657482;
+      --sidebar: #19343a;
+      --sidebar-soft: #244850;
+      --line: #d8e1e3;
+      --text: #162429;
+      --muted: #65767c;
       --accent: #0b6872;
+      --accent-soft: #e1f3f5;
       --ok: #0f8a5f;
       --ok-bg: #e7f6ef;
-      --warn: #c47a00;
+      --warn: #b66b00;
       --warn-bg: #fff4dc;
       --bad: #c7352b;
       --bad-bg: #fde9e7;
-      --shadow: 0 10px 24px rgba(20, 35, 45, 0.08);
+      --shadow: 0 10px 24px rgba(24, 48, 54, 0.08);
     }
 
     * {
@@ -38,16 +39,34 @@
     }
 
     button,
-    select {
+    input,
+    select,
+    textarea {
       font: inherit;
+    }
+
+    input,
+    select,
+    textarea {
+      width: 100%;
       border: 1px solid var(--line);
       border-radius: 6px;
       background: #ffffff;
       color: var(--text);
-      padding: 7px 10px;
+      padding: 8px 10px;
+    }
+
+    textarea {
+      min-height: 74px;
+      resize: vertical;
     }
 
     button {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #ffffff;
+      color: var(--text);
+      padding: 8px 11px;
       cursor: pointer;
     }
 
@@ -62,9 +81,31 @@
       color: #ffffff;
     }
 
-    code {
+    button.danger {
+      border-color: #efaaa4;
+      color: var(--bad);
+      background: #fff8f7;
+    }
+
+    button.ghost {
+      background: transparent;
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.58;
+    }
+
+    code,
+    pre {
       font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
       font-size: 12px;
+    }
+
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
     }
 
     h1,
@@ -86,7 +127,7 @@
     }
 
     h3 {
-      margin-bottom: 4px;
+      margin-bottom: 6px;
       font-size: 15px;
     }
 
@@ -104,7 +145,7 @@
 
     .brand {
       padding: 0 8px 20px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.14);
       margin-bottom: 14px;
     }
 
@@ -115,7 +156,7 @@
     }
 
     .brand span {
-      color: #aebec8;
+      color: #b6c7cc;
       font-size: 12px;
     }
 
@@ -125,10 +166,13 @@
     }
 
     .nav-item {
+      width: 100%;
+      text-align: left;
+      border: 0;
       border-radius: 8px;
       padding: 10px 11px;
       color: #d9e5ea;
-      text-decoration: none;
+      background: transparent;
     }
 
     .nav-item.active {
@@ -140,6 +184,14 @@
     .main {
       min-width: 0;
       padding: 22px;
+    }
+
+    .view {
+      display: none;
+    }
+
+    .view.active {
+      display: block;
     }
 
     .topbar {
@@ -155,11 +207,16 @@
     }
 
     .row,
-    .chips {
+    .chips,
+    .actions {
       display: flex;
       gap: 8px;
       flex-wrap: wrap;
       align-items: center;
+    }
+
+    .actions {
+      justify-content: flex-end;
     }
 
     .chips {
@@ -220,7 +277,8 @@
 
     .panel,
     .stat,
-    .node-card {
+    .node-card,
+    .policy-card {
       border: 1px solid var(--line);
       border-radius: 8px;
       background: var(--panel);
@@ -320,7 +378,8 @@
       border-top: 1px solid #edf1f3;
     }
 
-    .kv .key {
+    .kv .key,
+    .field label {
       color: var(--muted);
       font-size: 12px;
     }
@@ -340,10 +399,10 @@
     }
 
     .notice {
-      border: 1px solid #e5c073;
+      border: 1px solid var(--line);
       border-radius: 8px;
-      background: var(--warn-bg);
-      color: var(--warn);
+      background: #ffffff;
+      color: var(--muted);
       padding: 10px 12px;
       margin-bottom: 14px;
       display: none;
@@ -351,6 +410,142 @@
 
     .notice.show {
       display: block;
+    }
+
+    .notice.ok {
+      border-color: #9ad7bd;
+      background: var(--ok-bg);
+      color: var(--ok);
+    }
+
+    .notice.warn {
+      border-color: #e5c073;
+      background: var(--warn-bg);
+      color: var(--warn);
+    }
+
+    .notice.bad {
+      border-color: #f3aaa4;
+      background: var(--bad-bg);
+      color: var(--bad);
+    }
+
+    .policy-layout {
+      display: grid;
+      grid-template-columns: minmax(360px, 480px) minmax(0, 1fr);
+      gap: 14px;
+      align-items: start;
+    }
+
+    .stack {
+      display: grid;
+      gap: 14px;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 160px;
+      gap: 10px;
+    }
+
+    .field {
+      display: grid;
+      gap: 5px;
+    }
+
+    .field.full {
+      grid-column: 1 / -1;
+    }
+
+    .pcr-row {
+      display: grid;
+      grid-template-columns: 78px minmax(0, 1fr) auto;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .code-box {
+      border: 1px solid #dbe5e7;
+      border-radius: 8px;
+      background: #f8fbfb;
+      padding: 10px;
+      max-height: 180px;
+      overflow: auto;
+    }
+
+    .policy-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .policy-card {
+      padding: 13px;
+    }
+
+    .policy-card.selected {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(11, 104, 114, 0.12), var(--shadow);
+    }
+
+    .policy-card-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      margin-bottom: 8px;
+    }
+
+    .policy-card strong {
+      display: block;
+      overflow-wrap: anywhere;
+    }
+
+    .template-list,
+    .apply-node-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .template-list button {
+      text-align: left;
+    }
+
+    .apply-node {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: #fbfcfc;
+    }
+
+    .apply-node input {
+      width: auto;
+    }
+
+    .apply-node strong,
+    .mono {
+      overflow-wrap: anywhere;
+    }
+
+    .result-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .result-item {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: #ffffff;
+    }
+
+    @media (max-width: 1100px) {
+      .policy-layout {
+        grid-template-columns: 1fr;
+      }
     }
 
     @media (max-width: 980px) {
@@ -377,7 +572,8 @@
         align-items: stretch;
       }
 
-      .chips {
+      .chips,
+      .actions {
         justify-content: flex-start;
       }
 
@@ -394,9 +590,15 @@
       }
     }
 
-    @media (max-width: 560px) {
+    @media (max-width: 620px) {
       .stats,
-      .node-grid {
+      .node-grid,
+      .form-grid,
+      .pcr-row {
+        grid-template-columns: 1fr;
+      }
+
+      .apply-node {
         grid-template-columns: 1fr;
       }
     }
@@ -410,62 +612,181 @@
         <span>Keylime + OpenStack</span>
       </div>
       <nav class="nav" aria-label="功能导航">
-        <a class="nav-item active" href="#compute-trust">计算节点监控</a>
+        <button class="nav-item active" data-view="monitor">计算节点监控</button>
+        <button class="nav-item" data-view="policies">Keylime 策略管理</button>
       </nav>
     </aside>
 
-    <main class="main" id="compute-trust">
-      <div class="topbar">
-        <h1>计算节点可信状态实时监控</h1>
-        <div class="chips">
-          <span id="apiBadge" class="badge warn">API 连接中</span>
-          <span id="summaryBadge" class="badge warn">等待状态</span>
-          <span id="lastUpdate" class="chip">尚未刷新</span>
+    <main class="main">
+      <section class="view active" id="view-monitor">
+        <div class="topbar">
+          <h1>计算节点可信状态实时监控</h1>
+          <div class="chips">
+            <span id="apiBadge" class="badge warn">API 连接中</span>
+            <span id="summaryBadge" class="badge warn">等待状态</span>
+            <span id="lastUpdate" class="chip">尚未刷新</span>
+          </div>
         </div>
-      </div>
 
-      <div id="apiNotice" class="notice">
-        未连接到只读状态 API。请使用 <code>python3 trust_monitor_server.py --host 172.31.100.10 --port 8088</code> 启动。
-      </div>
+        <div id="apiNotice" class="notice warn">
+          未连接到状态 API：<code>python3 trust_monitor_server.py --host 172.31.100.10 --port 8088</code>
+        </div>
 
-      <section class="toolbar">
-        <div class="row">
-          <button id="refreshNow" class="primary">立即刷新</button>
+        <section class="toolbar">
+          <div class="row">
+            <button id="refreshNow" class="primary">立即刷新</button>
+            <label class="row">
+              <span class="subtle">刷新间隔</span>
+              <select id="refreshInterval">
+                <option value="1">1 秒</option>
+                <option value="2" selected>2 秒</option>
+                <option value="3">3 秒</option>
+                <option value="5">5 秒</option>
+                <option value="10">10 秒</option>
+                <option value="30">30 秒</option>
+              </select>
+            </label>
+          </div>
+          <span id="timerState" class="chip">timer: unknown</span>
+        </section>
+
+        <section class="stats" aria-label="节点统计">
+          <div class="stat">
+            <div class="label">计算节点</div>
+            <div id="totalCount" class="value">0</div>
+          </div>
+          <div class="stat">
+            <div class="label">可信</div>
+            <div id="trustedCount" class="value">0</div>
+          </div>
+          <div class="stat">
+            <div class="label">不可信 / 下线</div>
+            <div id="untrustedCount" class="value">0</div>
+          </div>
+          <div class="stat">
+            <div class="label">未装代理</div>
+            <div id="noAgentCount" class="value">0</div>
+          </div>
+        </section>
+
+        <section>
+          <div class="node-grid" id="nodeGrid">
+            <div class="panel subtle">正在加载计算节点状态...</div>
+          </div>
+        </section>
+      </section>
+
+      <section class="view" id="view-policies">
+        <div class="topbar">
+          <h1>Keylime TPM PCR 策略管理</h1>
+          <div class="chips">
+            <span id="policyApiBadge" class="badge warn">API 连接中</span>
+            <span id="policyStorePath" class="chip">策略文件: -</span>
+          </div>
+        </div>
+
+        <div id="policyNotice" class="notice"></div>
+
+        <section class="toolbar">
+          <div class="row">
+            <button id="refreshPolicies" class="primary">刷新策略</button>
+            <button id="newPolicy" class="ghost">新建策略</button>
+          </div>
           <label class="row">
-            <span class="subtle">刷新间隔</span>
-            <select id="refreshInterval">
-              <option value="5">5 秒</option>
-              <option value="10">10 秒</option>
-              <option value="30">30 秒</option>
-            </select>
+            <span class="subtle">管理令牌</span>
+            <input id="adminToken" type="password" autocomplete="off" placeholder="可选" style="width: 180px;">
           </label>
-        </div>
-        <span id="timerState" class="chip">timer: unknown</span>
-      </section>
+        </section>
 
-      <section class="stats" aria-label="节点统计">
-        <div class="stat">
-          <div class="label">计算节点</div>
-          <div id="totalCount" class="value">0</div>
-        </div>
-        <div class="stat">
-          <div class="label">可信</div>
-          <div id="trustedCount" class="value">0</div>
-        </div>
-        <div class="stat">
-          <div class="label">不可信 / 下线</div>
-          <div id="untrustedCount" class="value">0</div>
-        </div>
-        <div class="stat">
-          <div class="label">未装代理</div>
-          <div id="noAgentCount" class="value">0</div>
-        </div>
-      </section>
+        <section class="policy-layout">
+          <div class="stack">
+            <div class="panel">
+              <h2>策略编辑</h2>
+              <div class="form-grid">
+                <div class="field">
+                  <label for="policyName">策略名称</label>
+                  <input id="policyName" placeholder="例如 csri8-PCR7-基线">
+                </div>
+                <div class="field">
+                  <label for="policyHashAlg">哈希算法</label>
+                  <select id="policyHashAlg">
+                    <option value="sha256">sha256</option>
+                    <option value="sha1">sha1</option>
+                    <option value="sha384">sha384</option>
+                    <option value="sha512">sha512</option>
+                  </select>
+                </div>
+                <div class="field full">
+                  <label for="policyId">策略 ID</label>
+                  <input id="policyId" placeholder="自动生成或手动填写">
+                </div>
+                <div class="field full">
+                  <label for="policyDescription">备注</label>
+                  <textarea id="policyDescription" placeholder="PCR 来源、适用节点、实验阶段"></textarea>
+                </div>
+                <div class="field full">
+                  <label>PCR 摘要</label>
+                  <div id="pcrRows"></div>
+                  <button id="addPcrRow" type="button">添加 PCR</button>
+                </div>
+                <div class="field full">
+                  <label>生成的 tpm_policy</label>
+                  <div class="code-box">
+                    <pre id="generatedPolicyJson">{}</pre>
+                  </div>
+                </div>
+              </div>
+              <div class="actions" style="margin-top: 12px;">
+                <button id="resetPolicyForm">重置</button>
+                <button id="savePolicy" class="primary">保存策略</button>
+              </div>
+            </div>
 
-      <section>
-        <div class="node-grid" id="nodeGrid">
-          <div class="panel subtle">正在加载计算节点状态...</div>
-        </div>
+            <div class="panel">
+              <h2>策略模板</h2>
+              <div id="templateList" class="template-list">
+                <span class="subtle">加载中...</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="stack">
+            <div class="panel">
+              <div class="row" style="justify-content: space-between;">
+                <h2 style="margin-bottom: 0;">策略库</h2>
+                <span id="policyCount" class="chip">0 个策略</span>
+              </div>
+              <div id="policyList" class="policy-list" style="margin-top: 12px;">
+                <span class="subtle">暂无策略</span>
+              </div>
+            </div>
+
+            <div class="panel">
+              <h2>策略下发</h2>
+              <div class="field">
+                <label for="applyPolicySelect">选择策略</label>
+                <select id="applyPolicySelect"></select>
+              </div>
+              <div class="field" style="margin-top: 10px;">
+                <label>计算节点</label>
+                <div id="applyNodeList" class="apply-node-list">
+                  <span class="subtle">加载中...</span>
+                </div>
+              </div>
+              <div class="actions" style="margin-top: 12px;">
+                <button id="applySelectedPolicy">下发到选中节点</button>
+                <button id="applyAllPolicy" class="primary">统一下发</button>
+              </div>
+            </div>
+
+            <div class="panel">
+              <h2>下发结果</h2>
+              <div id="applyResult" class="result-list">
+                <span class="subtle">暂无结果</span>
+              </div>
+            </div>
+          </div>
+        </section>
       </section>
     </main>
   </div>
@@ -473,7 +794,14 @@
   <script>
     const state = {
       timerId: null,
-      expandedHosts: new Set()
+      expandedHosts: new Set(),
+      currentView: "monitor",
+      statusRequestInFlight: false,
+      policies: [],
+      policyNodes: [],
+      templates: [],
+      selectedPolicyId: "",
+      editingPolicyId: ""
     };
 
     function el(id) {
@@ -496,6 +824,34 @@
     function setBadge(node, kind, text) {
       node.className = `badge ${kind}`;
       node.textContent = text;
+    }
+
+    function showNotice(node, kind, message) {
+      node.className = `notice show ${kind}`;
+      node.textContent = message;
+    }
+
+    function hideNotice(node) {
+      node.className = "notice";
+      node.textContent = "";
+    }
+
+    function apiHeaders() {
+      const headers = { "Content-Type": "application/json" };
+      const token = localStorage.getItem("keylimePolicyAdminToken") || "";
+      if (token) {
+        headers["X-Admin-Token"] = token;
+      }
+      return headers;
+    }
+
+    async function requestJson(url, options = {}) {
+      const response = await fetch(url, { cache: "no-store", ...options });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || `HTTP ${response.status}`);
+      }
+      return data;
     }
 
     function statusKind(node) {
@@ -533,15 +889,17 @@
       return `${count}`;
     }
 
-    function render(data) {
+    function renderStatus(data) {
       const summary = data.summary || {};
       const timer = data.timer || {};
       const nodes = data.nodes || [];
 
-      el("apiNotice").classList.remove("show");
+      hideNotice(el("apiNotice"));
       setBadge(el("apiBadge"), "ok", "API 已连接");
       setBadge(el("summaryBadge"), summary.level || "warn", summary.text || "等待状态");
-      el("lastUpdate").textContent = `刷新 ${new Date().toLocaleTimeString()}`;
+      const cache = data.cache || {};
+      const age = cache.age_seconds === undefined ? "-" : `${cache.age_seconds}s`;
+      el("lastUpdate").textContent = `页面 ${new Date().toLocaleTimeString()} / 数据 ${age}`;
       el("timerState").textContent = `timer: ${timer.active || "unknown"} / ${timer.enabled || "unknown"}`;
 
       el("totalCount").textContent = summary.total ?? nodes.length;
@@ -592,6 +950,10 @@
                 <div class="value">${escapeHtml(agentText(node))}</div>
               </div>
               <div class="kv">
+                <div class="key">Agent UUID</div>
+                <div class="value">${escapeHtml(node.agent?.uuid || "-")}</div>
+              </div>
+              <div class="kv">
                 <div class="key">可信标记</div>
                 <div class="value">${escapeHtml(traitText(node))}</div>
               </div>
@@ -616,22 +978,25 @@
     function renderApiError(error) {
       setBadge(el("apiBadge"), "bad", "API 未连接");
       setBadge(el("summaryBadge"), "warn", "等待实时 API");
-      el("apiNotice").classList.add("show");
+      showNotice(el("apiNotice"), "warn", `无法读取实时状态：${error.message}`);
       el("lastUpdate").textContent = `失败 ${new Date().toLocaleTimeString()}`;
       el("nodeGrid").innerHTML = `
         <div class="panel">无法读取实时状态：${escapeHtml(error.message)}</div>
       `;
     }
 
-    async function refreshStatus() {
+    async function refreshStatus(force = false) {
+      if (state.statusRequestInFlight && !force) {
+        return;
+      }
+      state.statusRequestInFlight = true;
       try {
-        const response = await fetch(`/api/status?ts=${Date.now()}`, { cache: "no-store" });
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-        render(await response.json());
+        const data = await requestJson(`/api/status?ts=${Date.now()}${force ? "&force=1" : ""}`);
+        renderStatus(data);
       } catch (error) {
         renderApiError(error);
+      } finally {
+        state.statusRequestInFlight = false;
       }
     }
 
@@ -639,11 +1004,330 @@
       if (state.timerId) {
         window.clearInterval(state.timerId);
       }
-      const seconds = Number(el("refreshInterval").value || 5);
+      const seconds = Number(el("refreshInterval").value || 2);
       state.timerId = window.setInterval(refreshStatus, seconds * 1000);
     }
 
-    el("refreshNow").addEventListener("click", refreshStatus);
+    function switchView(view) {
+      state.currentView = view;
+      document.querySelectorAll(".view").forEach((node) => {
+        node.classList.toggle("active", node.id === `view-${view}`);
+      });
+      document.querySelectorAll(".nav-item").forEach((node) => {
+        node.classList.toggle("active", node.dataset.view === view);
+      });
+      if (view === "policies") {
+        refreshPolicies();
+      }
+    }
+
+    function digestLength(alg) {
+      return { sha1: 40, sha256: 64, sha384: 96, sha512: 128 }[alg] || 64;
+    }
+
+    function slugify(value) {
+      return String(value || "")
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_.-]+/g, "-")
+        .replace(/^-+|-+$/g, "") || "tpm-pcr-policy";
+    }
+
+    function addPcrRow(index = "", digest = "") {
+      const row = document.createElement("div");
+      row.className = "pcr-row";
+      row.innerHTML = `
+        <input class="pcr-index" placeholder="PCR" value="${escapeHtml(index)}">
+        <input class="pcr-digest" placeholder="十六进制摘要" value="${escapeHtml(digest)}">
+        <button type="button" class="danger remove-pcr">删除</button>
+      `;
+      el("pcrRows").appendChild(row);
+      row.querySelectorAll("input").forEach((input) => input.addEventListener("input", updateGeneratedPolicyJson));
+      row.querySelector(".remove-pcr").addEventListener("click", () => {
+        row.remove();
+        updateGeneratedPolicyJson();
+      });
+      updateGeneratedPolicyJson();
+    }
+
+    function readPolicyForm() {
+      const hashAlg = el("policyHashAlg").value;
+      const pcrs = {};
+      document.querySelectorAll("#pcrRows .pcr-row").forEach((row) => {
+        const index = row.querySelector(".pcr-index").value.trim();
+        const digest = row.querySelector(".pcr-digest").value.trim().replace(/^0x/i, "").toUpperCase();
+        if (index || digest) {
+          pcrs[index] = digest;
+        }
+      });
+      const policyId = el("policyId").value.trim() || slugify(el("policyName").value);
+      return {
+        id: policyId,
+        name: el("policyName").value.trim(),
+        description: el("policyDescription").value.trim(),
+        hash_alg: hashAlg,
+        pcrs
+      };
+    }
+
+    function generatedTpmPolicy() {
+      const policy = readPolicyForm();
+      let mask = 0;
+      Object.keys(policy.pcrs).forEach((key) => {
+        const idx = Number(key);
+        if (Number.isInteger(idx) && idx >= 0 && idx <= 23) {
+          mask |= 1 << idx;
+        }
+      });
+      return { mask: `0x${mask.toString(16)}`, ...policy.pcrs };
+    }
+
+    function updateGeneratedPolicyJson() {
+      const generated = generatedTpmPolicy();
+      el("generatedPolicyJson").textContent = JSON.stringify(generated, null, 2);
+    }
+
+    function resetPolicyForm() {
+      state.editingPolicyId = "";
+      el("policyName").value = "";
+      el("policyId").value = "";
+      el("policyDescription").value = "";
+      el("policyHashAlg").value = "sha256";
+      el("pcrRows").innerHTML = "";
+      addPcrRow("7", "");
+      updateGeneratedPolicyJson();
+    }
+
+    function fillPolicyForm(policy) {
+      state.editingPolicyId = policy.id || "";
+      el("policyName").value = policy.name || "";
+      el("policyId").value = policy.id || "";
+      el("policyDescription").value = policy.description || "";
+      el("policyHashAlg").value = policy.hash_alg || "sha256";
+      el("pcrRows").innerHTML = "";
+      const pcrs = policy.pcrs || {};
+      Object.keys(pcrs).sort((a, b) => Number(a) - Number(b)).forEach((key) => {
+        addPcrRow(key, pcrs[key]);
+      });
+      if (!Object.keys(pcrs).length) {
+        addPcrRow("7", "");
+      }
+      updateGeneratedPolicyJson();
+    }
+
+    function validatePolicyForm(policy) {
+      if (!policy.name) throw new Error("策略名称不能为空");
+      const expectedLength = digestLength(policy.hash_alg);
+      const keys = Object.keys(policy.pcrs);
+      if (!keys.length) throw new Error("至少需要设置一个 PCR");
+      keys.forEach((key) => {
+        const idx = Number(key);
+        const digest = policy.pcrs[key];
+        if (!Number.isInteger(idx) || idx < 0 || idx > 23) {
+          throw new Error("PCR 编号必须是 0-23 的整数");
+        }
+        if (!/^[0-9A-F]+$/.test(digest) || digest.length !== expectedLength) {
+          throw new Error(`${policy.hash_alg} 摘要长度应为 ${expectedLength} 个十六进制字符`);
+        }
+      });
+    }
+
+    async function savePolicy() {
+      try {
+        const policy = readPolicyForm();
+        validatePolicyForm(policy);
+        const data = await requestJson("/api/policies", {
+          method: "POST",
+          headers: apiHeaders(),
+          body: JSON.stringify(policy)
+        });
+        state.selectedPolicyId = data.policy.id;
+        await refreshPolicies(true);
+        showNotice(el("policyNotice"), "ok", `策略已保存：${data.policy.name}`);
+      } catch (error) {
+        showNotice(el("policyNotice"), "bad", error.message);
+      }
+    }
+
+    async function deletePolicy(policyId) {
+      if (!window.confirm(`删除策略 ${policyId}？`)) return;
+      try {
+        await requestJson(`/api/policies/${encodeURIComponent(policyId)}`, {
+          method: "DELETE",
+          headers: apiHeaders()
+        });
+        if (state.selectedPolicyId === policyId) state.selectedPolicyId = "";
+        await refreshPolicies(true);
+        showNotice(el("policyNotice"), "ok", "策略已删除");
+      } catch (error) {
+        showNotice(el("policyNotice"), "bad", error.message);
+      }
+    }
+
+    function renderPolicyList() {
+      el("policyCount").textContent = `${state.policies.length} 个策略`;
+      if (!state.policies.length) {
+        el("policyList").innerHTML = `<span class="subtle">暂无策略</span>`;
+        el("applyPolicySelect").innerHTML = `<option value="">暂无策略</option>`;
+        return;
+      }
+      if (!state.selectedPolicyId) {
+        state.selectedPolicyId = state.policies[0].id;
+      }
+      el("policyList").innerHTML = state.policies.map((policy) => {
+        const selected = policy.id === state.selectedPolicyId;
+        const pcrKeys = Object.keys(policy.pcrs || {}).sort((a, b) => Number(a) - Number(b)).join(", ");
+        return `
+          <article class="policy-card ${selected ? "selected" : ""}">
+            <div class="policy-card-head">
+              <div>
+                <strong>${escapeHtml(policy.name)}</strong>
+                <span class="subtle">${escapeHtml(policy.id)}</span>
+              </div>
+              ${badge("ok", policy.hash_alg || "sha256")}
+            </div>
+            <div class="kv">
+              <div class="key">PCR</div>
+              <div class="value">${escapeHtml(pcrKeys || "-")}</div>
+            </div>
+            <div class="kv">
+              <div class="key">Mask</div>
+              <div class="value mono">${escapeHtml(policy.mask || "-")}</div>
+            </div>
+            <div class="actions" style="margin-top: 10px;">
+              <button data-select-policy="${escapeHtml(policy.id)}">选择</button>
+              <button data-edit-policy="${escapeHtml(policy.id)}">编辑</button>
+              <button class="danger" data-delete-policy="${escapeHtml(policy.id)}">删除</button>
+            </div>
+          </article>
+        `;
+      }).join("");
+      el("applyPolicySelect").innerHTML = state.policies.map((policy) => `
+        <option value="${escapeHtml(policy.id)}" ${policy.id === state.selectedPolicyId ? "selected" : ""}>${escapeHtml(policy.name)}</option>
+      `).join("");
+    }
+
+    function renderTemplateList() {
+      if (!state.templates.length) {
+        el("templateList").innerHTML = `<span class="subtle">暂无模板</span>`;
+        return;
+      }
+      el("templateList").innerHTML = state.templates.map((template) => `
+        <button type="button" data-template-id="${escapeHtml(template.id)}">
+          <strong>${escapeHtml(template.name)}</strong><br>
+          <span class="subtle">${escapeHtml(template.description || "")}</span>
+        </button>
+      `).join("");
+    }
+
+    function renderApplyNodes() {
+      if (!state.policyNodes.length) {
+        el("applyNodeList").innerHTML = `<span class="subtle">未发现计算节点</span>`;
+        return;
+      }
+      el("applyNodeList").innerHTML = state.policyNodes.map((node) => {
+        const canApply = Boolean(node.can_apply);
+        const binding = node.binding || {};
+        const bound = binding.policy_name ? `当前：${binding.policy_name}` : "未绑定策略";
+        return `
+          <label class="apply-node">
+            <input type="checkbox" class="apply-host" value="${escapeHtml(node.host)}" ${canApply ? "" : "disabled"}>
+            <span>
+              <strong>${escapeHtml(node.host)}</strong>
+              <span class="subtle"> ${escapeHtml(node.ip || "-")}</span><br>
+              <span class="subtle mono">${escapeHtml(node.agent?.uuid || "缺少 UUID")}</span><br>
+              <span class="subtle">${escapeHtml(bound)}</span>
+            </span>
+            ${badge(node.trust_level || "warn", node.trust_text || "未知")}
+          </label>
+        `;
+      }).join("");
+    }
+
+    function renderPolicyOverview(data) {
+      state.policies = data.policies || [];
+      state.policyNodes = data.nodes || [];
+      state.templates = data.templates || [];
+      el("policyStorePath").textContent = `策略文件: ${data.store_path || "-"}`;
+      setBadge(el("policyApiBadge"), "ok", "API 已连接");
+      renderPolicyList();
+      renderTemplateList();
+      renderApplyNodes();
+    }
+
+    async function refreshPolicies(silent = false) {
+      try {
+        const data = await requestJson(`/api/policies?ts=${Date.now()}`);
+        if (!silent) {
+          hideNotice(el("policyNotice"));
+        }
+        renderPolicyOverview(data);
+      } catch (error) {
+        setBadge(el("policyApiBadge"), "bad", "API 未连接");
+        showNotice(el("policyNotice"), "bad", error.message);
+      }
+    }
+
+    async function applyPolicy(all) {
+      const policyId = el("applyPolicySelect").value || state.selectedPolicyId;
+      if (!policyId) {
+        showNotice(el("policyNotice"), "bad", "请选择策略");
+        return;
+      }
+      const hosts = Array.from(document.querySelectorAll(".apply-host:checked")).map((item) => item.value);
+      if (!all && !hosts.length) {
+        showNotice(el("policyNotice"), "bad", "请选择计算节点");
+        return;
+      }
+      el("applyResult").innerHTML = `<span class="subtle">正在下发...</span>`;
+      try {
+        const data = await requestJson("/api/policies/apply", {
+          method: "POST",
+          headers: apiHeaders(),
+          body: JSON.stringify({ policy_id: policyId, hosts, all })
+        });
+        renderApplyResult(data.results || []);
+        await refreshPolicies(true);
+        showNotice(el("policyNotice"), data.ok ? "ok" : "warn", data.ok ? "策略下发完成" : "部分节点下发失败");
+      } catch (error) {
+        showNotice(el("policyNotice"), "bad", error.message);
+        el("applyResult").innerHTML = `<div class="result-item">${escapeHtml(error.message)}</div>`;
+      }
+    }
+
+    function renderApplyResult(results) {
+      if (!results.length) {
+        el("applyResult").innerHTML = `<span class="subtle">暂无结果</span>`;
+        return;
+      }
+      el("applyResult").innerHTML = results.map((item) => {
+        const kind = item.status === "success" ? "ok" : "bad";
+        const message = item.message || `add_rc=${item.add_rc ?? "-"} delete_rc=${item.delete_rc ?? "-"}`;
+        return `
+          <div class="result-item">
+            <div class="row" style="justify-content: space-between;">
+              <strong>${escapeHtml(item.host)}</strong>
+              ${badge(kind, item.status || "unknown")}
+            </div>
+            <div class="kv">
+              <div class="key">Agent</div>
+              <div class="value mono">${escapeHtml(item.agent_uuid || "-")}</div>
+            </div>
+            <div class="kv">
+              <div class="key">结果</div>
+              <div class="value">${escapeHtml(message)}</div>
+            </div>
+            ${item.stderr ? `<div class="kv"><div class="key">stderr</div><div class="value mono">${escapeHtml(item.stderr)}</div></div>` : ""}
+          </div>
+        `;
+      }).join("");
+    }
+
+    document.querySelectorAll(".nav-item").forEach((item) => {
+      item.addEventListener("click", () => switchView(item.dataset.view));
+    });
+
+    el("refreshNow").addEventListener("click", () => refreshStatus(true));
     el("refreshInterval").addEventListener("change", () => {
       localStorage.setItem("trustMonitorRefreshSeconds", el("refreshInterval").value);
       startTimer();
@@ -672,11 +1356,64 @@
       card.click();
     });
 
+    el("adminToken").addEventListener("input", () => {
+      localStorage.setItem("keylimePolicyAdminToken", el("adminToken").value);
+    });
+    el("refreshPolicies").addEventListener("click", refreshPolicies);
+    el("newPolicy").addEventListener("click", resetPolicyForm);
+    el("addPcrRow").addEventListener("click", () => addPcrRow("", ""));
+    el("resetPolicyForm").addEventListener("click", resetPolicyForm);
+    el("savePolicy").addEventListener("click", savePolicy);
+    el("policyName").addEventListener("input", () => {
+      if (!state.editingPolicyId && !el("policyId").value.trim()) {
+        el("policyId").value = slugify(el("policyName").value);
+      }
+      updateGeneratedPolicyJson();
+    });
+    el("policyId").addEventListener("input", updateGeneratedPolicyJson);
+    el("policyHashAlg").addEventListener("change", updateGeneratedPolicyJson);
+    el("policyList").addEventListener("click", (event) => {
+      const selectId = event.target.dataset.selectPolicy;
+      const editId = event.target.dataset.editPolicy;
+      const deleteId = event.target.dataset.deletePolicy;
+      if (selectId) {
+        state.selectedPolicyId = selectId;
+        renderPolicyList();
+      }
+      if (editId) {
+        const policy = state.policies.find((item) => item.id === editId);
+        if (policy) fillPolicyForm(policy);
+      }
+      if (deleteId) {
+        deletePolicy(deleteId);
+      }
+    });
+    el("templateList").addEventListener("click", (event) => {
+      const button = event.target.closest("[data-template-id]");
+      if (!button) return;
+      const template = state.templates.find((item) => item.id === button.dataset.templateId);
+      if (template) {
+        fillPolicyForm(template);
+        state.editingPolicyId = "";
+      }
+    });
+    el("applyPolicySelect").addEventListener("change", () => {
+      state.selectedPolicyId = el("applyPolicySelect").value;
+      renderPolicyList();
+    });
+    el("applySelectedPolicy").addEventListener("click", () => applyPolicy(false));
+    el("applyAllPolicy").addEventListener("click", () => applyPolicy(true));
+
     const savedInterval = localStorage.getItem("trustMonitorRefreshSeconds");
     if (savedInterval) {
       el("refreshInterval").value = savedInterval;
     }
+    const savedToken = localStorage.getItem("keylimePolicyAdminToken");
+    if (savedToken) {
+      el("adminToken").value = savedToken;
+    }
 
+    resetPolicyForm();
     refreshStatus();
     startTimer();
   </script>

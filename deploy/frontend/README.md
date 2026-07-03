@@ -1,55 +1,22 @@
-# 计算节点可信状态实时监控
+# Keylime + OpenStack 管理系统
 
-这是 Keylime + OpenStack 前端管理系统当前唯一启用的功能。
-
-当前页面只做一件事：
+当前前端包含两个功能模块：
 
 ```text
-实时监控计算节点可信状态
-```
-
-它通过只读本地 API 自动识别 OpenStack 中的 `nova-compute` 节点，并把所有计算节点纳入监控视图。当前实验中只有 `COMPUTE_HOST=csri9` 绑定 Keylime attestation 结果；其它暂未安装或暂未纳入 Keylime agent 的计算节点会显示为黄色。
-
-## 监控内容
-
-页面每 5 秒自动刷新一次：
-
-```text
-1. openstack compute service list 中的所有 nova-compute 节点。
-2. openstack hypervisor list 中可用的节点 IP 信息。
-3. openstack hypervisor list/show 中的承载虚拟机数量。
-4. keylime-openstack-sync.timer 状态。
-5. 已纳入 Keylime 的节点是否具有 CUSTOM_KEYLIME_ATTESTED。
-6. 已纳入 Keylime 的节点是否存在 disabled-by-keylime marker。
-```
-
-虚拟机数量读取顺序：
-
-```text
-1. openstack hypervisor list --long -f json
-2. openstack hypervisor show <host> -f json
-3. openstack server list --all-projects --host <host> -f json
-```
-
-## 首页状态颜色
-
-```text
-绿色：节点可信，可作为可信计算节点使用。
-红色：节点不可信、状态过期、被禁用或 nova-compute 掉线。
-黄色：计算节点存在，但暂未安装或暂未纳入 Keylime agent。
-```
-
-## 交互方式
-
-```text
-首页以计算节点卡片展示摘要。
-点击计算节点卡片显示节点明细。
-再次点击同一卡片隐藏节点明细。
+计算节点可信状态实时监控
+Keylime TPM PCR 策略管理
 ```
 
 ## 部署到 csri10
 
-复制 `deploy/frontend/` 到 csri10 后启动：
+复制 `deploy/frontend/` 到 `csri10`：
+
+```bash
+mkdir -p /opt/keylime-openstack-console
+cp -a deploy/frontend/* /opt/keylime-openstack-console/
+```
+
+启动：
 
 ```bash
 cd /opt/keylime-openstack-console
@@ -62,22 +29,165 @@ python3 trust_monitor_server.py --host 172.31.100.10 --port 8088
 http://172.31.100.10:8088/
 ```
 
-如果希望只允许 SSH 隧道访问，可以改为：
+## 实时刷新机制
+
+后端不再让每个浏览器请求都同步执行 OpenStack CLI。服务启动后会在后台周期性采集状态，
+`/api/status` 默认直接返回最近一次缓存结果，因此前端可以 1-2 秒刷新一次而不会堆积大量
+`openstack` 命令。
+
+后台采集间隔：
 
 ```bash
-python3 trust_monitor_server.py --host 127.0.0.1 --port 8088
+export KEYLIME_STATUS_REFRESH_SECONDS="3"
+```
+
+虚拟机数量默认使用一次全量查询聚合：
+
+```bash
+openstack server list --all-projects --long -f json
+```
+
+如果 OpenStack CLI 不返回 Host 列，可临时开启慢速逐节点回退：
+
+```bash
+export KEYLIME_VM_COUNT_SLOW_FALLBACK="true"
+```
+
+Resource provider traits are queried in bulk first. If the OpenStack CLI does not support
+bulk trait listing, keep the slower fallback enabled:
+
+```bash
+export KEYLIME_TRAIT_SLOW_FALLBACK="true"
+```
+
+`/api/status` exposes `cache.last_refresh_duration_seconds` to show how long the last
+background collection took.
+
+前端“立即刷新”按钮会调用：
+
+```text
+/api/status?force=1
+```
+
+这个请求会强制同步采集一次，可能比普通自动刷新慢。
+
+## 多计算节点 agent 配置
+
+策略下发需要知道每个计算节点对应的 Keylime agent UUID 和 IP。建议在
+`/etc/keylime-openstack-sync/openstack-keylime-lab.env` 中配置：
+
+```bash
+export KEYLIME_AGENT_HOSTS="csri9,csri8"
+export KEYLIME_AGENT_IP_MAP="csri9=172.31.100.9,csri8=172.31.100.8"
+export KEYLIME_AGENT_UUID_MAP="csri9=11111111-1111-4111-8111-000000000009,csri8=22222222-2222-4222-8222-000000000008"
+export KEYLIME_AGENT_PORT="9002"
+```
+
+可信状态监控会读取每个节点自己的判定文件。单节点默认文件仍是：
+
+```text
+/var/log/keylime-openstack-sync-decision.json
+```
+
+其他节点建议使用按主机名命名的判定文件，例如：
+
+```bash
+AGENT_UUID="22222222-2222-4222-8222-000000000008" \
+RP_NAME="csri8" \
+RAW_STATUS_FILE="/var/log/keylime-openstack-sync-status-csri8.raw.log" \
+DECISION_FILE="/var/log/keylime-openstack-sync-decision-csri8.json" \
+LAST_LOG_FILE="/var/log/keylime-openstack-sync-last-csri8.log" \
+/opt/keylime-openstack-sync/keylime-placement-sync.sh
+```
+
+如果只配置单节点，系统会继续使用：
+
+```bash
+COMPUTE_HOST
+KEYLIME_AGENT_IP
+KEYLIME_AGENT_UUID_FIXED
+```
+
+## TPM PCR 策略文件
+
+策略库默认保存到：
+
+```text
+/var/lib/keylime-openstack-sync/tpm-pcr-policies.json
+```
+
+可用环境变量覆盖：
+
+```bash
+export KEYLIME_PCR_POLICY_FILE="/var/lib/keylime-openstack-sync/tpm-pcr-policies.json"
+```
+
+## 写 API 令牌
+
+如果设置了：
+
+```bash
+export KEYLIME_POLICY_ADMIN_TOKEN="<TOKEN>"
+```
+
+前端保存策略、删除策略、下发策略时需要在页面右上角填写同一个管理令牌。
+实验环境可以先留空。
+
+## TPM PCR 策略格式
+
+前端保存的是结构化策略：
+
+```json
+{
+  "id": "csri8-pcr7",
+  "name": "csri8 PCR7 基线",
+  "type": "tpm_pcr",
+  "hash_alg": "sha256",
+  "pcrs": {
+    "7": "AD69DC884387BB14056F05ABC4AB0B8AA751824D909931618FB6365EE2C2938D"
+  },
+  "mask": "0x80",
+  "tpm_policy": {
+    "mask": "0x80",
+    "7": "AD69DC884387BB14056F05ABC4AB0B8AA751824D909931618FB6365EE2C2938D"
+  }
+}
+```
+
+下发时后端会调用：
+
+```bash
+docker compose run --rm keylime-tenant \
+  -c delete \
+  -u <agent_uuid> \
+  -v <verifier_ip> \
+  -vp <verifier_port> \
+  -r <registrar_ip> \
+  -rp <registrar_port>
+
+docker compose run --rm keylime-tenant \
+  -c add \
+  -t <agent_ip> \
+  -tp <agent_port> \
+  -u <agent_uuid> \
+  -v <verifier_ip> \
+  -vp <verifier_port> \
+  -r <registrar_ip> \
+  -rp <registrar_port> \
+  --tpm_policy '<policy_json>'
 ```
 
 ## systemd 运行方式
 
 ```ini
 [Unit]
-Description=Keylime OpenStack Trust Monitor
+Description=Keylime OpenStack Console
 After=network-online.target
 
 [Service]
 Type=simple
 WorkingDirectory=/opt/keylime-openstack-console
+Environment=KEYLIME_OPENSTACK_ENV_FILE=/etc/keylime-openstack-sync/openstack-keylime-lab.env
 ExecStart=/usr/bin/python3 /opt/keylime-openstack-console/trust_monitor_server.py --host 172.31.100.10 --port 8088
 Restart=on-failure
 User=root
@@ -95,15 +205,10 @@ systemctl enable --now keylime-openstack-monitor.service
 systemctl status keylime-openstack-monitor.service --no-pager
 ```
 
-## 状态结论规则
+## 监控状态颜色
 
 ```text
-PASS_FRESH + trait 存在 + nova-compute enabled/up + marker 不存在
-  -> 绿色，可信
-
-非 PASS_FRESH、nova-compute disabled/down、Keylime 状态未知
-  -> 红色，不可信或异常
-
-计算节点存在，但未配置为 Keylime agent host
-  -> 黄色，未安装或未纳入 Keylime agent
+绿色：节点可信，可作为可信计算节点使用
+红色：节点不可信、状态过期、被禁用或 nova-compute 下线
+黄色：计算节点存在，但暂未安装或暂未纳入 Keylime agent
 ```

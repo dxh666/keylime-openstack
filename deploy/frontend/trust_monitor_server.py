@@ -1,36 +1,71 @@
 #!/usr/bin/env python3
-"""Read-only status API for the Keylime + OpenStack trust monitor."""
+"""Status and TPM PCR policy API for the Keylime + OpenStack console."""
 
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
+import copy
 import datetime as dt
 import json
 import os
 import re
 import shlex
 import subprocess
+import threading
+import time
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 
 APP_DIR = Path(__file__).resolve().parent
 DEFAULT_ENV_FILE = "/etc/keylime-openstack-sync/openstack-keylime-lab.env"
 DEFAULTS = {
     "OPENRC": "/etc/kolla/admin-openrc.sh",
+    "KEYLIME_DIR": "/opt/keylime-docker",
     "KEYLIME_OPENSTACK_LOG_DIR": "/var/log",
     "KEYLIME_OPENSTACK_STATE_DIR": "/var/lib/keylime-openstack-sync",
+    "KEYLIME_PCR_POLICY_FILE": "",
+    "KEYLIME_POLICY_ADMIN_TOKEN": "",
+    "KEYLIME_STATUS_REFRESH_SECONDS": "3",
+    "KEYLIME_VERIFIER_IP": "172.31.100.10",
+    "KEYLIME_VERIFIER_PORT": "8881",
+    "KEYLIME_REGISTRAR_IP": "172.31.100.10",
+    "KEYLIME_REGISTRAR_PORT": "8891",
     "RP_NAME": "csri9",
     "TRUSTED_TRAIT": "CUSTOM_KEYLIME_ATTESTED",
     "COMPUTE_HOST": "csri9",
     "COMPUTE_SERVICE": "nova-compute",
+    "KEYLIME_AGENT_UUID_FIXED": "11111111-1111-4111-8111-000000000009",
     "KEYLIME_AGENT_IP": "172.31.100.9",
+    "KEYLIME_AGENT_PORT": "9002",
     "KEYLIME_AGENT_HOSTS": "",
     "KEYLIME_AGENT_IP_MAP": "",
+    "KEYLIME_AGENT_UUID_MAP": "",
+    "KEYLIME_VM_COUNT_SLOW_FALLBACK": "false",
+    "KEYLIME_TRAIT_SLOW_FALLBACK": "true",
 }
+
+PCR_DIGEST_LENGTHS = {
+    "sha1": 40,
+    "sha256": 64,
+    "sha384": 96,
+    "sha512": 128,
+}
+
+
+class ApiError(Exception):
+    def __init__(self, status: HTTPStatus, message: str):
+        super().__init__(message)
+        self.status = status
+        self.message = message
+
+
+def utc_now() -> str:
+    return dt.datetime.now(dt.timezone.utc).isoformat()
 
 
 def load_env_file(path: str) -> dict[str, str]:
@@ -88,16 +123,26 @@ def build_config(env_file: str) -> dict[str, Any]:
             config[key] = os.environ[key]
 
     agent_hosts = split_csv(str(config.get("KEYLIME_AGENT_HOSTS", "")))
-    if not agent_hosts and config.get("COMPUTE_HOST"):
-        agent_hosts = [str(config["COMPUTE_HOST"])]
-
     agent_ip_map = parse_mapping(str(config.get("KEYLIME_AGENT_IP_MAP", "")))
-    if config.get("COMPUTE_HOST") and config.get("KEYLIME_AGENT_IP"):
-        agent_ip_map.setdefault(str(config["COMPUTE_HOST"]), str(config["KEYLIME_AGENT_IP"]))
+    agent_uuid_map = parse_mapping(str(config.get("KEYLIME_AGENT_UUID_MAP", "")))
+
+    compute_host = str(config.get("COMPUTE_HOST", ""))
+    if compute_host:
+        if config.get("KEYLIME_AGENT_IP"):
+            agent_ip_map.setdefault(compute_host, str(config["KEYLIME_AGENT_IP"]))
+        if config.get("KEYLIME_AGENT_UUID_FIXED"):
+            agent_uuid_map.setdefault(compute_host, str(config["KEYLIME_AGENT_UUID_FIXED"]))
+
+    for host in [*agent_ip_map.keys(), *agent_uuid_map.keys()]:
+        if host and host not in agent_hosts:
+            agent_hosts.append(host)
+    if not agent_hosts and compute_host:
+        agent_hosts = [compute_host]
 
     config["ENV_FILE"] = env_file
     config["AGENT_HOSTS"] = agent_hosts
     config["AGENT_IP_BY_HOST"] = agent_ip_map
+    config["AGENT_UUID_BY_HOST"] = agent_uuid_map
     return config
 
 
@@ -127,6 +172,10 @@ def parse_count(value: Any) -> int | None:
     return None
 
 
+def is_truthy(value: Any) -> bool:
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
 def pick_running_vms(row: dict[str, Any]) -> int | None:
     value = pick(
         row,
@@ -145,7 +194,7 @@ def pick_running_vms(row: dict[str, Any]) -> int | None:
     return parse_count(value)
 
 
-def run_command(args: list[str], timeout: int = 8) -> dict[str, Any]:
+def run_command(args: list[str], timeout: int = 8, cwd: str | None = None) -> dict[str, Any]:
     try:
         completed = subprocess.run(
             args,
@@ -153,6 +202,7 @@ def run_command(args: list[str], timeout: int = 8) -> dict[str, Any]:
             capture_output=True,
             text=True,
             timeout=timeout,
+            cwd=cwd,
         )
         return {
             "rc": completed.returncode,
@@ -200,8 +250,7 @@ def run_openstack_json(config: dict[str, Any], script: str, timeout: int = 18) -
     return [], [f"OpenStack JSON has unsupported type for '{script}'"]
 
 
-def read_decision(config: dict[str, Any]) -> dict[str, Any]:
-    path = Path(str(config["KEYLIME_OPENSTACK_LOG_DIR"])) / "keylime-openstack-sync-decision.json"
+def read_decision_file(path: Path) -> dict[str, Any]:
     if not path.is_file():
         return {"path": str(path), "result": "UNKNOWN", "reason": "DECISION_FILE_NOT_FOUND"}
     try:
@@ -210,6 +259,35 @@ def read_decision(config: dict[str, Any]) -> dict[str, Any]:
         return {"path": str(path), "result": "UNKNOWN", "reason": f"DECISION_JSON_INVALID: {exc}"}
     data["path"] = str(path)
     return data
+
+
+def default_decision_path(config: dict[str, Any]) -> Path:
+    return Path(str(config["KEYLIME_OPENSTACK_LOG_DIR"])) / "keylime-openstack-sync-decision.json"
+
+
+def host_decision_path(config: dict[str, Any], host: str) -> Path:
+    safe_host = re.sub(r"[^A-Za-z0-9_.-]+", "-", host)
+    return Path(str(config["KEYLIME_OPENSTACK_LOG_DIR"])) / f"keylime-openstack-sync-decision-{safe_host}.json"
+
+
+def read_decision(config: dict[str, Any]) -> dict[str, Any]:
+    return read_decision_file(default_decision_path(config))
+
+
+def read_node_decision(config: dict[str, Any], host: str) -> dict[str, Any]:
+    compute_host = str(config.get("COMPUTE_HOST", ""))
+    if host == compute_host:
+        default_decision = read_decision(config)
+        if default_decision.get("reason") != "DECISION_FILE_NOT_FOUND":
+            return default_decision
+
+    node_decision = read_decision_file(host_decision_path(config, host))
+    if node_decision.get("reason") != "DECISION_FILE_NOT_FOUND":
+        return node_decision
+
+    if host == compute_host:
+        return read_decision(config)
+    return node_decision
 
 
 def read_timer() -> dict[str, Any]:
@@ -272,12 +350,13 @@ def read_hypervisors(config: dict[str, Any]) -> tuple[dict[str, dict[str, Any]],
         )
         if not hostname:
             continue
+        running_vms = pick_running_vms(row)
         hypervisors[hostname] = {
             "id": str(pick(row, ["id"], "")),
             "hostname": hostname,
             "host_ip": str(pick(row, ["host_ip", "host ip"], "")),
-            "running_vms": pick_running_vms(row),
-            "vm_count_source": "hypervisor list" if pick_running_vms(row) is not None else "",
+            "running_vms": running_vms,
+            "vm_count_source": "hypervisor list" if running_vms is not None else "",
             "state": str(pick(row, ["state"], "")),
             "status": str(pick(row, ["status"], "")),
             "raw": row,
@@ -341,14 +420,75 @@ def read_server_count_for_host(config: dict[str, Any], host: str) -> tuple[int |
     return None, "", errors
 
 
+def pick_server_host(row: dict[str, Any]) -> str:
+    return str(
+        pick(
+            row,
+            [
+                "host",
+                "Host",
+                "OS-EXT-SRV-ATTR:host",
+                "OS-EXT-SRV-ATTR:hypervisor_hostname",
+                "hypervisor_hostname",
+                "hypervisor hostname",
+                "compute_host",
+                "compute host",
+            ],
+            "",
+        )
+    )
+
+
+def read_server_counts(config: dict[str, Any]) -> tuple[dict[str, int], str, list[str]]:
+    rows, errors = run_openstack_json(
+        config,
+        "openstack server list --all-projects --long -f json",
+        timeout=24,
+    )
+    if errors:
+        return {}, "", errors
+
+    counts: dict[str, int] = {}
+    missing_host = 0
+    for row in rows:
+        host = pick_server_host(row)
+        if not host:
+            missing_host += 1
+            continue
+        counts[host] = counts.get(host, 0) + 1
+
+    if rows and missing_host == len(rows):
+        return {}, "", ["server list --all-projects --long did not expose a host column"]
+    return counts, "server list --all-projects --long", []
+
+
+def server_count_for_host(server_counts: dict[str, int], host: str) -> int | None:
+    if host in server_counts:
+        return server_counts[host]
+    short_host = host.split(".", 1)[0]
+    for key, count in server_counts.items():
+        if key.split(".", 1)[0] == short_host:
+            return count
+    return None
+
+
 def resolve_vm_count(
     config: dict[str, Any],
     host: str,
     hypervisor: dict[str, Any],
+    server_counts: dict[str, int],
+    server_count_source: str,
 ) -> tuple[int | str, str, list[str]]:
     count = parse_count(hypervisor.get("running_vms"))
     if count is not None:
         return count, str(hypervisor.get("vm_count_source") or "hypervisor list"), []
+
+    count = server_count_for_host(server_counts, host)
+    if count is not None:
+        return count, server_count_source, []
+
+    if not is_truthy(config.get("KEYLIME_VM_COUNT_SLOW_FALLBACK", "false")):
+        return "unknown", "", []
 
     count, source, errors = read_hypervisor_show_vm_count(config, host, hypervisor)
     if count is not None:
@@ -394,6 +534,69 @@ def read_traits_for_provider(config: dict[str, Any], rp_uuid: str) -> tuple[list
     return traits, []
 
 
+def read_all_provider_traits(config: dict[str, Any]) -> tuple[dict[str, list[str]], str, list[str]]:
+    rows, errors = run_openstack_json(
+        config,
+        "openstack resource provider trait list --all -f json",
+        timeout=18,
+    )
+    if errors:
+        return {}, "", errors
+
+    traits_by_provider: dict[str, list[str]] = {}
+    for row in rows:
+        provider = str(
+            pick(
+                row,
+                [
+                    "resource_provider",
+                    "resource provider",
+                    "resource_provider_uuid",
+                    "resource provider uuid",
+                    "uuid",
+                    "id",
+                    "name",
+                ],
+                "",
+            )
+        )
+        trait = str(pick(row, ["trait", "name"], ""))
+        if not provider or not trait:
+            continue
+        traits_by_provider.setdefault(provider, []).append(trait)
+
+    if rows and not traits_by_provider:
+        return {}, "", ["resource provider trait list --all returned unsupported columns"]
+    return traits_by_provider, "resource provider trait list --all", []
+
+
+def traits_for_provider(
+    config: dict[str, Any],
+    traits_by_provider: dict[str, list[str]],
+    provider: dict[str, Any],
+) -> tuple[list[str], str, list[str]]:
+    candidates = [
+        str(provider.get("uuid", "")),
+        str(provider.get("name", "")),
+    ]
+    for candidate in candidates:
+        if candidate and candidate in traits_by_provider:
+            return sorted(set(traits_by_provider[candidate])), "resource provider trait list --all", []
+
+    name = str(provider.get("name", ""))
+    if name:
+        short_name = name.split(".", 1)[0]
+        for key, traits in traits_by_provider.items():
+            if key.split(".", 1)[0] == short_name:
+                return sorted(set(traits)), "resource provider trait list --all", []
+
+    if not is_truthy(config.get("KEYLIME_TRAIT_SLOW_FALLBACK", "true")):
+        return [], "", []
+
+    traits, errors = read_traits_for_provider(config, str(provider.get("uuid", "")))
+    return traits, "resource provider trait list <uuid>", errors
+
+
 def read_marker(config: dict[str, Any], host: str, service: str) -> dict[str, Any]:
     marker_path = (
         Path(str(config["KEYLIME_OPENSTACK_STATE_DIR"]))
@@ -425,6 +628,8 @@ def conclude_node(
         return {"level": "ok", "code": "TRUSTED", "text": "可信"}
     if result == "PASS_FRESH":
         return {"level": "bad", "code": "TRUSTED_BUT_OPENSTACK_MISMATCH", "text": "不可信"}
+    if decision is None and trait_present is True and marker.get("present") is False:
+        return {"level": "ok", "code": "TRUSTED_BY_TRAIT", "text": "可信"}
     if result and result != "UNKNOWN":
         return {"level": "bad", "code": "UNTRUSTED", "text": "不可信"}
     return {"level": "bad", "code": "KEYLIME_UNKNOWN", "text": "不可信"}
@@ -433,20 +638,23 @@ def conclude_node(
 def build_node(
     config: dict[str, Any],
     service: dict[str, Any],
-    decision: dict[str, Any],
     providers: dict[str, dict[str, Any]],
     hypervisors: dict[str, dict[str, Any]],
+    server_counts: dict[str, int],
+    server_count_source: str,
+    traits_by_provider: dict[str, list[str]],
 ) -> dict[str, Any]:
     host = service["host"]
     agent_hosts = set(config["AGENT_HOSTS"])
-    agent_configured = host in agent_hosts
     agent_ip_by_host = config["AGENT_IP_BY_HOST"]
+    agent_uuid_by_host = config["AGENT_UUID_BY_HOST"]
+    agent_configured = host in agent_hosts or host in agent_uuid_by_host
     hypervisor = find_hypervisor(hypervisors, host)
     provider = find_resource_provider(providers, host, str(config.get("RP_NAME", "")))
-    traits, trait_errors = read_traits_for_provider(config, str(provider.get("uuid", "")))
+    traits, trait_source, trait_errors = traits_for_provider(config, traits_by_provider, provider)
     trusted_trait = str(config["TRUSTED_TRAIT"])
     marker = read_marker(config, host, service["binary"] or str(config["COMPUTE_SERVICE"]))
-    node_decision = decision if host == str(config["COMPUTE_HOST"]) and agent_configured else None
+    node_decision = read_node_decision(config, host) if agent_configured else None
     trait_present = trusted_trait in traits if provider.get("uuid") else None
     conclusion = conclude_node(service, agent_configured, node_decision, trait_present, marker)
     node_ip = (
@@ -454,7 +662,13 @@ def build_node(
         or str(hypervisor.get("host_ip", ""))
         or "unknown"
     )
-    vm_count, vm_count_source, vm_count_errors = resolve_vm_count(config, host, hypervisor)
+    vm_count, vm_count_source, vm_count_errors = resolve_vm_count(
+        config,
+        host,
+        hypervisor,
+        server_counts,
+        server_count_source,
+    )
 
     return {
         "host": host,
@@ -468,6 +682,8 @@ def build_node(
         "agent": {
             "configured": agent_configured,
             "ip": str(agent_ip_by_host.get(host, "")),
+            "uuid": str(agent_uuid_by_host.get(host, "")),
+            "port": str(config.get("KEYLIME_AGENT_PORT", "9002")),
         },
         "decision": node_decision,
         "placement": {
@@ -476,6 +692,7 @@ def build_node(
             "trusted_trait": trusted_trait,
             "trait_present": trait_present,
             "traits": traits,
+            "trait_source": trait_source,
             "errors": trait_errors,
         },
         "marker": marker,
@@ -499,10 +716,10 @@ def summarize(nodes: list[dict[str, Any]]) -> dict[str, Any]:
         text = "未发现 nova-compute 节点"
     elif counts["untrusted"]:
         level = "bad"
-        text = "有异常节点"
+        text = "存在异常节点"
     elif counts["no_agent"]:
         level = "warn"
-        text = "有未装代理节点"
+        text = "存在未装代理节点"
     else:
         level = "ok"
         text = "全部可信"
@@ -511,29 +728,53 @@ def summarize(nodes: list[dict[str, Any]]) -> dict[str, Any]:
 
 def collect_status(config: dict[str, Any]) -> dict[str, Any]:
     decision = read_decision(config)
-    timer = read_timer()
-    services, service_errors = read_compute_services(config)
-    hypervisors, hypervisor_errors = read_hypervisors(config)
-    providers, provider_errors = read_resource_providers(config)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+        futures = {
+            "timer": executor.submit(read_timer),
+            "services": executor.submit(read_compute_services, config),
+            "hypervisors": executor.submit(read_hypervisors, config),
+            "server_counts": executor.submit(read_server_counts, config),
+            "providers": executor.submit(read_resource_providers, config),
+            "traits": executor.submit(read_all_provider_traits, config),
+        }
+        timer = futures["timer"].result()
+        services, service_errors = futures["services"].result()
+        hypervisors, hypervisor_errors = futures["hypervisors"].result()
+        server_counts, server_count_source, server_count_errors = futures["server_counts"].result()
+        providers, provider_errors = futures["providers"].result()
+        traits_by_provider, trait_source, trait_errors = futures["traits"].result()
+
     nodes = [
-        build_node(config, service, decision, providers, hypervisors)
+        build_node(
+            config,
+            service,
+            providers,
+            hypervisors,
+            server_counts,
+            server_count_source,
+            traits_by_provider,
+        )
         for service in services
     ]
     errors = [
         *service_errors,
         *hypervisor_errors,
+        *server_count_errors,
         *provider_errors,
     ]
+    if trait_errors and not is_truthy(config.get("KEYLIME_TRAIT_SLOW_FALLBACK", "true")):
+        errors.extend(trait_errors)
     if decision.get("reason") == "DECISION_FILE_NOT_FOUND":
         errors.append(decision["reason"])
 
     return {
-        "checked_at_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "checked_at_utc": utc_now(),
         "config": {
             "env_file": config["ENV_FILE"],
             "compute_service": config["COMPUTE_SERVICE"],
             "trusted_trait": config["TRUSTED_TRAIT"],
             "keylime_agent_hosts": config["AGENT_HOSTS"],
+            "keylime_agent_uuid_map": config["AGENT_UUID_BY_HOST"],
         },
         "summary": summarize(nodes),
         "timer": timer,
@@ -546,8 +787,454 @@ def collect_status(config: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+class StatusCache:
+    def __init__(self, config: dict[str, Any]):
+        self.config = config
+        try:
+            self.interval = max(1.0, float(str(config.get("KEYLIME_STATUS_REFRESH_SECONDS", "3"))))
+        except ValueError:
+            self.interval = 3.0
+        self.lock = threading.RLock()
+        self.stop_event = threading.Event()
+        self.payload: dict[str, Any] | None = None
+        self.generated_monotonic = 0.0
+        self.last_refresh_duration = 0.0
+        self.refreshing = False
+        self.error = ""
+        self.thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        self.thread = threading.Thread(target=self._loop, name="keylime-status-refresh", daemon=True)
+        self.thread.start()
+
+    def _loop(self) -> None:
+        while not self.stop_event.is_set():
+            self.refresh()
+            self.stop_event.wait(self.interval)
+
+    def refresh(self) -> None:
+        with self.lock:
+            if self.refreshing:
+                return
+            self.refreshing = True
+        try:
+            started = time.monotonic()
+            payload = collect_status(self.config)
+            duration = time.monotonic() - started
+            with self.lock:
+                self.payload = payload
+                self.generated_monotonic = time.monotonic()
+                self.last_refresh_duration = duration
+                self.error = ""
+        except Exception as exc:  # pragma: no cover - long-running service guard
+            with self.lock:
+                self.error = str(exc)
+        finally:
+            with self.lock:
+                self.refreshing = False
+
+    def get(self, force: bool = False) -> dict[str, Any]:
+        if force or self.payload is None:
+            self.refresh()
+
+        with self.lock:
+            if self.payload is None:
+                payload = {
+                    "checked_at_utc": utc_now(),
+                    "summary": {
+                        "total": 0,
+                        "trusted": 0,
+                        "untrusted": 0,
+                        "no_agent": 0,
+                        "level": "warn",
+                        "text": "状态采集中",
+                    },
+                    "nodes": [],
+                    "errors": [self.error] if self.error else [],
+                }
+                generated_monotonic = time.monotonic()
+            else:
+                payload = copy.deepcopy(self.payload)
+                generated_monotonic = self.generated_monotonic
+
+            payload["cache"] = {
+                "enabled": True,
+                "refresh_interval_seconds": self.interval,
+                "age_seconds": max(0, round(time.monotonic() - generated_monotonic, 1)),
+                "last_refresh_duration_seconds": round(self.last_refresh_duration, 2),
+                "refreshing": self.refreshing,
+                "last_error": self.error,
+            }
+            if self.error:
+                payload.setdefault("errors", []).append(self.error)
+            return payload
+
+
+def policy_file_path(config: dict[str, Any]) -> Path:
+    configured = str(config.get("KEYLIME_PCR_POLICY_FILE", "")).strip()
+    if configured:
+        return Path(configured)
+    return Path(str(config["KEYLIME_OPENSTACK_STATE_DIR"])) / "tpm-pcr-policies.json"
+
+
+def default_policy_store() -> dict[str, Any]:
+    return {"version": 1, "policies": [], "bindings": {}, "events": []}
+
+
+def load_policy_store(config: dict[str, Any]) -> dict[str, Any]:
+    path = policy_file_path(config)
+    if not path.is_file():
+        return default_policy_store()
+    try:
+        parsed = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ApiError(HTTPStatus.INTERNAL_SERVER_ERROR, f"策略文件 JSON 无效: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise ApiError(HTTPStatus.INTERNAL_SERVER_ERROR, "策略文件格式无效")
+    parsed.setdefault("version", 1)
+    parsed.setdefault("policies", [])
+    parsed.setdefault("bindings", {})
+    parsed.setdefault("events", [])
+    if not isinstance(parsed["policies"], list):
+        parsed["policies"] = []
+    if not isinstance(parsed["bindings"], dict):
+        parsed["bindings"] = {}
+    if not isinstance(parsed["events"], list):
+        parsed["events"] = []
+    return parsed
+
+
+def save_policy_store(config: dict[str, Any], store: dict[str, Any]) -> None:
+    path = policy_file_path(config)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(store, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def slugify(value: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", value.strip().lower()).strip("-")
+    return slug or "tpm-pcr-policy"
+
+
+def normalize_digest(value: Any, hash_alg: str) -> str:
+    text = str(value).strip()
+    if text.lower().startswith("0x"):
+        text = text[2:]
+    text = text.upper()
+    expected_len = PCR_DIGEST_LENGTHS[hash_alg]
+    if not re.fullmatch(r"[0-9A-F]+", text):
+        raise ApiError(HTTPStatus.BAD_REQUEST, "PCR 摘要必须是十六进制字符串")
+    if len(text) != expected_len:
+        raise ApiError(HTTPStatus.BAD_REQUEST, f"{hash_alg} PCR 摘要长度应为 {expected_len} 个十六进制字符")
+    return text
+
+
+def normalize_pcr_index(value: Any) -> str:
+    text = str(value).strip()
+    if not re.fullmatch(r"\d+", text):
+        raise ApiError(HTTPStatus.BAD_REQUEST, "PCR 编号必须是 0-23 的整数")
+    idx = int(text)
+    if idx < 0 or idx > 23:
+        raise ApiError(HTTPStatus.BAD_REQUEST, "PCR 编号必须是 0-23 的整数")
+    return str(idx)
+
+
+def calculate_mask(pcrs: dict[str, str]) -> str:
+    mask = 0
+    for key in pcrs:
+        mask |= 1 << int(key)
+    return hex(mask)
+
+
+def normalize_pcrs(payload: Any, hash_alg: str) -> dict[str, str]:
+    pcrs: dict[str, str] = {}
+    if isinstance(payload, dict):
+        items = payload.items()
+    elif isinstance(payload, list):
+        items = []
+        for item in payload:
+            if not isinstance(item, dict):
+                raise ApiError(HTTPStatus.BAD_REQUEST, "PCR 列表项格式无效")
+            items.append((item.get("index"), item.get("digest")))
+    else:
+        raise ApiError(HTTPStatus.BAD_REQUEST, "PCR 策略必须包含 pcrs 字段")
+
+    for raw_index, raw_digest in items:
+        index = normalize_pcr_index(raw_index)
+        digest = normalize_digest(raw_digest, hash_alg)
+        pcrs[index] = digest
+
+    if not pcrs:
+        raise ApiError(HTTPStatus.BAD_REQUEST, "至少需要设置一个 PCR")
+    return dict(sorted(pcrs.items(), key=lambda item: int(item[0])))
+
+
+def normalize_policy_payload(payload: dict[str, Any], existing: dict[str, Any] | None = None) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise ApiError(HTTPStatus.BAD_REQUEST, "请求体必须是 JSON 对象")
+
+    name = str(payload.get("name") or (existing or {}).get("name") or "").strip()
+    if not name:
+        raise ApiError(HTTPStatus.BAD_REQUEST, "策略名称不能为空")
+
+    policy_id = slugify(str(payload.get("id") or (existing or {}).get("id") or name))
+    hash_alg = str(payload.get("hash_alg") or (existing or {}).get("hash_alg") or "sha256").lower()
+    if hash_alg not in PCR_DIGEST_LENGTHS:
+        raise ApiError(HTTPStatus.BAD_REQUEST, "hash_alg 仅支持 sha1、sha256、sha384、sha512")
+
+    pcrs_source = payload.get("pcrs", (existing or {}).get("pcrs", {}))
+    pcrs = normalize_pcrs(pcrs_source, hash_alg)
+    now = utc_now()
+    created_at = str((existing or {}).get("created_at_utc") or now)
+
+    policy = {
+        "id": policy_id,
+        "name": name,
+        "description": str(payload.get("description") or (existing or {}).get("description") or "").strip(),
+        "type": "tpm_pcr",
+        "hash_alg": hash_alg,
+        "pcrs": pcrs,
+        "mask": calculate_mask(pcrs),
+        "tpm_policy": {"mask": calculate_mask(pcrs), **pcrs},
+        "created_at_utc": created_at,
+        "updated_at_utc": now,
+    }
+    return policy
+
+
+def find_policy(store: dict[str, Any], policy_id: str) -> dict[str, Any] | None:
+    for policy in store.get("policies", []):
+        if isinstance(policy, dict) and policy.get("id") == policy_id:
+            return policy
+    return None
+
+
+def upsert_policy(config: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    store = load_policy_store(config)
+    policy_id = slugify(str(payload.get("id") or payload.get("name") or ""))
+    existing = find_policy(store, policy_id)
+    policy = normalize_policy_payload(payload, existing=existing)
+    replaced = False
+    policies = []
+    for item in store.get("policies", []):
+        if isinstance(item, dict) and item.get("id") == policy["id"]:
+            policies.append(policy)
+            replaced = True
+        else:
+            policies.append(item)
+    if not replaced:
+        policies.append(policy)
+    policies.sort(key=lambda item: str(item.get("name", "")))
+    store["policies"] = policies
+    store.setdefault("events", []).append(
+        {
+            "at_utc": utc_now(),
+            "action": "policy_saved",
+            "policy_id": policy["id"],
+            "policy_name": policy["name"],
+        }
+    )
+    store["events"] = store["events"][-80:]
+    save_policy_store(config, store)
+    return {"ok": True, "policy": policy, "store_path": str(policy_file_path(config))}
+
+
+def delete_policy(config: dict[str, Any], policy_id: str) -> dict[str, Any]:
+    store = load_policy_store(config)
+    before = len(store.get("policies", []))
+    store["policies"] = [
+        item
+        for item in store.get("policies", [])
+        if not (isinstance(item, dict) and item.get("id") == policy_id)
+    ]
+    if len(store["policies"]) == before:
+        raise ApiError(HTTPStatus.NOT_FOUND, f"策略不存在: {policy_id}")
+    for host, binding in list(store.get("bindings", {}).items()):
+        if isinstance(binding, dict) and binding.get("policy_id") == policy_id:
+            del store["bindings"][host]
+    store.setdefault("events", []).append(
+        {"at_utc": utc_now(), "action": "policy_deleted", "policy_id": policy_id}
+    )
+    store["events"] = store["events"][-80:]
+    save_policy_store(config, store)
+    return {"ok": True, "policy_id": policy_id, "store_path": str(policy_file_path(config))}
+
+
+def policy_templates() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "sha256-pcr7-secure-boot",
+            "name": "SHA256 PCR7 启动策略",
+            "description": "用于校验 Secure Boot / 启动状态相关 PCR7，先填入目标节点当前 PCR7 摘要。",
+            "hash_alg": "sha256",
+            "pcrs": {"7": "0" * 64},
+        },
+        {
+            "id": "sha256-pcr0-7-boot-baseline",
+            "name": "SHA256 PCR0-7 启动基线",
+            "description": "用于记录节点启动链 PCR0-7 基线。创建后请替换为真实 PCR 摘要。",
+            "hash_alg": "sha256",
+            "pcrs": {str(i): "0" * 64 for i in range(8)},
+        },
+    ]
+
+
+def collect_policy_overview(config: dict[str, Any], status: dict[str, Any] | None = None) -> dict[str, Any]:
+    store = load_policy_store(config)
+    if status is None:
+        status = collect_status(config)
+    bindings = store.get("bindings", {})
+    policies = []
+    for item in store.get("policies", []):
+        if not isinstance(item, dict):
+            continue
+        policy = dict(item)
+        policy["tpm_policy_json"] = json.dumps(policy.get("tpm_policy", {}), ensure_ascii=False, sort_keys=True)
+        policies.append(policy)
+
+    nodes = []
+    for node in status.get("nodes", []):
+        binding = bindings.get(node.get("host", ""), {})
+        node_summary = {
+            "host": node.get("host", ""),
+            "ip": node.get("ip", ""),
+            "trust_text": node.get("conclusion", {}).get("text", "未知"),
+            "trust_level": node.get("conclusion", {}).get("level", "warn"),
+            "service_state": node.get("service", {}).get("state", ""),
+            "service_status": node.get("service", {}).get("status", ""),
+            "agent": node.get("agent", {}),
+            "binding": binding if isinstance(binding, dict) else {},
+            "can_apply": bool(node.get("agent", {}).get("uuid") and node.get("ip") not in ("", "unknown")),
+        }
+        nodes.append(node_summary)
+
+    return {
+        "checked_at_utc": utc_now(),
+        "store_path": str(policy_file_path(config)),
+        "policies": policies,
+        "bindings": bindings,
+        "events": store.get("events", [])[-30:],
+        "nodes": nodes,
+        "templates": policy_templates(),
+        "errors": status.get("errors", []),
+    }
+
+
+def run_keylime_tenant(config: dict[str, Any], args: list[str], timeout: int = 180) -> dict[str, Any]:
+    keylime_dir = Path(str(config["KEYLIME_DIR"]))
+    if not keylime_dir.is_dir():
+        return {"rc": 1, "stdout": "", "stderr": f"Keylime docker directory not found: {keylime_dir}"}
+    command = ["docker", "compose", "run", "--rm", "keylime-tenant", *args]
+    return run_command(command, timeout=timeout, cwd=str(keylime_dir))
+
+
+def tail_text(value: str, limit: int = 4000) -> str:
+    if len(value) <= limit:
+        return value
+    return value[-limit:]
+
+
+def apply_policy(config: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise ApiError(HTTPStatus.BAD_REQUEST, "请求体必须是 JSON 对象")
+
+    policy_id = str(payload.get("policy_id", "")).strip()
+    if not policy_id:
+        raise ApiError(HTTPStatus.BAD_REQUEST, "policy_id 不能为空")
+
+    store = load_policy_store(config)
+    policy = find_policy(store, policy_id)
+    if not policy:
+        raise ApiError(HTTPStatus.NOT_FOUND, f"策略不存在: {policy_id}")
+
+    status = collect_status(config)
+    nodes_by_host = {node["host"]: node for node in status.get("nodes", [])}
+    requested_hosts = [str(host).strip() for host in payload.get("hosts", []) if str(host).strip()]
+    if payload.get("all"):
+        requested_hosts = [
+            host for host, node in nodes_by_host.items()
+            if node.get("agent", {}).get("uuid")
+        ]
+    if not requested_hosts:
+        raise ApiError(HTTPStatus.BAD_REQUEST, "至少选择一个计算节点")
+
+    tpm_policy_json = json.dumps(policy["tpm_policy"], separators=(",", ":"), sort_keys=True)
+    verifier_ip = str(config["KEYLIME_VERIFIER_IP"])
+    verifier_port = str(config["KEYLIME_VERIFIER_PORT"])
+    registrar_ip = str(config["KEYLIME_REGISTRAR_IP"])
+    registrar_port = str(config["KEYLIME_REGISTRAR_PORT"])
+    agent_port = str(config.get("KEYLIME_AGENT_PORT", "9002"))
+    results = []
+
+    for host in requested_hosts:
+        node = nodes_by_host.get(host)
+        if not node:
+            results.append({"host": host, "status": "failed", "message": "OpenStack 中未发现该计算节点"})
+            continue
+        agent = node.get("agent", {})
+        agent_uuid = str(agent.get("uuid", "")).strip()
+        agent_ip = str(agent.get("ip") or node.get("ip") or "").strip()
+        if not agent_uuid:
+            results.append({"host": host, "status": "failed", "message": "缺少 agent UUID，请配置 KEYLIME_AGENT_UUID_MAP"})
+            continue
+        if not agent_ip or agent_ip == "unknown":
+            results.append({"host": host, "status": "failed", "message": "缺少 agent IP"})
+            continue
+
+        common = [
+            "-u", agent_uuid,
+            "-v", verifier_ip,
+            "-vp", verifier_port,
+            "-r", registrar_ip,
+            "-rp", registrar_port,
+        ]
+        delete_result = run_keylime_tenant(config, ["-c", "delete", *common], timeout=90)
+        add_result = run_keylime_tenant(
+            config,
+            [
+                "-c", "add",
+                "-t", agent_ip,
+                "-tp", agent_port,
+                *common,
+                "--tpm_policy", tpm_policy_json,
+            ],
+            timeout=240,
+        )
+        success = add_result["rc"] == 0
+        record = {
+            "host": host,
+            "agent_uuid": agent_uuid,
+            "agent_ip": agent_ip,
+            "policy_id": policy["id"],
+            "policy_name": policy["name"],
+            "status": "success" if success else "failed",
+            "applied_at_utc": utc_now(),
+            "delete_rc": delete_result["rc"],
+            "add_rc": add_result["rc"],
+            "stdout": tail_text(add_result["stdout"]),
+            "stderr": tail_text(add_result["stderr"] or delete_result["stderr"]),
+        }
+        store.setdefault("bindings", {})[host] = record
+        store.setdefault("events", []).append(
+            {
+                "at_utc": record["applied_at_utc"],
+                "action": "policy_applied",
+                "host": host,
+                "policy_id": policy["id"],
+                "status": record["status"],
+            }
+        )
+        results.append(record)
+
+    store["events"] = store.get("events", [])[-80:]
+    save_policy_store(config, store)
+    return {"ok": all(item.get("status") == "success" for item in results), "results": results}
+
+
 class TrustMonitorHandler(SimpleHTTPRequestHandler):
     config: dict[str, Any] = {}
+    status_cache: StatusCache | None = None
 
     def end_headers(self) -> None:
         self.send_header("Cache-Control", "no-store")
@@ -555,17 +1242,85 @@ class TrustMonitorHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
-        if parsed.path == "/api/status":
-            self.write_json(collect_status(self.config))
-            return
-        if parsed.path == "/api/health":
-            self.write_json({"ok": True})
-            return
-        super().do_GET()
+        query = parse_qs(parsed.query)
+        try:
+            if parsed.path == "/api/status":
+                force = query.get("force", ["0"])[0] in ("1", "true", "yes")
+                if self.status_cache:
+                    self.write_json(self.status_cache.get(force=force))
+                else:
+                    self.write_json(collect_status(self.config))
+                return
+            if parsed.path == "/api/policies":
+                status = self.status_cache.get() if self.status_cache else None
+                self.write_json(collect_policy_overview(self.config, status=status))
+                return
+            if parsed.path == "/api/health":
+                self.write_json({"ok": True})
+                return
+            super().do_GET()
+        except ApiError as exc:
+            self.write_json({"ok": False, "error": exc.message}, status=exc.status)
+        except Exception as exc:  # pragma: no cover - defensive API boundary
+            self.write_json({"ok": False, "error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
 
-    def write_json(self, payload: dict[str, Any]) -> None:
+    def do_POST(self) -> None:
+        parsed = urlparse(self.path)
+        try:
+            self.require_admin()
+            payload = self.read_json_body()
+            if parsed.path == "/api/policies":
+                self.write_json(upsert_policy(self.config, payload))
+                return
+            if parsed.path == "/api/policies/apply":
+                self.write_json(apply_policy(self.config, payload))
+                return
+            raise ApiError(HTTPStatus.NOT_FOUND, f"Unknown API path: {parsed.path}")
+        except ApiError as exc:
+            self.write_json({"ok": False, "error": exc.message}, status=exc.status)
+        except Exception as exc:  # pragma: no cover - defensive API boundary
+            self.write_json({"ok": False, "error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    def do_DELETE(self) -> None:
+        parsed = urlparse(self.path)
+        try:
+            self.require_admin()
+            prefix = "/api/policies/"
+            if not parsed.path.startswith(prefix):
+                raise ApiError(HTTPStatus.NOT_FOUND, f"Unknown API path: {parsed.path}")
+            policy_id = unquote(parsed.path[len(prefix):]).strip()
+            if not policy_id:
+                raise ApiError(HTTPStatus.BAD_REQUEST, "policy id 不能为空")
+            self.write_json(delete_policy(self.config, policy_id))
+        except ApiError as exc:
+            self.write_json({"ok": False, "error": exc.message}, status=exc.status)
+        except Exception as exc:  # pragma: no cover - defensive API boundary
+            self.write_json({"ok": False, "error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    def require_admin(self) -> None:
+        token = str(self.config.get("KEYLIME_POLICY_ADMIN_TOKEN", "")).strip()
+        if not token:
+            return
+        provided = self.headers.get("X-Admin-Token", "")
+        if provided != token:
+            raise ApiError(HTTPStatus.UNAUTHORIZED, "缺少或错误的 X-Admin-Token")
+
+    def read_json_body(self) -> dict[str, Any]:
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        if length <= 0:
+            raise ApiError(HTTPStatus.BAD_REQUEST, "请求体不能为空")
+        raw = self.rfile.read(length)
+        try:
+            parsed = json.loads(raw.decode("utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ApiError(HTTPStatus.BAD_REQUEST, f"JSON 无效: {exc}") from exc
+        if not isinstance(parsed, dict):
+            raise ApiError(HTTPStatus.BAD_REQUEST, "请求体必须是 JSON 对象")
+        return parsed
+
+    def write_json(self, payload: dict[str, Any], status: HTTPStatus = HTTPStatus.OK) -> None:
         body = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
-        self.send_response(HTTPStatus.OK)
+        self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
@@ -573,7 +1328,7 @@ class TrustMonitorHandler(SimpleHTTPRequestHandler):
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Serve the read-only Keylime OpenStack trust monitor.")
+    parser = argparse.ArgumentParser(description="Serve the Keylime OpenStack trust console.")
     parser.add_argument("--host", default=os.environ.get("KEYLIME_MONITOR_HOST", "127.0.0.1"))
     parser.add_argument("--port", type=int, default=int(os.environ.get("KEYLIME_MONITOR_PORT", "8088")))
     parser.add_argument(
@@ -588,9 +1343,13 @@ def main() -> None:
     args = parse_args()
     os.chdir(APP_DIR)
     TrustMonitorHandler.config = build_config(args.env_file)
+    TrustMonitorHandler.status_cache = StatusCache(TrustMonitorHandler.config)
+    TrustMonitorHandler.status_cache.start()
     server = ThreadingHTTPServer((args.host, args.port), TrustMonitorHandler)
-    print(f"Serving Keylime trust monitor on http://{args.host}:{args.port}/")
-    print("Read-only status API: /api/status")
+    print(f"Serving Keylime OpenStack console on http://{args.host}:{args.port}/")
+    print("Status API: /api/status")
+    print("TPM PCR policy API: /api/policies")
+    print(f"Background status refresh: every {TrustMonitorHandler.status_cache.interval:g}s")
     server.serve_forever()
 
 
