@@ -46,6 +46,9 @@ deploy/env/
 
 deploy/examples/
   command snippets for private trusted flavor and verification
+
+deploy/frontend/
+  read-only frontend for real-time compute-node trust monitoring
 ```
 
 ## Completed Cases
@@ -98,6 +101,17 @@ block any new workload from scheduling to the untrusted host
 
 When Keylime returns to `PASS_FRESH`, the prototype can re-enable the compute service if it was disabled by the controller.
 
+### Case 5: Read-only Trust Monitor Frontend
+
+The first frontend module provides a read-only dashboard for compute-node trust status:
+
+```text
+auto-discover nova-compute services
+show node IP, hosted VM count, trust state, and service state
+mark trusted / untrusted / no-agent nodes with green / red / yellow status
+expand node cards for details
+```
+
 ## Important Security Notes
 
 This repository is sanitized for GitHub:
@@ -128,3 +142,4 @@ add alerting, dampening, and human approval for host quarantine
 5. `docs/keylime_openstack_phase2_attestation_freshness.md`
 6. `docs/keylime_openstack_phase3_private_flavor_project_auth.md`
 7. `docs/keylime_openstack_case4_host_quarantine.md`
+8. `docs/keylime_openstack_frontend_trust_monitor_baseline.md`
