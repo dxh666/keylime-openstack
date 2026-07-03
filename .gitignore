@@ -1,0 +1,26 @@
+# Local runtime artifacts
+*.log
+*.tmp
+*.bak
+*.swp
+
+# Archives generated outside the repository source tree
+*.zip
+*.tar
+*.tar.gz
+
+# Secrets and local credentials
+clouds.yaml
+*openrc*
+*.pem
+*.key
+*.crt
+*.p12
+*.env.local
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+

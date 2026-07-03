@@ -1,0 +1,11 @@
+﻿[Unit]
+Description=Sync Keylime attestation status to OpenStack Placement traits
+Wants=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/keylime-openstack-sync/keylime-placement-sync-locked.sh
+TimeoutStartSec=90
+
+

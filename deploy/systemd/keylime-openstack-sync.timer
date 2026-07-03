@@ -1,0 +1,13 @@
+﻿[Unit]
+Description=Run Keylime to OpenStack Placement sync periodically
+
+[Timer]
+OnBootSec=60s
+OnUnitActiveSec=30s
+AccuracySec=5s
+Unit=keylime-openstack-sync.service
+
+[Install]
+WantedBy=timers.target
+
+
