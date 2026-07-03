@@ -1,13 +1,22 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 set -euo pipefail
 
-OPENRC=/etc/kolla/admin-openrc.sh
-DECISION_FILE=/var/log/keylime-openstack-sync-decision.json
-STATE_DIR=/var/lib/keylime-openstack-sync
+ENV_FILE="${KEYLIME_OPENSTACK_ENV_FILE:-/etc/keylime-openstack-sync/openstack-keylime-lab.env}"
+[ -f "$ENV_FILE" ] && source "$ENV_FILE"
+
+OPENRC="${OPENRC:-/etc/kolla/admin-openrc.sh}"
+LOG_DIR="${KEYLIME_OPENSTACK_LOG_DIR:-/var/log}"
+DECISION_FILE="${DECISION_FILE:-$LOG_DIR/keylime-openstack-sync-decision.json}"
+STATE_DIR="${KEYLIME_OPENSTACK_STATE_DIR:-/var/lib/keylime-openstack-sync}"
 
 COMPUTE_HOST="${COMPUTE_HOST:-csri9}"
 COMPUTE_SERVICE="${COMPUTE_SERVICE:-nova-compute}"
 MARKER_FILE="$STATE_DIR/${COMPUTE_HOST}.${COMPUTE_SERVICE}.disabled-by-keylime"
+
+if [ ! -r "$OPENRC" ]; then
+  echo "ERROR: OpenStack RC file not readable: $OPENRC"
+  exit 1
+fi
 
 source "$OPENRC"
 
@@ -75,6 +84,4 @@ else
 fi
 
 echo "Current compute service state:"
-openstack compute service list | awk 'NR==1 || /nova-compute/ && /csri9/'
-
-
+openstack compute service list | awk -v host="$COMPUTE_HOST" -v svc="$COMPUTE_SERVICE" 'NR==1 || ($0 ~ svc && $0 ~ host)'

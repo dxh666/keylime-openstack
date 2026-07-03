@@ -123,8 +123,8 @@ add alerting, dampening, and human approval for host quarantine
 
 1. `docs/openstack_project_principles.md`
 2. `docs/openstack_keylime_integration_case_summary.md`
-3. `docs/openstack_keylime_deep_integration_roadmap.md`
-4. `docs/keylime_openstack_phase2_attestation_freshness.md`
-5. `docs/keylime_openstack_phase3_private_flavor_project_auth.md`
-6. `docs/keylime_openstack_case4_host_quarantine.md`
-
+3. `docs/keylime_openstack_current_issue_hardening_baseline.md`
+4. `docs/openstack_keylime_deep_integration_roadmap.md`
+5. `docs/keylime_openstack_phase2_attestation_freshness.md`
+6. `docs/keylime_openstack_phase3_private_flavor_project_auth.md`
+7. `docs/keylime_openstack_case4_host_quarantine.md`

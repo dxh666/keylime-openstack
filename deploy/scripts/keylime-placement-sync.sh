@@ -1,23 +1,42 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 set -euo pipefail
 
-OPENRC=/etc/kolla/admin-openrc.sh
-KEYLIME_DIR=/opt/keylime-docker
+ENV_FILE="${KEYLIME_OPENSTACK_ENV_FILE:-/etc/keylime-openstack-sync/openstack-keylime-lab.env}"
+[ -f "$ENV_FILE" ] && source "$ENV_FILE"
 
-AGENT_UUID="11111111-1111-4111-8111-000000000009"
-RP_NAME="csri9"
-TRUSTED_TRAIT="CUSTOM_KEYLIME_ATTESTED"
+OPENRC="${OPENRC:-/etc/kolla/admin-openrc.sh}"
+KEYLIME_DIR="${KEYLIME_DIR:-/opt/keylime-docker}"
 
-VERIFIER_IP="172.31.100.10"
-VERIFIER_PORT="8881"
-REGISTRAR_IP="172.31.100.10"
-REGISTRAR_PORT="8891"
+AGENT_UUID="${AGENT_UUID:-${KEYLIME_AGENT_UUID_FIXED:-11111111-1111-4111-8111-000000000009}}"
+RP_NAME="${RP_NAME:-csri9}"
+TRUSTED_TRAIT="${TRUSTED_TRAIT:-CUSTOM_KEYLIME_ATTESTED}"
+
+VERIFIER_IP="${VERIFIER_IP:-${KEYLIME_VERIFIER_IP:-172.31.100.10}}"
+VERIFIER_PORT="${VERIFIER_PORT:-${KEYLIME_VERIFIER_PORT:-8881}}"
+REGISTRAR_IP="${REGISTRAR_IP:-${KEYLIME_REGISTRAR_IP:-172.31.100.10}}"
+REGISTRAR_PORT="${REGISTRAR_PORT:-${KEYLIME_REGISTRAR_PORT:-8891}}"
 
 MAX_ATTESTATION_AGE_SECONDS="${MAX_ATTESTATION_AGE_SECONDS:-120}"
 
-RAW_STATUS_FILE="/var/log/keylime-openstack-sync-status.raw.log"
-DECISION_FILE="/var/log/keylime-openstack-sync-decision.json"
-LAST_LOG_FILE="/var/log/keylime-openstack-sync-last.log"
+LOG_DIR="${KEYLIME_OPENSTACK_LOG_DIR:-/var/log}"
+RAW_STATUS_FILE="${RAW_STATUS_FILE:-$LOG_DIR/keylime-openstack-sync-status.raw.log}"
+DECISION_FILE="${DECISION_FILE:-$LOG_DIR/keylime-openstack-sync-decision.json}"
+LAST_LOG_FILE="${LAST_LOG_FILE:-$LOG_DIR/keylime-openstack-sync-last.log}"
+
+if [ ! -r "$OPENRC" ]; then
+  echo "ERROR: OpenStack RC file not readable: $OPENRC"
+  exit 1
+fi
+
+if [ ! -d "$KEYLIME_DIR" ]; then
+  echo "ERROR: Keylime docker directory not found: $KEYLIME_DIR"
+  exit 1
+fi
+
+install -d -m 0755 \
+  "$(dirname "$RAW_STATUS_FILE")" \
+  "$(dirname "$DECISION_FILE")" \
+  "$(dirname "$LAST_LOG_FILE")"
 
 source "$OPENRC"
 export OS_PLACEMENT_API_VERSION="${OS_PLACEMENT_API_VERSION:-1.17}"
@@ -254,5 +273,3 @@ fi
 
 echo "Current $RP_NAME traits containing Keylime:"
 openstack resource provider trait list "$RP_UUID" | grep "$TRUSTED_TRAIT" || true
-
-

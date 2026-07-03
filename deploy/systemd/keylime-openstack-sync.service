@@ -1,11 +1,15 @@
-﻿[Unit]
-Description=Sync Keylime attestation status to OpenStack Placement traits
+[Unit]
+Description=Sync Keylime attestation status to OpenStack and quarantine nova-compute
 Wants=docker.service
 After=docker.service network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/opt/keylime-openstack-sync/keylime-placement-sync-locked.sh
-TimeoutStartSec=90
-
+EnvironmentFile=-/etc/keylime-openstack-sync/openstack-keylime-lab.env
+ExecStart=/opt/keylime-openstack-sync/keylime-sync-control-loop.sh
+TimeoutStartSec=120
+User=root
+Group=root
+StandardOutput=journal
+StandardError=journal
 

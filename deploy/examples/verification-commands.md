@@ -1,4 +1,4 @@
-﻿# 常用验证命令
+# 常用验证命令
 
 ## 查看 Keylime freshness 判定
 

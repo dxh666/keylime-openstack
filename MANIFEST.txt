@@ -13,6 +13,7 @@ deploy\systemd\keylime-openstack-sync.timer
 docs\keylime_docker_missing_logging_conf_fix.md
 docs\keylime_docker_phase1_csri9_openstack.md
 docs\keylime_openstack_case4_host_quarantine.md
+docs\keylime_openstack_current_issue_hardening_baseline.md
 docs\keylime_openstack_install_deploy_plan.md
 docs\keylime_openstack_lab_plan.md
 docs\keylime_openstack_phase1_csri9_only.md
