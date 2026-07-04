@@ -121,7 +121,18 @@ create / edit / delete TPM PCR policies
 store policy JSON under /var/lib/keylime-openstack-sync/
 bind policies to compute nodes by Keylime agent UUID
 apply one policy to one node or all configured agent nodes
-call keylime-tenant delete + add with --tpm_policy for verifier enrollment
+call keylime-tenant update + reactivate with --tpm_policy for verifier policy changes
+```
+
+### Case 7: Multi-Node Trust Inventory and Sync
+
+The current controller handles csri9 and csri8 as trusted-compute candidates:
+
+```text
+auto-discover nova-compute nodes from OpenStack
+refresh Keylime agent inventory from registrar reglist
+fall back to static host/IP/UUID maps when reglist cannot be matched by IP
+write per-host decision files for multi-node monitoring and quarantine
 ```
 
 ## Important Security Notes
@@ -156,3 +167,5 @@ add alerting, dampening, and human approval for host quarantine
 7. `docs/keylime_openstack_case4_host_quarantine.md`
 8. `docs/keylime_openstack_frontend_trust_monitor_baseline.md`
 9. `docs/keylime_openstack_frontend_tpm_pcr_policy_management.md`
+10. `docs/keylime_agent_inventory_auto_discovery.md`
+11. `docs/keylime_openstack_multinode_sync_current_issues_2026-07-04.md`

@@ -5,6 +5,7 @@ deploy\examples\verification-commands.md
 deploy\frontend\index.html
 deploy\frontend\README.md
 deploy\frontend\trust_monitor_server.py
+deploy\scripts\keylime-agent-inventory-refresh.sh
 deploy\scripts\keylime-nova-compute-quarantine.sh
 deploy\scripts\keylime-placement-sync.sh
 deploy\scripts\keylime-placement-sync-locked.sh
@@ -13,13 +14,16 @@ deploy\scripts\keylime-sync-control-loop.sh
 deploy\scripts\restart-keylime-agent-csri9.sh
 deploy\systemd\keylime-openstack-sync.service
 deploy\systemd\keylime-openstack-sync.timer
+docs\keylime_agent_inventory_auto_discovery.md
 docs\keylime_docker_missing_logging_conf_fix.md
 docs\keylime_docker_phase1_csri9_openstack.md
 docs\keylime_openstack_case4_host_quarantine.md
 docs\keylime_openstack_current_issue_hardening_baseline.md
+docs\keylime_openstack_frontend_tpm_pcr_policy_management.md
 docs\keylime_openstack_frontend_trust_monitor_baseline.md
 docs\keylime_openstack_install_deploy_plan.md
 docs\keylime_openstack_lab_plan.md
+docs\keylime_openstack_multinode_sync_current_issues_2026-07-04.md
 docs\keylime_openstack_phase1_csri9_only.md
 docs\keylime_openstack_phase1_record_phase2_sync.md
 docs\keylime_openstack_phase2_attestation_freshness.md

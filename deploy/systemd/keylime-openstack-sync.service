@@ -5,11 +5,9 @@ After=docker.service network-online.target
 
 [Service]
 Type=oneshot
-EnvironmentFile=-/etc/keylime-openstack-sync/openstack-keylime-lab.env
 ExecStart=/opt/keylime-openstack-sync/keylime-sync-control-loop.sh
 TimeoutStartSec=120
 User=root
 Group=root
 StandardOutput=journal
 StandardError=journal
-

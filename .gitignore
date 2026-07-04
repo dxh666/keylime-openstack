@@ -24,3 +24,7 @@ Thumbs.db
 .idea/
 .vscode/
 
+# Python runtime cache
+__pycache__/
+*.py[cod]
+

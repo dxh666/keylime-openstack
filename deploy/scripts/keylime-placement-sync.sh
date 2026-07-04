@@ -2,7 +2,20 @@
 set -euo pipefail
 
 ENV_FILE="${KEYLIME_OPENSTACK_ENV_FILE:-/etc/keylime-openstack-sync/openstack-keylime-lab.env}"
+
+CALLER_AGENT_UUID="${AGENT_UUID:-}"
+CALLER_RP_NAME="${RP_NAME:-}"
+CALLER_RAW_STATUS_FILE="${RAW_STATUS_FILE:-}"
+CALLER_DECISION_FILE="${DECISION_FILE:-}"
+CALLER_LAST_LOG_FILE="${LAST_LOG_FILE:-}"
+
 [ -f "$ENV_FILE" ] && source "$ENV_FILE"
+
+[ -n "$CALLER_AGENT_UUID" ] && AGENT_UUID="$CALLER_AGENT_UUID"
+[ -n "$CALLER_RP_NAME" ] && RP_NAME="$CALLER_RP_NAME"
+[ -n "$CALLER_RAW_STATUS_FILE" ] && RAW_STATUS_FILE="$CALLER_RAW_STATUS_FILE"
+[ -n "$CALLER_DECISION_FILE" ] && DECISION_FILE="$CALLER_DECISION_FILE"
+[ -n "$CALLER_LAST_LOG_FILE" ] && LAST_LOG_FILE="$CALLER_LAST_LOG_FILE"
 
 OPENRC="${OPENRC:-/etc/kolla/admin-openrc.sh}"
 KEYLIME_DIR="${KEYLIME_DIR:-/opt/keylime-docker}"
@@ -41,10 +54,24 @@ install -d -m 0755 \
 source "$OPENRC"
 export OS_PLACEMENT_API_VERSION="${OS_PLACEMENT_API_VERSION:-1.17}"
 
-RP_UUID="$(openstack resource provider list --name "$RP_NAME" -f value -c uuid | awk 'NF {print; exit}')"
+echo "Placement sync target: rp_name=$RP_NAME agent_uuid=$AGENT_UUID decision_file=$DECISION_FILE"
+
+set +e
+RP_UUID_LIST="$(openstack resource provider list --name "$RP_NAME" -f value -c uuid 2>&1)"
+rp_list_rc=$?
+set -e
+
+if [ "$rp_list_rc" -ne 0 ]; then
+  echo "ERROR: failed to query resource provider '$RP_NAME' rc=$rp_list_rc"
+  printf '%s\n' "$RP_UUID_LIST"
+  exit "$rp_list_rc"
+fi
+
+RP_UUID="$(printf '%s\n' "$RP_UUID_LIST" | awk 'NF {print; exit}')"
 
 if [ -z "$RP_UUID" ]; then
   echo "ERROR: resource provider '$RP_NAME' not found"
+  printf 'resource_provider_query_output=%s\n' "$RP_UUID_LIST"
   exit 1
 fi
 
@@ -64,7 +91,6 @@ get_keylime_status_raw() {
       2>&1
   )"
   rc=$?
-  set -e
 
   printf '%s\n' "$out" > "$RAW_STATUS_FILE"
   return "$rc"

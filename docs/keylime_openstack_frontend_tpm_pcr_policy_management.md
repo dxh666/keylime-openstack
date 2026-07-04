@@ -31,7 +31,9 @@
   "mask": "0x80",
   "tpm_policy": {
     "mask": "0x80",
-    "7": "AD69DC884387BB14056F05ABC4AB0B8AA751824D909931618FB6365EE2C2938D"
+    "7": [
+      "ad69dc884387bb14056f05abc4ab0b8aa751824d909931618fb6365ee2c2938d"
+    ]
   }
 }
 ```
@@ -119,15 +121,7 @@ export KEYLIME_AGENT_PORT="9002"
 
 ```bash
 docker compose run --rm keylime-tenant \
-  -c delete \
-  -u <agent_uuid> \
-  -v 172.31.100.10 \
-  -vp 8881 \
-  -r 172.31.100.10 \
-  -rp 8891
-
-docker compose run --rm keylime-tenant \
-  -c add \
+  -c update \
   -t <agent_ip> \
   -tp 9002 \
   -u <agent_uuid> \
@@ -135,7 +129,16 @@ docker compose run --rm keylime-tenant \
   -vp 8881 \
   -r 172.31.100.10 \
   -rp 8891 \
+  --agent-api-version 2.5 \
   --tpm_policy '<policy_json>'
+
+docker compose run --rm keylime-tenant \
+  -c reactivate \
+  -u <agent_uuid> \
+  -v 172.31.100.10 \
+  -vp 8881 \
+  -r 172.31.100.10 \
+  -rp 8891
 ```
 
 这个过程会短暂重置该 agent 的 verifier 状态。等待 verifier 下一轮 quote 后，状态应进入 `PASS` 或 `FAIL`。

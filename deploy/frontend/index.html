@@ -1073,13 +1073,15 @@
     function generatedTpmPolicy() {
       const policy = readPolicyForm();
       let mask = 0;
+      const generated = {};
       Object.keys(policy.pcrs).forEach((key) => {
         const idx = Number(key);
         if (Number.isInteger(idx) && idx >= 0 && idx <= 23) {
           mask |= 1 << idx;
+          generated[key] = [String(policy.pcrs[key]).toLowerCase()];
         }
       });
-      return { mask: `0x${mask.toString(16)}`, ...policy.pcrs };
+      return { mask: `0x${mask.toString(16)}`, ...generated };
     }
 
     function updateGeneratedPolicyJson() {
@@ -1302,7 +1304,7 @@
       }
       el("applyResult").innerHTML = results.map((item) => {
         const kind = item.status === "success" ? "ok" : "bad";
-        const message = item.message || `add_rc=${item.add_rc ?? "-"} delete_rc=${item.delete_rc ?? "-"}`;
+        const message = item.message || `update_rc=${item.update_rc ?? "-"} reactivate_rc=${item.reactivate_rc ?? "-"} sync_rc=${item.sync_rc ?? "-"}`;
         return `
           <div class="result-item">
             <div class="row" style="justify-content: space-between;">

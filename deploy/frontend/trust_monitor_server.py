@@ -26,10 +26,14 @@ DEFAULT_ENV_FILE = "/etc/keylime-openstack-sync/openstack-keylime-lab.env"
 DEFAULTS = {
     "OPENRC": "/etc/kolla/admin-openrc.sh",
     "KEYLIME_DIR": "/opt/keylime-docker",
+    "KEYLIME_OPENSTACK_SYNC_DIR": "/opt/keylime-openstack-sync",
     "KEYLIME_OPENSTACK_LOG_DIR": "/var/log",
     "KEYLIME_OPENSTACK_STATE_DIR": "/var/lib/keylime-openstack-sync",
     "KEYLIME_PCR_POLICY_FILE": "",
     "KEYLIME_POLICY_ADMIN_TOKEN": "",
+    "KEYLIME_POLICY_APPLY_REACTIVATE": "true",
+    "KEYLIME_POLICY_APPLY_SYNC": "false",
+    "KEYLIME_POLICY_APPLY_SYNC_MODE": "placement",
     "KEYLIME_STATUS_REFRESH_SECONDS": "3",
     "KEYLIME_VERIFIER_IP": "172.31.100.10",
     "KEYLIME_VERIFIER_PORT": "8881",
@@ -42,6 +46,9 @@ DEFAULTS = {
     "KEYLIME_AGENT_UUID_FIXED": "11111111-1111-4111-8111-000000000009",
     "KEYLIME_AGENT_IP": "172.31.100.9",
     "KEYLIME_AGENT_PORT": "9002",
+    "KEYLIME_AGENT_API_VERSION": "2.5",
+    "KEYLIME_AGENT_INVENTORY_FILE": "/etc/keylime-openstack-sync/keylime-agent-inventory.env",
+    "KEYLIME_AGENT_INVENTORY_JSON": "/var/log/keylime-openstack-agent-inventory.json",
     "KEYLIME_AGENT_HOSTS": "",
     "KEYLIME_AGENT_IP_MAP": "",
     "KEYLIME_AGENT_UUID_MAP": "",
@@ -68,27 +75,55 @@ def utc_now() -> str:
     return dt.datetime.now(dt.timezone.utc).isoformat()
 
 
-def load_env_file(path: str) -> dict[str, str]:
+def expand_env_refs(value: str, env: dict[str, str]) -> str:
+    def replace(match: re.Match[str]) -> str:
+        key = match.group("braced") or match.group("plain") or ""
+        return env.get(key, os.environ.get(key, ""))
+
+    return re.sub(r"\$(?:{(?P<braced>[A-Za-z_][A-Za-z0-9_]*)}|(?P<plain>[A-Za-z_][A-Za-z0-9_]*))", replace, value)
+
+
+def load_env_file(path: str, seen: set[str] | None = None) -> dict[str, str]:
     env: dict[str, str] = {}
     env_path = Path(path)
     if not env_path.is_file():
         return env
+    resolved_path = str(env_path.resolve())
+    seen = seen or set()
+    if resolved_path in seen:
+        return env
+    seen.add(resolved_path)
 
     pattern = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)\s*$")
+    source_pattern = re.compile(r"(?:^|&&\s*)(?:source|\.)\s+(.+?)\s*$")
     for raw_line in env_path.read_text(encoding="utf-8", errors="replace").splitlines():
-        line = raw_line.strip()
+        line = raw_line.strip().lstrip("\ufeff")
         if not line or line.startswith("#"):
             continue
         match = pattern.match(line)
-        if not match:
+        if match:
+            key, raw_value = match.groups()
+            try:
+                parts = shlex.split(raw_value, comments=False, posix=True)
+                value = parts[0] if parts else ""
+            except ValueError:
+                value = raw_value.strip().strip("\"'")
+            env[key] = expand_env_refs(value, env)
             continue
-        key, raw_value = match.groups()
+
+        source_match = source_pattern.search(line)
+        if not source_match:
+            continue
         try:
-            parts = shlex.split(raw_value, comments=False, posix=True)
-            value = parts[0] if parts else ""
+            parts = shlex.split(source_match.group(1), comments=False, posix=True)
         except ValueError:
-            value = raw_value.strip().strip("\"'")
-        env[key] = value
+            parts = []
+        if not parts:
+            continue
+        source_path = Path(expand_env_refs(parts[0], env))
+        if not source_path.is_absolute():
+            source_path = env_path.parent / source_path
+        env.update(load_env_file(str(source_path), seen))
     return env
 
 
@@ -773,6 +808,7 @@ def collect_status(config: dict[str, Any]) -> dict[str, Any]:
             "env_file": config["ENV_FILE"],
             "compute_service": config["COMPUTE_SERVICE"],
             "trusted_trait": config["TRUSTED_TRAIT"],
+            "keylime_agent_inventory_file": config.get("KEYLIME_AGENT_INVENTORY_FILE", ""),
             "keylime_agent_hosts": config["AGENT_HOSTS"],
             "keylime_agent_uuid_map": config["AGENT_UUID_BY_HOST"],
         },
@@ -947,6 +983,13 @@ def calculate_mask(pcrs: dict[str, str]) -> str:
     return hex(mask)
 
 
+def build_tpm_policy(pcrs: dict[str, str]) -> dict[str, Any]:
+    policy: dict[str, Any] = {"mask": calculate_mask(pcrs)}
+    for key, digest in sorted(pcrs.items(), key=lambda item: int(item[0])):
+        policy[key] = [str(digest).lower()]
+    return policy
+
+
 def normalize_pcrs(payload: Any, hash_alg: str) -> dict[str, str]:
     pcrs: dict[str, str] = {}
     if isinstance(payload, dict):
@@ -996,7 +1039,7 @@ def normalize_policy_payload(payload: dict[str, Any], existing: dict[str, Any] |
         "hash_alg": hash_alg,
         "pcrs": pcrs,
         "mask": calculate_mask(pcrs),
-        "tpm_policy": {"mask": calculate_mask(pcrs), **pcrs},
+        "tpm_policy": build_tpm_policy(pcrs),
         "created_at_utc": created_at,
         "updated_at_utc": now,
     }
@@ -1090,6 +1133,9 @@ def collect_policy_overview(config: dict[str, Any], status: dict[str, Any] | Non
         if not isinstance(item, dict):
             continue
         policy = dict(item)
+        if isinstance(policy.get("pcrs"), dict):
+            policy["mask"] = calculate_mask(policy["pcrs"])
+            policy["tpm_policy"] = build_tpm_policy(policy["pcrs"])
         policy["tpm_policy_json"] = json.dumps(policy.get("tpm_policy", {}), ensure_ascii=False, sort_keys=True)
         policies.append(policy)
 
@@ -1129,6 +1175,15 @@ def run_keylime_tenant(config: dict[str, Any], args: list[str], timeout: int = 1
     return run_command(command, timeout=timeout, cwd=str(keylime_dir))
 
 
+def run_policy_sync(config: dict[str, Any], mode: str = "placement") -> dict[str, Any]:
+    sync_dir = Path(str(config.get("KEYLIME_OPENSTACK_SYNC_DIR", "/opt/keylime-openstack-sync")))
+    script_name = "keylime-sync-control-loop.sh" if mode == "control-loop" else "keylime-placement-sync.sh"
+    script = sync_dir / script_name
+    if not script.is_file():
+        return {"rc": 1, "stdout": "", "stderr": f"sync script not found: {script}"}
+    return run_command([str(script)], timeout=240)
+
+
 def tail_text(value: str, limit: int = 4000) -> str:
     if len(value) <= limit:
         return value
@@ -1159,12 +1214,17 @@ def apply_policy(config: dict[str, Any], payload: dict[str, Any]) -> dict[str, A
     if not requested_hosts:
         raise ApiError(HTTPStatus.BAD_REQUEST, "至少选择一个计算节点")
 
-    tpm_policy_json = json.dumps(policy["tpm_policy"], separators=(",", ":"), sort_keys=True)
+    tpm_policy = build_tpm_policy(policy.get("pcrs", {}))
+    tpm_policy_json = json.dumps(tpm_policy, separators=(",", ":"), sort_keys=True)
     verifier_ip = str(config["KEYLIME_VERIFIER_IP"])
     verifier_port = str(config["KEYLIME_VERIFIER_PORT"])
     registrar_ip = str(config["KEYLIME_REGISTRAR_IP"])
     registrar_port = str(config["KEYLIME_REGISTRAR_PORT"])
     agent_port = str(config.get("KEYLIME_AGENT_PORT", "9002"))
+    agent_api_version = str(config.get("KEYLIME_AGENT_API_VERSION", "2.5"))
+    should_reactivate = is_truthy(config.get("KEYLIME_POLICY_APPLY_REACTIVATE", "true"))
+    should_sync = is_truthy(config.get("KEYLIME_POLICY_APPLY_SYNC", "false"))
+    sync_mode = str(config.get("KEYLIME_POLICY_APPLY_SYNC_MODE", "placement"))
     results = []
 
     for host in requested_hosts:
@@ -1189,31 +1249,57 @@ def apply_policy(config: dict[str, Any], payload: dict[str, Any]) -> dict[str, A
             "-r", registrar_ip,
             "-rp", registrar_port,
         ]
-        delete_result = run_keylime_tenant(config, ["-c", "delete", *common], timeout=90)
-        add_result = run_keylime_tenant(
+        update_result = run_keylime_tenant(
             config,
             [
-                "-c", "add",
+                "-c", "update",
                 "-t", agent_ip,
                 "-tp", agent_port,
                 *common,
+                "--agent-api-version", agent_api_version,
                 "--tpm_policy", tpm_policy_json,
             ],
             timeout=240,
         )
-        success = add_result["rc"] == 0
+        reactivate_result = {"rc": 0, "stdout": "", "stderr": "reactivate skipped"}
+        if update_result["rc"] == 0 and should_reactivate:
+            reactivate_result = run_keylime_tenant(
+                config,
+                ["-c", "reactivate", *common],
+                timeout=120,
+            )
+
+        sync_result = {"rc": 0, "stdout": "", "stderr": "sync skipped"}
+        if update_result["rc"] == 0 and reactivate_result["rc"] == 0 and should_sync:
+            sync_result = run_policy_sync(config, mode=sync_mode)
+
+        success = update_result["rc"] == 0 and reactivate_result["rc"] == 0 and sync_result["rc"] == 0
         record = {
             "host": host,
             "agent_uuid": agent_uuid,
             "agent_ip": agent_ip,
             "policy_id": policy["id"],
             "policy_name": policy["name"],
+            "tpm_policy": tpm_policy,
             "status": "success" if success else "failed",
             "applied_at_utc": utc_now(),
-            "delete_rc": delete_result["rc"],
-            "add_rc": add_result["rc"],
-            "stdout": tail_text(add_result["stdout"]),
-            "stderr": tail_text(add_result["stderr"] or delete_result["stderr"]),
+            "update_rc": update_result["rc"],
+            "reactivate_rc": reactivate_result["rc"],
+            "sync_rc": sync_result["rc"],
+            "stdout": tail_text("\n".join(
+                part for part in [
+                    update_result["stdout"],
+                    reactivate_result["stdout"],
+                    sync_result["stdout"],
+                ] if part
+            )),
+            "stderr": tail_text("\n".join(
+                part for part in [
+                    update_result["stderr"],
+                    reactivate_result["stderr"],
+                    sync_result["stderr"],
+                ] if part and part not in ("reactivate skipped", "sync skipped")
+            )),
         }
         store.setdefault("bindings", {})[host] = record
         store.setdefault("events", []).append(
