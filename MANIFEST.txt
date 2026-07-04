@@ -12,6 +12,7 @@ deploy\scripts\keylime-placement-sync.sh
 deploy\scripts\keylime-placement-sync-locked.sh
 deploy\scripts\keylime-reactivate-csri9.sh
 deploy\scripts\keylime-sync-control-loop.sh
+deploy\scripts\keylime-vm-risk-marker.sh
 deploy\scripts\restart-keylime-agent-csri9.sh
 deploy\systemd\keylime-openstack-sync.service
 deploy\systemd\keylime-openstack-sync.timer
@@ -20,6 +21,7 @@ docs\keylime_docker_missing_logging_conf_fix.md
 docs\keylime_docker_phase1_csri9_openstack.md
 docs\keylime_openstack_case4_host_quarantine.md
 docs\keylime_openstack_case8_dynamic_trusted_pool.md
+docs\keylime_openstack_case9_vm_risk_marker.md
 docs\keylime_openstack_current_issue_hardening_baseline.md
 docs\keylime_openstack_frontend_tpm_pcr_policy_management.md
 docs\keylime_openstack_frontend_trust_monitor_baseline.md

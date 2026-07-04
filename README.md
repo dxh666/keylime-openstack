@@ -147,6 +147,17 @@ trusted workload continues to run on csri9
 csri8 agent recovered -> csri8 regains the trait and can host trusted workloads again
 ```
 
+### Case 9: Existing VM Risk Marking
+
+Existing VMs on an untrusted compute host are marked for audit:
+
+```text
+untrusted host -> set keylime_trust_* metadata on hosted VMs
+trusted host -> clear keylime_trust_* metadata
+metadata audit file records MARK/CLEAR actions
+the marker runs from the existing keylime-openstack-sync.timer control loop
+```
+
 ## Important Security Notes
 
 This repository is sanitized for GitHub:
@@ -182,3 +193,4 @@ add alerting, dampening, and human approval for host quarantine
 10. `docs/keylime_agent_inventory_auto_discovery.md`
 11. `docs/keylime_openstack_multinode_sync_current_issues_2026-07-04.md`
 12. `docs/keylime_openstack_case8_dynamic_trusted_pool.md`
+13. `docs/keylime_openstack_case9_vm_risk_marker.md`

@@ -320,6 +320,8 @@ trusted.production -> CUSTOM_KEYLIME_PRODUCTION_TRUSTED
 
 不建议第一阶段自动迁移虚拟机，因为迁移可能带来更大的故障面。
 
+2026-07-04 更新：已完成 Case 9 第一版失信处置能力。`keylime-vm-risk-marker.sh` 会在 host 失信时给该 host 上已有 VM 写入 `keylime_trust_*` metadata，并在 host 恢复 `PASS_FRESH` 后清理 metadata。该能力已挂载到现有 `keylime-openstack-sync.timer` 控制循环中。
+
 ### 阶段 8：多节点接入
 
 目的：从 `csri9` 单节点扩展到可信计算池。
@@ -402,4 +404,3 @@ Flavor / Project 消费可信
 ```text
 可信证明 -> 策略判断 -> 云平台资源表达 -> 调度强制执行 -> 失信处置 -> 审计追踪
 ```
-

@@ -7,7 +7,9 @@
 ```text
 csri8 已完成 TPM 修复、Keylime agent 部署和多节点纳管。
 后续 Case 8 已验证 csri8/csri9 组成的可信计算池可以随 Keylime 状态动态收缩与恢复。
+Case 9 已验证失信 host 上已有 VM 可通过 OpenStack metadata 自动标记和恢复清理。
 详见 docs/keylime_openstack_case8_dynamic_trusted_pool.md。
+详见 docs/keylime_openstack_case9_vm_risk_marker.md。
 ```
 
 ## 1. 案例背景
@@ -644,4 +646,3 @@ Keylime 负责证明宿主机可信，
 OpenStack Project 负责控制谁能申请可信资源，
 OpenStack Placement/Nova 负责保证可信资源只能落到可信宿主机。
 ```
-

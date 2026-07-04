@@ -9,6 +9,7 @@ SYNC_DIR="${KEYLIME_OPENSTACK_SYNC_DIR:-/opt/keylime-openstack-sync}"
 INVENTORY_REFRESH="${INVENTORY_REFRESH:-$SYNC_DIR/keylime-agent-inventory-refresh.sh}"
 PLACEMENT_SYNC="${PLACEMENT_SYNC:-$SYNC_DIR/keylime-placement-sync.sh}"
 QUARANTINE_SYNC="${QUARANTINE_SYNC:-$SYNC_DIR/keylime-nova-compute-quarantine.sh}"
+VM_RISK_MARKER="${VM_RISK_MARKER:-$SYNC_DIR/keylime-vm-risk-marker.sh}"
 LOG_DIR="${KEYLIME_OPENSTACK_LOG_DIR:-/var/log}"
 
 for script in "$PLACEMENT_SYNC" "$QUARANTINE_SYNC"; do
@@ -160,3 +161,13 @@ for host in "${HOSTS[@]}"; do
   fi
   run_for_host "$host" "$uuid"
 done
+
+if is_truthy "${KEYLIME_VM_RISK_MARKER_ENABLE:-false}"; then
+  if [ -x "$VM_RISK_MARKER" ]; then
+    echo "Mark or clear VM risk metadata based on current Keylime/OpenStack trust state"
+    KEYLIME_OPENSTACK_ENV_FILE="$ENV_FILE" "$VM_RISK_MARKER" || \
+      echo "WARN: VM risk marker failed; trust sync already completed."
+  else
+    echo "WARN: VM risk marker script is not executable: $VM_RISK_MARKER"
+  fi
+fi
