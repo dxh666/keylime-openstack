@@ -122,6 +122,53 @@ KEYLIME_AGENT_UUID_FIXED
 export KEYLIME_PCR_POLICY_FILE="/var/lib/keylime-openstack-sync/tpm-pcr-policies.json"
 ```
 
+## Case 10B PCR 策略基线能力
+
+管理系统的策略页面现在支持从 TPM evidence baseline 自动导入策略。
+
+策略管理页面按 Keylime 能力拆成两个模块：
+
+```text
+启动度量策略
+  当前已实现，围绕 TPM PCR baseline、PCR7 准入策略、按节点绑定和下发展开。
+
+运行时完整性策略
+  已预留独立入口，后续基于 Keylime IMA runtime policy / PCR10 / runtime measurements 实现。
+```
+
+默认页面只展示启动度量常用操作；策略 JSON 编辑、模板和手动下发在“高级策略编辑与手动下发”折叠区中。
+
+相关文件：
+
+```text
+/var/log/keylime-openstack-tpm-evidence-baseline.json
+/var/lib/keylime-openstack-sync/tpm-pcr-policies.json
+/var/lib/keylime-openstack-sync/policies/
+/var/log/keylime-openstack-policy-render.json
+/var/log/keylime-openstack-policy-apply.json
+```
+
+相关 API：
+
+```text
+GET  /api/policies/baseline
+POST /api/policies/import-baseline
+POST /api/policies/apply-bound
+POST /api/policies/quick-pcr7
+```
+
+页面操作：
+
+```text
+刷新基线
+从基线导入策略
+按绑定策略下发
+对单节点恢复 PCR7 基线
+对单节点下发错误 PCR7
+```
+
+默认推荐绑定 PCR7 baseline。PCR0-7 exact policy 会被导入策略库，但当前只建议用于 measured boot 诊断。
+
 ## 写 API 令牌
 
 如果设置了：
@@ -130,7 +177,7 @@ export KEYLIME_PCR_POLICY_FILE="/var/lib/keylime-openstack-sync/tpm-pcr-policies
 export KEYLIME_POLICY_ADMIN_TOKEN="<TOKEN>"
 ```
 
-前端保存策略、删除策略、下发策略时需要在页面右上角填写同一个管理令牌。
+前端保存策略、删除策略、下发策略时需要在高级策略区填写同一个管理令牌。
 实验环境可以先留空。
 
 ## TPM PCR 策略格式
@@ -142,6 +189,7 @@ export KEYLIME_POLICY_ADMIN_TOKEN="<TOKEN>"
   "id": "csri8-pcr7",
   "name": "csri8 PCR7 基线",
   "type": "tpm_pcr",
+  "module": "boot_measurement",
   "hash_alg": "sha256",
   "pcrs": {
     "7": "AD69DC884387BB14056F05ABC4AB0B8AA751824D909931618FB6365EE2C2938D"

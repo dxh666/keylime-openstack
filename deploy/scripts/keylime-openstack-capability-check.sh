@@ -28,7 +28,10 @@ for script in \
   keylime-nova-compute-quarantine.sh \
   keylime-sync-control-loop.sh \
   keylime-vm-risk-marker.sh \
-  keylime-openstack-trusted-flavor-setup.sh; do
+  keylime-openstack-trusted-flavor-setup.sh \
+  keylime-tpm-evidence-audit.sh \
+  keylime-tpm-pcr-policy-render-from-baseline.sh \
+  keylime-tpm-pcr-policy-apply.sh; do
   path="$SYNC_DIR/$script"
   if [ -x "$path" ]; then
     echo "OK: $path"
@@ -113,3 +116,19 @@ PY
 else
   echo "NO_AUDIT_FILE: $AUDIT_FILE"
 fi
+
+section "TPM PCR policy management"
+echo "KEYLIME_PCR_POLICY_FILE=${KEYLIME_PCR_POLICY_FILE:-/var/lib/keylime-openstack-sync/tpm-pcr-policies.json}"
+echo "KEYLIME_TPM_EVIDENCE_BASELINE_JSON=${KEYLIME_TPM_EVIDENCE_BASELINE_JSON:-/var/log/keylime-openstack-tpm-evidence-baseline.json}"
+echo "KEYLIME_POLICY_BASE_DIR=${KEYLIME_POLICY_BASE_DIR:-/var/lib/keylime-openstack-sync/policies}"
+for file in \
+  "${KEYLIME_TPM_EVIDENCE_BASELINE_JSON:-/var/log/keylime-openstack-tpm-evidence-baseline.json}" \
+  "${KEYLIME_PCR_POLICY_FILE:-/var/lib/keylime-openstack-sync/tpm-pcr-policies.json}" \
+  "${KEYLIME_POLICY_RENDER_AUDIT_FILE:-/var/log/keylime-openstack-policy-render.json}" \
+  "${KEYLIME_POLICY_APPLY_AUDIT_FILE:-/var/log/keylime-openstack-policy-apply.json}"; do
+  if [ -r "$file" ]; then
+    echo "OK: $file"
+  else
+    echo "MISSING_OR_NOT_READABLE: $file"
+  fi
+done

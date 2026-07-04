@@ -430,11 +430,63 @@
       color: var(--bad);
     }
 
+    .module-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .module-tab {
+      background: #fff;
+      border-color: var(--line);
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .module-tab.active {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    .policy-module {
+      display: none;
+    }
+
+    .policy-module.active {
+      display: block;
+    }
+
+    .advanced-panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      margin-top: 14px;
+    }
+
+    .advanced-panel > summary {
+      cursor: pointer;
+      font-weight: 700;
+      padding: 13px 14px;
+    }
+
+    .advanced-panel[open] > summary {
+      border-bottom: 1px solid var(--line);
+    }
+
+    .advanced-toolbar {
+      padding: 14px;
+      border-bottom: 1px solid var(--line);
+    }
+
     .policy-layout {
       display: grid;
       grid-template-columns: minmax(360px, 480px) minmax(0, 1fr);
       gap: 14px;
       align-items: start;
+      padding: 14px;
     }
 
     .stack {
@@ -687,21 +739,45 @@
 
         <div id="policyNotice" class="notice"></div>
 
-        <section class="toolbar">
-          <div class="row">
-            <button id="refreshPolicies" class="primary">刷新策略</button>
-            <button id="newPolicy" class="ghost">新建策略</button>
-          </div>
-          <label class="row">
-            <span class="subtle">管理令牌</span>
-            <input id="adminToken" type="password" autocomplete="off" placeholder="可选" style="width: 180px;">
-          </label>
-        </section>
+        <div class="module-tabs" role="tablist" aria-label="Keylime 策略模块">
+          <button class="module-tab active" type="button" data-policy-module="boot">启动度量策略</button>
+          <button class="module-tab" type="button" data-policy-module="runtime">运行时完整性策略</button>
+        </div>
 
-        <section class="policy-layout">
-          <div class="stack">
-            <div class="panel">
-              <h2>策略编辑</h2>
+        <section class="policy-module active" id="policy-module-boot">
+          <section class="panel" id="baselinePanel">
+            <div class="row" style="justify-content: space-between;">
+              <div>
+                <h2 style="margin-bottom: 4px;">启动度量策略</h2>
+                <div id="baselineSummary" class="subtle">正在读取 TPM evidence baseline...</div>
+              </div>
+              <div class="actions">
+                <button id="refreshBaseline" type="button">刷新基线</button>
+                <button id="importBaselinePolicies" type="button">从基线导入策略</button>
+                <button id="applyBoundPolicies" type="button" class="primary">按绑定策略下发</button>
+              </div>
+            </div>
+            <div id="baselineNodeList" class="result-list" style="margin-top: 12px;"></div>
+          </section>
+
+          <details class="advanced-panel">
+            <summary>高级策略编辑与手动下发</summary>
+            <section class="advanced-toolbar">
+              <div class="row" style="justify-content: space-between;">
+                <div class="row">
+                  <button id="refreshPolicies" class="primary">刷新策略库</button>
+                  <button id="newPolicy" class="ghost">新建策略</button>
+                </div>
+                <label class="row">
+                  <span class="subtle">管理令牌</span>
+                  <input id="adminToken" type="password" autocomplete="off" placeholder="可选" style="width: 180px;">
+                </label>
+              </div>
+            </section>
+            <section class="policy-layout">
+              <div class="stack">
+                <div class="panel">
+                  <h2>策略编辑</h2>
               <div class="form-grid">
                 <div class="field">
                   <label for="policyName">策略名称</label>
@@ -787,6 +863,33 @@
             </div>
           </div>
         </section>
+        </details>
+        </section>
+
+        <section class="policy-module" id="policy-module-runtime">
+          <section class="panel">
+            <h2>运行时完整性策略</h2>
+            <div class="subtle">
+              当前阶段先完成启动过程度量可信。运行时完整性后续基于 Keylime IMA runtime policy 实现，用于验证宿主机运行过程中文件、脚本、keyring 等是否偏离可信基线。
+            </div>
+            <div class="result-list" style="margin-top: 12px;">
+              <div class="result-item">
+                <div class="kv">
+                  <div class="key">Keylime 能力</div>
+                  <div class="value">IMA runtime policy / PCR10 / runtime measurements</div>
+                </div>
+                <div class="kv">
+                  <div class="key">当前状态</div>
+                  <div class="value">功能入口已拆分，策略下发暂未启用</div>
+                </div>
+                <div class="kv">
+                  <div class="key">下一步</div>
+                  <div class="value">采集 IMA runtime baseline，生成 runtime policy，并联动 OpenStack 可信状态</div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </section>
       </section>
     </main>
   </div>
@@ -800,8 +903,11 @@
       policies: [],
       policyNodes: [],
       templates: [],
+      baseline: null,
+      policyModule: "boot",
       selectedPolicyId: "",
-      editingPolicyId: ""
+      editingPolicyId: "",
+      editingPolicyModule: "boot_measurement"
     };
 
     function el(id) {
@@ -819,6 +925,16 @@
 
     function badge(kind, text) {
       return `<span class="badge ${kind}">${escapeHtml(text)}</span>`;
+    }
+
+    function policyModuleLabel(moduleName) {
+      const labels = {
+        boot_measurement: "启动度量",
+        boot_measurement_diagnostic: "启动诊断",
+        boot_measurement_negative_test: "反向验证",
+        runtime_integrity: "运行时完整性"
+      };
+      return labels[moduleName] || moduleName || "启动度量";
     }
 
     function setBadge(node, kind, text) {
@@ -1021,6 +1137,19 @@
       }
     }
 
+    function switchPolicyModule(moduleName) {
+      state.policyModule = moduleName;
+      document.querySelectorAll(".policy-module").forEach((node) => {
+        node.classList.toggle("active", node.id === `policy-module-${moduleName}`);
+      });
+      document.querySelectorAll(".module-tab").forEach((node) => {
+        node.classList.toggle("active", node.dataset.policyModule === moduleName);
+      });
+      if (moduleName === "boot") {
+        refreshPolicies();
+      }
+    }
+
     function digestLength(alg) {
       return { sha1: 40, sha256: 64, sha384: 96, sha512: 128 }[alg] || 64;
     }
@@ -1065,6 +1194,7 @@
         id: policyId,
         name: el("policyName").value.trim(),
         description: el("policyDescription").value.trim(),
+        module: state.editingPolicyModule || "boot_measurement",
         hash_alg: hashAlg,
         pcrs
       };
@@ -1091,6 +1221,7 @@
 
     function resetPolicyForm() {
       state.editingPolicyId = "";
+      state.editingPolicyModule = "boot_measurement";
       el("policyName").value = "";
       el("policyId").value = "";
       el("policyDescription").value = "";
@@ -1102,6 +1233,7 @@
 
     function fillPolicyForm(policy) {
       state.editingPolicyId = policy.id || "";
+      state.editingPolicyModule = policy.module || "boot_measurement";
       el("policyName").value = policy.name || "";
       el("policyId").value = policy.id || "";
       el("policyDescription").value = policy.description || "";
@@ -1186,7 +1318,10 @@
                 <strong>${escapeHtml(policy.name)}</strong>
                 <span class="subtle">${escapeHtml(policy.id)}</span>
               </div>
-              ${badge("ok", policy.hash_alg || "sha256")}
+              <div class="chips">
+                ${badge("ok", policyModuleLabel(policy.module))}
+                ${badge("ok", policy.hash_alg || "sha256")}
+              </div>
             </div>
             <div class="kv">
               <div class="key">PCR</div>
@@ -1250,11 +1385,60 @@
       state.policies = data.policies || [];
       state.policyNodes = data.nodes || [];
       state.templates = data.templates || [];
+      state.baseline = data.baseline || null;
       el("policyStorePath").textContent = `策略文件: ${data.store_path || "-"}`;
       setBadge(el("policyApiBadge"), "ok", "API 已连接");
+      renderBaselinePanel();
       renderPolicyList();
       renderTemplateList();
       renderApplyNodes();
+    }
+
+    function renderBaselinePanel() {
+      const baseline = state.baseline || {};
+      if (!baseline.ok) {
+        el("baselineSummary").textContent = baseline.message || "未找到 TPM evidence baseline";
+        el("baselineNodeList").innerHTML = `
+          <div class="result-item">
+            <div class="kv">
+              <div class="key">基线文件</div>
+              <div class="value mono">${escapeHtml(baseline.path || "-")}</div>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      el("baselineSummary").textContent =
+        `基线时间: ${baseline.checked_at_utc || "-"} / 原始目录: ${baseline.raw_dir || "-"} / 推荐绑定: ${baseline.recommended_bind_mode || "pcr7"}`;
+      const nodes = baseline.nodes || [];
+      el("baselineNodeList").innerHTML = nodes.map((node) => `
+        <div class="result-item">
+          <div class="row" style="justify-content: space-between;">
+            <div>
+              <strong>${escapeHtml(node.host)}</strong>
+              <span class="subtle">${escapeHtml(node.ip || "-")}</span>
+            </div>
+            ${badge(node.sha256_pcr_count >= 8 ? "ok" : "warn", `PCR ${node.sha256_pcr_count || 0}/8`)}
+          </div>
+          <div class="kv">
+            <div class="key">PCR7</div>
+            <div class="value mono">${escapeHtml(node.pcr7 || "-")}</div>
+          </div>
+          <div class="kv">
+            <div class="key">证据</div>
+            <div class="value">
+              event_log=${escapeHtml(node.has_event_log)}
+              IMA=${escapeHtml(node.has_ima_ascii_log || node.has_ima_binary_log)}
+              agent=${escapeHtml(node.keylime_agent_container_seen)}
+            </div>
+          </div>
+          <div class="actions" style="margin-top: 8px;">
+            <button data-quick-pcr7-host="${escapeHtml(node.host)}" data-quick-pcr7-mode="good">恢复 PCR7 基线</button>
+            <button class="danger" data-quick-pcr7-host="${escapeHtml(node.host)}" data-quick-pcr7-mode="bad">下发错误 PCR7</button>
+          </div>
+        </div>
+      `).join("") || `<span class="subtle">基线中没有计算节点</span>`;
     }
 
     async function refreshPolicies(silent = false) {
@@ -1267,6 +1451,56 @@
       } catch (error) {
         setBadge(el("policyApiBadge"), "bad", "API 未连接");
         showNotice(el("policyNotice"), "bad", error.message);
+      }
+    }
+
+    async function importBaselinePolicies() {
+      try {
+        const data = await requestJson("/api/policies/import-baseline", {
+          method: "POST",
+          headers: apiHeaders(),
+          body: JSON.stringify({ bind_mode: "pcr7", create_bad_pcr7: true })
+        });
+        await refreshPolicies(true);
+        showNotice(el("policyNotice"), "ok", `已从基线导入策略：${data.rendered.length} 项`);
+      } catch (error) {
+        showNotice(el("policyNotice"), "bad", error.message);
+      }
+    }
+
+    async function applyBoundPolicies() {
+      el("applyResult").innerHTML = `<span class="subtle">正在按绑定策略下发...</span>`;
+      try {
+        const data = await requestJson("/api/policies/apply-bound", {
+          method: "POST",
+          headers: apiHeaders(),
+          body: JSON.stringify({ all: true, sync: true, sync_mode: "control-loop" })
+        });
+        renderApplyResult(data.results || []);
+        await refreshPolicies(true);
+        showNotice(el("policyNotice"), data.ok ? "ok" : "warn", data.ok ? "绑定策略下发完成" : "绑定策略部分下发失败");
+      } catch (error) {
+        showNotice(el("policyNotice"), "bad", error.message);
+        el("applyResult").innerHTML = `<div class="result-item">${escapeHtml(error.message)}</div>`;
+      }
+    }
+
+    async function quickPcr7Policy(host, mode) {
+      const actionText = mode === "bad" ? "下发错误 PCR7" : "恢复 PCR7 基线";
+      if (mode === "bad" && !window.confirm(`确认对 ${host} ${actionText}？该节点会临时失信并被隔离。`)) return;
+      el("applyResult").innerHTML = `<span class="subtle">正在${escapeHtml(actionText)}...</span>`;
+      try {
+        const data = await requestJson("/api/policies/quick-pcr7", {
+          method: "POST",
+          headers: apiHeaders(),
+          body: JSON.stringify({ host, mode, sync: true, sync_mode: "control-loop" })
+        });
+        renderApplyResult(data.results || []);
+        await refreshPolicies(true);
+        showNotice(el("policyNotice"), data.ok ? "ok" : "warn", `${actionText}完成：${host}`);
+      } catch (error) {
+        showNotice(el("policyNotice"), "bad", error.message);
+        el("applyResult").innerHTML = `<div class="result-item">${escapeHtml(error.message)}</div>`;
       }
     }
 
@@ -1328,6 +1562,9 @@
     document.querySelectorAll(".nav-item").forEach((item) => {
       item.addEventListener("click", () => switchView(item.dataset.view));
     });
+    document.querySelectorAll(".module-tab").forEach((item) => {
+      item.addEventListener("click", () => switchPolicyModule(item.dataset.policyModule));
+    });
 
     el("refreshNow").addEventListener("click", () => refreshStatus(true));
     el("refreshInterval").addEventListener("change", () => {
@@ -1362,6 +1599,14 @@
       localStorage.setItem("keylimePolicyAdminToken", el("adminToken").value);
     });
     el("refreshPolicies").addEventListener("click", refreshPolicies);
+    el("refreshBaseline").addEventListener("click", () => refreshPolicies(true));
+    el("importBaselinePolicies").addEventListener("click", importBaselinePolicies);
+    el("applyBoundPolicies").addEventListener("click", applyBoundPolicies);
+    el("baselineNodeList").addEventListener("click", (event) => {
+      const button = event.target.closest("[data-quick-pcr7-host]");
+      if (!button) return;
+      quickPcr7Policy(button.dataset.quickPcr7Host, button.dataset.quickPcr7Mode);
+    });
     el("newPolicy").addEventListener("click", resetPolicyForm);
     el("addPcrRow").addEventListener("click", () => addPcrRow("", ""));
     el("resetPolicyForm").addEventListener("click", resetPolicyForm);

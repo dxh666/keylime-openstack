@@ -141,6 +141,8 @@ expand node cards for details
 The second frontend module manages lab TPM PCR policies:
 
 ```text
+separate Keylime policy modules for boot measurements and runtime integrity
+keep the default PCR policy screen focused on baseline import and bound-policy apply
 create / edit / delete TPM PCR policies
 store policy JSON under /var/lib/keylime-openstack-sync/
 bind policies to compute nodes by Keylime agent UUID
@@ -181,6 +183,21 @@ trusted host -> clear keylime_trust_* metadata
 metadata audit file records MARK/CLEAR actions
 the marker runs from the existing keylime-openstack-sync.timer control loop
 ```
+
+### Case 10B: TPM PCR Policy Management Control Plane
+
+TPM PCR policy management is now part of the management console and deployable scripts:
+
+```text
+collect TPM evidence baseline
+render per-node PCR7 and PCR0-7 policies from the baseline
+store and bind policies under /var/lib/keylime-openstack-sync/
+apply bound policies to all nodes
+apply bad PCR7 to one node for negative validation
+restore the node PCR7 baseline after validation
+```
+
+This case completes the first boot-measurement trust loop. PCR7 is the current stable attestation policy for csri8/csri9. PCR0-7 exact policies are kept as diagnostics for measured boot work because they triggered `measured_boot.parser.tpm2_eventlog.warning` during Case 10B. Runtime integrity policy is now a separate management-console module and is reserved for the next IMA-based stage.
 
 ## Integrated Runtime
 
@@ -248,4 +265,5 @@ add alerting, dampening, and human approval for host quarantine
 12. `docs/keylime_openstack_multinode_sync_current_issues_2026-07-04.md`
 13. `docs/keylime_openstack_case8_dynamic_trusted_pool.md`
 14. `docs/keylime_openstack_case9_vm_risk_marker.md`
-15. `docs/keylime_openstack_integrated_capability_audit.md`
+15. `docs/keylime_openstack_case10b_pcr_policy_management.md`
+16. `docs/keylime_openstack_integrated_capability_audit.md`

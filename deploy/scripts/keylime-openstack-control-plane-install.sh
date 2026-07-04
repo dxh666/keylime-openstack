@@ -36,8 +36,16 @@ append_env_default "KEYLIME_MONITOR_URL" "export KEYLIME_MONITOR_URL=\"http://17
 append_env_default "KEYLIME_VM_RISK_MARKER_ENABLE" "export KEYLIME_VM_RISK_MARKER_ENABLE=\"true\""
 append_env_default "KEYLIME_VM_RISK_MARKER_INTERVAL_SECONDS" "export KEYLIME_VM_RISK_MARKER_INTERVAL_SECONDS=\"60\""
 append_env_default "KEYLIME_VM_RISK_AUDIT_FILE" "export KEYLIME_VM_RISK_AUDIT_FILE=\"/var/log/keylime-openstack-vm-risk-marker.json\""
+append_env_default "KEYLIME_PCR_POLICY_FILE" "export KEYLIME_PCR_POLICY_FILE=\"/var/lib/keylime-openstack-sync/tpm-pcr-policies.json\""
+append_env_default "KEYLIME_TPM_EVIDENCE_BASELINE_JSON" "export KEYLIME_TPM_EVIDENCE_BASELINE_JSON=\"/var/log/keylime-openstack-tpm-evidence-baseline.json\""
+append_env_default "KEYLIME_POLICY_BASE_DIR" "export KEYLIME_POLICY_BASE_DIR=\"/var/lib/keylime-openstack-sync/policies\""
+append_env_default "KEYLIME_POLICY_RENDER_AUDIT_FILE" "export KEYLIME_POLICY_RENDER_AUDIT_FILE=\"/var/log/keylime-openstack-policy-render.json\""
+append_env_default "KEYLIME_POLICY_APPLY_AUDIT_FILE" "export KEYLIME_POLICY_APPLY_AUDIT_FILE=\"/var/log/keylime-openstack-policy-apply.json\""
+append_env_default "KEYLIME_POLICY_RENDER_BIND_MODE" "export KEYLIME_POLICY_RENDER_BIND_MODE=\"pcr7\""
+append_env_default "KEYLIME_POLICY_RENDER_CREATE_BAD_PCR7" "export KEYLIME_POLICY_RENDER_CREATE_BAD_PCR7=\"true\""
 
 install -d -m 0755 /var/lib/keylime-openstack-sync
+install -d -m 0755 /var/lib/keylime-openstack-sync/policies
 
 find "$REPO_ROOT/deploy/scripts" -maxdepth 1 -type f -name "keylime-*.sh" -print0 | \
   while IFS= read -r -d '' script; do
