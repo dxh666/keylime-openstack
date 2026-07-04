@@ -1,0 +1,15 @@
+[Unit]
+Description=Keylime OpenStack Console
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/keylime-openstack-console
+Environment=KEYLIME_OPENSTACK_ENV_FILE=/etc/keylime-openstack-sync/openstack-keylime-lab.env
+ExecStart=/usr/bin/python3 /opt/keylime-openstack-console/trust_monitor_server.py --host 172.31.100.10 --port 8088
+Restart=on-failure
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target

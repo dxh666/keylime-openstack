@@ -39,7 +39,7 @@ deploy/scripts/
   nova-compute quarantine prototype, agent restart helper
 
 deploy/systemd/
-  systemd service/timer units for periodic sync
+  systemd service/timer units for periodic sync and the management console
 
 deploy/env/
   sanitized lab variable template
@@ -158,6 +158,35 @@ metadata audit file records MARK/CLEAR actions
 the marker runs from the existing keylime-openstack-sync.timer control loop
 ```
 
+## Integrated Runtime
+
+The automated lab control plane now runs from systemd:
+
+```text
+keylime-openstack-monitor.service
+  -> serves the trust monitor and TPM PCR policy frontend on 172.31.100.10:8088
+
+keylime-openstack-sync.timer
+  -> keylime-sync-control-loop.sh
+  -> keylime-agent-inventory-refresh.sh
+  -> keylime-placement-sync.sh
+  -> keylime-nova-compute-quarantine.sh
+  -> keylime-vm-risk-marker.sh
+```
+
+One-time trusted flavor provisioning is available as:
+
+```text
+deploy/scripts/keylime-openstack-trusted-flavor-setup.sh
+```
+
+Control-plane installation and health checking:
+
+```text
+deploy/scripts/keylime-openstack-control-plane-install.sh
+deploy/scripts/keylime-openstack-capability-check.sh
+```
+
 ## Important Security Notes
 
 This repository is sanitized for GitHub:
@@ -194,3 +223,4 @@ add alerting, dampening, and human approval for host quarantine
 11. `docs/keylime_openstack_multinode_sync_current_issues_2026-07-04.md`
 12. `docs/keylime_openstack_case8_dynamic_trusted_pool.md`
 13. `docs/keylime_openstack_case9_vm_risk_marker.md`
+14. `docs/keylime_openstack_integrated_capability_audit.md`
