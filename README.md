@@ -11,6 +11,30 @@ Keylime verifies compute-node trust
   -> private flavors expose trusted-compute capability only to selected projects
 ```
 
+## Current Next Phase
+
+The next phase is to turn the current Keylime/OpenStack integration into a TPM-driven trusted control plane.
+
+This means the lab should stop treating Keylime as only a status source for one Placement trait, and start using TPM evidence as the basis for OpenStack security decisions:
+
+```text
+TPM quote / PCR / measured boot / IMA evidence
+  -> Keylime policy and attestation decision
+  -> OpenStack trust traits, scheduling, quarantine, VM marking, audit
+```
+
+The immediate next case is:
+
+```text
+Case 10: TPM evidence baseline and Keylime policy-driven OpenStack trust control plane
+```
+
+Read first:
+
+```text
+docs/keylime_openstack_next_phase_tpm_trust_control_plane.md
+```
+
 ## Lab Topology
 
 ```text
@@ -211,16 +235,17 @@ add alerting, dampening, and human approval for host quarantine
 ## Suggested Reading Order
 
 1. `docs/openstack_project_principles.md`
-2. `docs/openstack_keylime_integration_case_summary.md`
-3. `docs/keylime_openstack_current_issue_hardening_baseline.md`
-4. `docs/openstack_keylime_deep_integration_roadmap.md`
-5. `docs/keylime_openstack_phase2_attestation_freshness.md`
-6. `docs/keylime_openstack_phase3_private_flavor_project_auth.md`
-7. `docs/keylime_openstack_case4_host_quarantine.md`
-8. `docs/keylime_openstack_frontend_trust_monitor_baseline.md`
-9. `docs/keylime_openstack_frontend_tpm_pcr_policy_management.md`
-10. `docs/keylime_agent_inventory_auto_discovery.md`
-11. `docs/keylime_openstack_multinode_sync_current_issues_2026-07-04.md`
-12. `docs/keylime_openstack_case8_dynamic_trusted_pool.md`
-13. `docs/keylime_openstack_case9_vm_risk_marker.md`
-14. `docs/keylime_openstack_integrated_capability_audit.md`
+2. `docs/keylime_openstack_next_phase_tpm_trust_control_plane.md`
+3. `docs/openstack_keylime_integration_case_summary.md`
+4. `docs/keylime_openstack_current_issue_hardening_baseline.md`
+5. `docs/openstack_keylime_deep_integration_roadmap.md`
+6. `docs/keylime_openstack_phase2_attestation_freshness.md`
+7. `docs/keylime_openstack_phase3_private_flavor_project_auth.md`
+8. `docs/keylime_openstack_case4_host_quarantine.md`
+9. `docs/keylime_openstack_frontend_trust_monitor_baseline.md`
+10. `docs/keylime_openstack_frontend_tpm_pcr_policy_management.md`
+11. `docs/keylime_agent_inventory_auto_discovery.md`
+12. `docs/keylime_openstack_multinode_sync_current_issues_2026-07-04.md`
+13. `docs/keylime_openstack_case8_dynamic_trusted_pool.md`
+14. `docs/keylime_openstack_case9_vm_risk_marker.md`
+15. `docs/keylime_openstack_integrated_capability_audit.md`

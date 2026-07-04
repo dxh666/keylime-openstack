@@ -1,5 +1,32 @@
 ﻿# OpenStack 与 Keylime 深度结合路线图
 
+## 0. 2026-07-04 下一阶段定位
+
+当前下一阶段已经从“继续补一个小功能”调整为“构建 TPM 驱动的 Keylime/OpenStack 可信控制面”。
+
+核心目标：
+
+```text
+TPM 证据
+  -> Keylime 策略验证
+  -> OpenStack 可信资源表达
+  -> Nova 调度与隔离执行
+  -> 失信 VM 标记与审计
+```
+
+因此后续工作优先级是：
+
+1. 采集并沉淀 csri8/csri9 的 TPM 证据基线。
+2. 将 PCR policy 从手动命令升级为可版本化、可批量下发、可单节点下发、可回滚的策略 profile。
+3. 用正确/错误 TPM PCR policy 验证 OpenStack trait、nova-compute quarantine、trusted flavor 调度和 VM 风险标记是否全部联动。
+4. 再进入 measured boot、IMA runtime integrity、多级 trusted traits 和生产化加固。
+
+详细目标见：
+
+```text
+docs/keylime_openstack_next_phase_tpm_trust_control_plane.md
+```
+
 ## 1. 当前已经完成的基础闭环
 
 当前实验已经完成第一层闭环：
