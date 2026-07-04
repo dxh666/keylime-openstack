@@ -41,9 +41,23 @@ ensure_flavor() {
 ensure_flavor "$PUBLIC_TRUSTED_FLAVOR" "--public"
 ensure_flavor "$PRIVATE_TRUSTED_FLAVOR" "--private"
 
-openstack flavor set "$PRIVATE_TRUSTED_FLAVOR" \
-  --project "$TRUSTED_PROJECT" \
-  --project-domain "$DOMAIN"
+set +e
+project_access_out="$(
+  openstack flavor set "$PRIVATE_TRUSTED_FLAVOR" \
+    --project "$TRUSTED_PROJECT" \
+    --project-domain "$DOMAIN" 2>&1
+)"
+project_access_rc=$?
+set -e
+
+if [ "$project_access_rc" -eq 0 ]; then
+  echo "Granted $TRUSTED_PROJECT access to $PRIVATE_TRUSTED_FLAVOR"
+elif [[ "$project_access_out" == *"Flavor access already exists"* || "$project_access_out" == *"ConflictException: 409"* ]]; then
+  echo "Flavor access already exists for $TRUSTED_PROJECT on $PRIVATE_TRUSTED_FLAVOR"
+else
+  printf '%s\n' "$project_access_out"
+  exit "$project_access_rc"
+fi
 
 for flavor in "$PUBLIC_TRUSTED_FLAVOR" "$PRIVATE_TRUSTED_FLAVOR"; do
   echo "--- $flavor ---"
