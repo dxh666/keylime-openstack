@@ -135,6 +135,18 @@ fall back to static host/IP/UUID maps when reglist cannot be matched by IP
 write per-host decision files for multi-node monitoring and quarantine
 ```
 
+### Case 8: Dynamic Trusted Compute Pool
+
+The trusted compute pool now shrinks and recovers according to Keylime state:
+
+```text
+csri8/csri9 PASS_FRESH -> both nodes accept trusted workloads
+csri8 agent stopped -> csri8 loses trusted trait and nova-compute is disabled
+trusted workload pinned to csri8 fails with NoValidHost
+trusted workload continues to run on csri9
+csri8 agent recovered -> csri8 regains the trait and can host trusted workloads again
+```
+
 ## Important Security Notes
 
 This repository is sanitized for GitHub:
@@ -169,3 +181,4 @@ add alerting, dampening, and human approval for host quarantine
 9. `docs/keylime_openstack_frontend_tpm_pcr_policy_management.md`
 10. `docs/keylime_agent_inventory_auto_discovery.md`
 11. `docs/keylime_openstack_multinode_sync_current_issues_2026-07-04.md`
+12. `docs/keylime_openstack_case8_dynamic_trusted_pool.md`

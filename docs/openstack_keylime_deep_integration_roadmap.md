@@ -324,7 +324,16 @@ trusted.production -> CUSTOM_KEYLIME_PRODUCTION_TRUSTED
 
 目的：从 `csri9` 单节点扩展到可信计算池。
 
-必须先解决 `csri8` 问题：
+2026-07-04 更新：`csri8` 的 TPM/SHA256 PCR 问题已经修复，并已接入 Keylime/OpenStack 可信池。后续 Case 8 已验证：
+
+```text
+csri8/csri9 同时可信时，trusted VM 可调度到两个节点。
+csri8 Keylime agent 停止后，csri8 自动移除可信 trait 并禁用 nova-compute。
+trusted VM 自动避开 csri8，继续调度到 csri9。
+csri8 agent 恢复后，csri8 重新加入可信池并可再次承载 trusted VM。
+```
+
+历史上接入前必须先解决 `csri8` 问题：
 
 - TPM 2.0 存在；
 - 但 SHA256 PCR bank 当前为空；
@@ -393,5 +402,4 @@ Flavor / Project 消费可信
 ```text
 可信证明 -> 策略判断 -> 云平台资源表达 -> 调度强制执行 -> 失信处置 -> 审计追踪
 ```
-
 

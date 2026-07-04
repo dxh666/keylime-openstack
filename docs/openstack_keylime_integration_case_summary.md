@@ -2,6 +2,14 @@
 
 日期：2026-07-02
 
+2026-07-04 更新：
+
+```text
+csri8 已完成 TPM 修复、Keylime agent 部署和多节点纳管。
+后续 Case 8 已验证 csri8/csri9 组成的可信计算池可以随 Keylime 状态动态收缩与恢复。
+详见 docs/keylime_openstack_case8_dynamic_trusted_pool.md。
+```
+
 ## 1. 案例背景
 
 本案例的目标不是简单部署 Keylime，而是验证：
@@ -40,7 +48,7 @@ OpenStack 版本：2026.1
 
   csri8
   172.31.100.8
-  TPM 2.0 存在，但 SHA256 PCR bank 未启用，本案例暂不接入可信池
+  TPM 2.0 可用，SHA256 PCR bank 已修复，已在后续 Case 8 接入可信池
 ```
 
 Keylime 环境：
@@ -636,5 +644,4 @@ Keylime 负责证明宿主机可信，
 OpenStack Project 负责控制谁能申请可信资源，
 OpenStack Placement/Nova 负责保证可信资源只能落到可信宿主机。
 ```
-
 
