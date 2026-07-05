@@ -193,8 +193,7 @@ collect TPM evidence baseline
 render per-node PCR7 and PCR0-7 policies from the baseline
 store and bind policies under /var/lib/keylime-openstack-sync/
 apply bound policies to all nodes
-apply bad PCR7 to one node for negative validation
-restore the node PCR7 baseline after validation
+surface only production-safe policy operations in the management console
 ```
 
 This case completes the first boot-measurement trust loop. PCR7 is the current stable attestation policy for csri8/csri9. PCR0-7 exact policies are kept as diagnostics for measured boot work because they triggered `measured_boot.parser.tpm2_eventlog.warning` during Case 10B. Runtime integrity policy is now a separate management-console module and is reserved for the next IMA-based stage.

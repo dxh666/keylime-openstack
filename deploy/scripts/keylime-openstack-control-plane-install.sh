@@ -42,7 +42,7 @@ append_env_default "KEYLIME_POLICY_BASE_DIR" "export KEYLIME_POLICY_BASE_DIR=\"/
 append_env_default "KEYLIME_POLICY_RENDER_AUDIT_FILE" "export KEYLIME_POLICY_RENDER_AUDIT_FILE=\"/var/log/keylime-openstack-policy-render.json\""
 append_env_default "KEYLIME_POLICY_APPLY_AUDIT_FILE" "export KEYLIME_POLICY_APPLY_AUDIT_FILE=\"/var/log/keylime-openstack-policy-apply.json\""
 append_env_default "KEYLIME_POLICY_RENDER_BIND_MODE" "export KEYLIME_POLICY_RENDER_BIND_MODE=\"pcr7\""
-append_env_default "KEYLIME_POLICY_RENDER_CREATE_BAD_PCR7" "export KEYLIME_POLICY_RENDER_CREATE_BAD_PCR7=\"true\""
+append_env_default "KEYLIME_POLICY_RENDER_CREATE_BAD_PCR7" "export KEYLIME_POLICY_RENDER_CREATE_BAD_PCR7=\"false\""
 
 install -d -m 0755 /var/lib/keylime-openstack-sync
 install -d -m 0755 /var/lib/keylime-openstack-sync/policies

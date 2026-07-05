@@ -1035,6 +1035,8 @@ def normalize_policy_payload(payload: dict[str, Any], existing: dict[str, Any] |
     now = utc_now()
     created_at = str((existing or {}).get("created_at_utc") or now)
     module = str(payload.get("module") or (existing or {}).get("module") or "boot_measurement").strip()
+    if policy_id.startswith("bad-") or module == "boot_measurement_negative_test":
+        raise ApiError(HTTPStatus.BAD_REQUEST, "管理系统不允许保存非生产策略")
 
     policy = {
         "id": policy_id,
@@ -1057,6 +1059,17 @@ def find_policy(store: dict[str, Any], policy_id: str) -> dict[str, Any] | None:
         if isinstance(policy, dict) and policy.get("id") == policy_id:
             return policy
     return None
+
+
+def is_management_policy(policy: dict[str, Any]) -> bool:
+    if str(policy.get("module", "")) == "boot_measurement_negative_test":
+        return False
+    if str(policy.get("id", "")).startswith("bad-"):
+        return False
+    source = policy.get("source", {})
+    if isinstance(source, dict) and source.get("mode") == "negative-test":
+        return False
+    return True
 
 
 def upsert_policy(config: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
@@ -1141,15 +1154,20 @@ def collect_policy_overview(config: dict[str, Any], status: dict[str, Any] | Non
         if not isinstance(item, dict):
             continue
         policy = dict(item)
+        if not is_management_policy(policy):
+            continue
         if isinstance(policy.get("pcrs"), dict):
             policy["mask"] = calculate_mask(policy["pcrs"])
             policy["tpm_policy"] = build_tpm_policy(policy["pcrs"])
         policy["tpm_policy_json"] = json.dumps(policy.get("tpm_policy", {}), ensure_ascii=False, sort_keys=True)
         policies.append(policy)
+    management_policy_ids = {str(policy.get("id", "")) for policy in policies}
 
     nodes = []
     for node in status.get("nodes", []):
         binding = bindings.get(node.get("host", ""), {})
+        if isinstance(binding, dict) and str(binding.get("policy_id", "")) not in management_policy_ids:
+            binding = {}
         node_summary = {
             "host": node.get("host", ""),
             "ip": node.get("ip", ""),
@@ -1287,7 +1305,6 @@ def make_policy_record(
 def import_baseline_policies(config: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     baseline_path = Path(str(payload.get("baseline_path") or baseline_file_path(config)))
     bind_mode = str(payload.get("bind_mode") or "pcr7").strip()
-    create_bad = payload.get("create_bad_pcr7", True)
     baseline = read_json_file(baseline_path)
     if not baseline:
         raise ApiError(HTTPStatus.BAD_REQUEST, f"TPM evidence baseline not readable or invalid: {baseline_path}")
@@ -1308,7 +1325,7 @@ def import_baseline_policies(config: dict[str, Any], payload: dict[str, Any]) ->
         pcr7_policy = make_policy_record(
             f"{host}-sha256-pcr7-baseline",
             f"{host} SHA256 PCR7 baseline",
-            f"Generated from TPM evidence baseline {baseline.get('checked_at_utc')}. Stable Case 10A policy.",
+            f"Generated from TPM evidence baseline {baseline.get('checked_at_utc')}. Stable boot-measurement policy.",
             {"7": values["7"]},
             {"baseline": str(baseline_path), "host": host, "mode": "pcr7"},
             module="boot_measurement",
@@ -1316,7 +1333,7 @@ def import_baseline_policies(config: dict[str, Any], payload: dict[str, Any]) ->
         pcr0_7_policy = make_policy_record(
             f"{host}-sha256-pcr0-7-exact",
             f"{host} SHA256 PCR0-7 exact baseline",
-            "Generated for Case 10B diagnosis. Use carefully; PCR0-7 exact policy may trigger measured boot parser warnings.",
+            "Generated from TPM evidence baseline for controlled boot-measurement rollout.",
             {str(i): values[str(i)] for i in range(8)},
             {"baseline": str(baseline_path), "host": host, "mode": "pcr0-7"},
             module="boot_measurement_diagnostic",
@@ -1335,18 +1352,6 @@ def import_baseline_policies(config: dict[str, Any], payload: dict[str, Any]) ->
                 "source": "frontend-import-baseline",
             }
         rendered.append({"host": host, "pcr7_policy_id": pcr7_policy["id"], "pcr0_7_policy_id": pcr0_7_policy["id"]})
-
-    if is_truthy(create_bad):
-        bad = make_policy_record(
-            "bad-sha256-pcr7-zero",
-            "BAD SHA256 PCR7 all-zero negative test",
-            "Negative-test policy. Apply only to one selected host and restore immediately after validation.",
-            {"7": "0" * 64},
-            {"mode": "negative-test", "case": "Case 10A"},
-            module="boot_measurement_negative_test",
-        )
-        upsert_policy_record(store, bad)
-        rendered.append({"host": "*", "pcr7_negative_policy_id": bad["id"]})
 
     event = {
         "at_utc": utc_now(),
@@ -1404,6 +1409,8 @@ def apply_policy(config: dict[str, Any], payload: dict[str, Any]) -> dict[str, A
     policy = find_policy(store, policy_id)
     if not policy:
         raise ApiError(HTTPStatus.NOT_FOUND, f"策略不存在: {policy_id}")
+    if not is_management_policy(policy):
+        raise ApiError(HTTPStatus.BAD_REQUEST, "管理系统不允许下发非生产策略")
 
     status = collect_status(config)
     nodes_by_host = {node["host"]: node for node in status.get("nodes", [])}
@@ -1532,6 +1539,7 @@ def apply_bound_policies(config: dict[str, Any], payload: dict[str, Any]) -> dic
         requested_hosts = [
             host for host in nodes_by_host
             if isinstance(store.get("bindings", {}).get(host), dict)
+            and is_management_policy(find_policy(store, str(store.get("bindings", {}).get(host, {}).get("policy_id", ""))) or {})
         ]
     if not requested_hosts:
         raise ApiError(HTTPStatus.BAD_REQUEST, "至少选择一个已绑定策略的计算节点")
@@ -1561,67 +1569,6 @@ def apply_bound_policies(config: dict[str, Any], payload: dict[str, Any]) -> dic
         "results": results,
         "sync": sync_result,
     }
-
-
-def ensure_bad_pcr7_policy(config: dict[str, Any]) -> dict[str, Any]:
-    store = load_policy_store(config)
-    existing = find_policy(store, "bad-sha256-pcr7-zero")
-    if existing:
-        return existing
-    policy = make_policy_record(
-        "bad-sha256-pcr7-zero",
-        "BAD SHA256 PCR7 all-zero negative test",
-        "Negative-test policy. Apply only to one selected host and restore immediately after validation.",
-        {"7": "0" * 64},
-        {"mode": "negative-test", "case": "Case 10A"},
-        module="boot_measurement_negative_test",
-    )
-    upsert_policy_record(store, policy)
-    store.setdefault("events", []).append(
-        {"at_utc": utc_now(), "action": "bad_pcr7_policy_created", "policy_id": policy["id"]}
-    )
-    store["events"] = store.get("events", [])[-120:]
-    save_policy_store(config, store)
-    return policy
-
-
-def quick_pcr7_policy(config: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
-    if not isinstance(payload, dict):
-        raise ApiError(HTTPStatus.BAD_REQUEST, "请求体必须是 JSON 对象")
-
-    host = str(payload.get("host") or "").strip()
-    mode = str(payload.get("mode") or "good").strip()
-    if not host:
-        raise ApiError(HTTPStatus.BAD_REQUEST, "host 不能为空")
-    if mode not in ("good", "bad"):
-        raise ApiError(HTTPStatus.BAD_REQUEST, "mode 只能是 good 或 bad")
-
-    if mode == "bad":
-        policy = ensure_bad_pcr7_policy(config)
-    else:
-        store = load_policy_store(config)
-        policy_id = f"{host}-sha256-pcr7-baseline"
-        policy = find_policy(store, policy_id)
-        if not policy:
-            import_baseline_policies(config, {"bind_mode": "pcr7", "create_bad_pcr7": True})
-            store = load_policy_store(config)
-            policy = find_policy(store, policy_id)
-        if not policy:
-            raise ApiError(HTTPStatus.NOT_FOUND, f"未找到 {host} 的 PCR7 baseline policy，请先导入 TPM evidence baseline")
-
-    response = apply_policy(
-        config,
-        {
-            "policy_id": policy["id"],
-            "hosts": [host],
-            "sync": is_truthy(payload.get("sync", True)),
-            "sync_mode": str(payload.get("sync_mode") or "control-loop"),
-        },
-    )
-    response["mode"] = mode
-    response["host"] = host
-    response["policy_id"] = policy["id"]
-    return response
 
 
 class TrustMonitorHandler(SimpleHTTPRequestHandler):
@@ -1675,9 +1622,6 @@ class TrustMonitorHandler(SimpleHTTPRequestHandler):
                 return
             if parsed.path == "/api/policies/apply-bound":
                 self.write_json(apply_bound_policies(self.config, payload))
-                return
-            if parsed.path == "/api/policies/quick-pcr7":
-                self.write_json(quick_pcr7_policy(self.config, payload))
                 return
             raise ApiError(HTTPStatus.NOT_FOUND, f"Unknown API path: {parsed.path}")
         except ApiError as exc:

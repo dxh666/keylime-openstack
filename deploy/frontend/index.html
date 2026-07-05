@@ -930,8 +930,7 @@
     function policyModuleLabel(moduleName) {
       const labels = {
         boot_measurement: "启动度量",
-        boot_measurement_diagnostic: "启动诊断",
-        boot_measurement_negative_test: "反向验证",
+        boot_measurement_diagnostic: "启动基线",
         runtime_integrity: "运行时完整性"
       };
       return labels[moduleName] || moduleName || "启动度量";
@@ -1433,10 +1432,6 @@
               agent=${escapeHtml(node.keylime_agent_container_seen)}
             </div>
           </div>
-          <div class="actions" style="margin-top: 8px;">
-            <button data-quick-pcr7-host="${escapeHtml(node.host)}" data-quick-pcr7-mode="good">恢复 PCR7 基线</button>
-            <button class="danger" data-quick-pcr7-host="${escapeHtml(node.host)}" data-quick-pcr7-mode="bad">下发错误 PCR7</button>
-          </div>
         </div>
       `).join("") || `<span class="subtle">基线中没有计算节点</span>`;
     }
@@ -1459,7 +1454,7 @@
         const data = await requestJson("/api/policies/import-baseline", {
           method: "POST",
           headers: apiHeaders(),
-          body: JSON.stringify({ bind_mode: "pcr7", create_bad_pcr7: true })
+          body: JSON.stringify({ bind_mode: "pcr7" })
         });
         await refreshPolicies(true);
         showNotice(el("policyNotice"), "ok", `已从基线导入策略：${data.rendered.length} 项`);
@@ -1479,25 +1474,6 @@
         renderApplyResult(data.results || []);
         await refreshPolicies(true);
         showNotice(el("policyNotice"), data.ok ? "ok" : "warn", data.ok ? "绑定策略下发完成" : "绑定策略部分下发失败");
-      } catch (error) {
-        showNotice(el("policyNotice"), "bad", error.message);
-        el("applyResult").innerHTML = `<div class="result-item">${escapeHtml(error.message)}</div>`;
-      }
-    }
-
-    async function quickPcr7Policy(host, mode) {
-      const actionText = mode === "bad" ? "下发错误 PCR7" : "恢复 PCR7 基线";
-      if (mode === "bad" && !window.confirm(`确认对 ${host} ${actionText}？该节点会临时失信并被隔离。`)) return;
-      el("applyResult").innerHTML = `<span class="subtle">正在${escapeHtml(actionText)}...</span>`;
-      try {
-        const data = await requestJson("/api/policies/quick-pcr7", {
-          method: "POST",
-          headers: apiHeaders(),
-          body: JSON.stringify({ host, mode, sync: true, sync_mode: "control-loop" })
-        });
-        renderApplyResult(data.results || []);
-        await refreshPolicies(true);
-        showNotice(el("policyNotice"), data.ok ? "ok" : "warn", `${actionText}完成：${host}`);
       } catch (error) {
         showNotice(el("policyNotice"), "bad", error.message);
         el("applyResult").innerHTML = `<div class="result-item">${escapeHtml(error.message)}</div>`;
@@ -1602,11 +1578,6 @@
     el("refreshBaseline").addEventListener("click", () => refreshPolicies(true));
     el("importBaselinePolicies").addEventListener("click", importBaselinePolicies);
     el("applyBoundPolicies").addEventListener("click", applyBoundPolicies);
-    el("baselineNodeList").addEventListener("click", (event) => {
-      const button = event.target.closest("[data-quick-pcr7-host]");
-      if (!button) return;
-      quickPcr7Policy(button.dataset.quickPcr7Host, button.dataset.quickPcr7Mode);
-    });
     el("newPolicy").addEventListener("click", resetPolicyForm);
     el("addPcrRow").addEventListener("click", () => addPcrRow("", ""));
     el("resetPolicyForm").addEventListener("click", resetPolicyForm);

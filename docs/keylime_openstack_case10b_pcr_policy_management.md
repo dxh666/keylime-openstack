@@ -13,7 +13,6 @@ TPM evidence baseline 采集
   -> 从 baseline 自动生成 PCR policy
   -> 策略入库、版本化、按节点绑定
   -> 统一下发或单节点下发
-  -> PCR7 正/反向快速验证
   -> Keylime 决策联动 OpenStack trait / nova-compute / VM 风险标记
 ```
 
@@ -78,13 +77,11 @@ deploy/scripts/keylime-tpm-pcr-policy-render-from-baseline.sh
   从 baseline 自动生成策略：
     <host>-sha256-pcr7-baseline
     <host>-sha256-pcr0-7-exact
-    bad-sha256-pcr7-zero
   默认把每个 host 绑定到自己的 PCR7 baseline。
 
 deploy/scripts/keylime-tpm-pcr-policy-apply.sh
   从策略库读取策略并下发：
     keylime-tpm-pcr-policy-apply.sh all bound
-    keylime-tpm-pcr-policy-apply.sh csri8 bad-sha256-pcr7-zero
     keylime-tpm-pcr-policy-apply.sh csri8 csri8-sha256-pcr7-baseline
 ```
 
@@ -124,9 +121,6 @@ POST /api/policies/apply
 
 POST /api/policies/apply-bound
   按每个节点当前绑定的策略批量下发。
-
-POST /api/policies/quick-pcr7
-  对指定节点快速下发正确 PCR7 或错误 PCR7。
 ```
 
 ## 6. 管理系统前端
@@ -135,7 +129,7 @@ POST /api/policies/quick-pcr7
 
 ```text
 启动度量策略
-  当前已实现。默认页面只保留 TPM evidence baseline、策略导入、绑定策略下发和 PCR7 快捷验证。
+  当前已实现。默认页面只保留 TPM evidence baseline、策略导入和绑定策略下发。
 
 运行时完整性策略
   已预留独立入口。后续基于 Keylime IMA runtime policy / PCR10 / runtime measurements 实现。
@@ -147,13 +141,9 @@ POST /api/policies/quick-pcr7
 刷新基线
 从基线导入策略
 按绑定策略下发
-对单节点恢复 PCR7 基线
-对单节点下发错误 PCR7
 ```
 
-策略 JSON 编辑、模板和手动下发被收进“高级策略编辑与手动下发”折叠区，避免日常操作界面过重。
-
-其中“下发错误 PCR7”是破坏性实验操作，只应对单个节点使用，并且验证后应立即恢复 PCR7 基线。
+策略 JSON 编辑、模板和手动下发被收进“高级策略编辑与手动下发”折叠区，避免日常操作界面过重。管理系统不提供破坏性策略下发或负向验证入口；生产运维只通过标准策略导入、绑定和下发流程操作。
 
 ## 7. 推荐实验流程
 
@@ -169,16 +159,7 @@ source /etc/keylime-openstack-sync/openstack-keylime-lab.env
 /opt/keylime-openstack-sync/keylime-tpm-pcr-policy-apply.sh all bound
 ```
 
-对 csri8 做反向验证：
-
-```bash
-/opt/keylime-openstack-sync/keylime-tpm-pcr-policy-apply.sh csri8 bad-sha256-pcr7-zero
-sleep 40
-systemctl start keylime-openstack-sync.service || true
-KEYLIME_VM_RISK_MARKER_FORCE=true /opt/keylime-openstack-sync/keylime-vm-risk-marker.sh
-```
-
-恢复 csri8：
+需要重新下发某个节点绑定策略时：
 
 ```bash
 /opt/keylime-openstack-sync/keylime-tpm-pcr-policy-apply.sh csri8 csri8-sha256-pcr7-baseline

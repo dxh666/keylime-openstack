@@ -154,7 +154,6 @@ export KEYLIME_PCR_POLICY_FILE="/var/lib/keylime-openstack-sync/tpm-pcr-policies
 GET  /api/policies/baseline
 POST /api/policies/import-baseline
 POST /api/policies/apply-bound
-POST /api/policies/quick-pcr7
 ```
 
 页面操作：
@@ -163,11 +162,9 @@ POST /api/policies/quick-pcr7
 刷新基线
 从基线导入策略
 按绑定策略下发
-对单节点恢复 PCR7 基线
-对单节点下发错误 PCR7
 ```
 
-默认推荐绑定 PCR7 baseline。PCR0-7 exact policy 会被导入策略库，但当前只建议用于 measured boot 诊断。
+默认推荐绑定 PCR7 baseline。管理系统不提供破坏性策略下发或负向验证入口；已有策略恢复、单节点下发等操作统一通过高级策略区的标准下发流程完成。
 
 ## 写 API 令牌
 

@@ -11,7 +11,7 @@ STORE_FILE="${KEYLIME_PCR_POLICY_FILE:-$STATE_DIR/tpm-pcr-policies.json}"
 PROFILE_NAME="${KEYLIME_POLICY_PROFILE_NAME:-csri-lab-pcr-policy-profile}"
 AUDIT_FILE="${KEYLIME_POLICY_RENDER_AUDIT_FILE:-/var/log/keylime-openstack-policy-render.json}"
 BIND_MODE="${KEYLIME_POLICY_RENDER_BIND_MODE:-pcr7}"
-CREATE_BAD_PCR7="${KEYLIME_POLICY_RENDER_CREATE_BAD_PCR7:-true}"
+CREATE_BAD_PCR7="${KEYLIME_POLICY_RENDER_CREATE_BAD_PCR7:-false}"
 
 test -r "$BASELINE"
 
@@ -126,7 +126,7 @@ for node in baseline.get("nodes", []):
     pcr7_policy = make_policy(
         pcr7_id,
         f"{host} SHA256 PCR7 baseline",
-        f"Generated from TPM evidence baseline {baseline.get('checked_at_utc')}. Stable Case 10A policy.",
+        f"Generated from TPM evidence baseline {baseline.get('checked_at_utc')}. Stable boot-measurement policy.",
         pcr7,
         {"baseline": baseline_path, "host": host, "mode": "pcr7"},
         module="boot_measurement",
@@ -134,7 +134,7 @@ for node in baseline.get("nodes", []):
     pcr0_7_policy = make_policy(
         pcr0_7_id,
         f"{host} SHA256 PCR0-7 exact baseline",
-        "Generated for Case 10B diagnosis. Use carefully; PCR0-7 exact policy may trigger measured boot parser warnings.",
+        "Generated from TPM evidence baseline for controlled boot-measurement rollout.",
         pcr0_7,
         {"baseline": baseline_path, "host": host, "mode": "pcr0-7"},
         module="boot_measurement_diagnostic",
