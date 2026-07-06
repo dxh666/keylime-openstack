@@ -594,6 +594,35 @@
       background: #ffffff;
     }
 
+    .layer-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .runtime-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .runtime-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+      padding: 12px;
+    }
+
+    .runtime-card-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      margin-bottom: 10px;
+    }
+
     @media (max-width: 1100px) {
       .policy-layout {
         grid-template-columns: 1fr;
@@ -730,10 +759,14 @@
 
       <section class="view" id="view-policies">
         <div class="topbar">
-          <h1>Keylime TPM PCR 策略管理</h1>
+          <h1>Keylime 策略管理</h1>
           <div class="chips">
             <span id="policyApiBadge" class="badge warn">API 连接中</span>
             <span id="policyStorePath" class="chip">策略文件: -</span>
+            <label class="row">
+              <span class="subtle">管理令牌</span>
+              <input id="adminToken" type="password" autocomplete="off" placeholder="可选" style="width: 160px;">
+            </label>
           </div>
         </div>
 
@@ -768,10 +801,6 @@
                   <button id="refreshPolicies" class="primary">刷新策略库</button>
                   <button id="newPolicy" class="ghost">新建策略</button>
                 </div>
-                <label class="row">
-                  <span class="subtle">管理令牌</span>
-                  <input id="adminToken" type="password" autocomplete="off" placeholder="可选" style="width: 180px;">
-                </label>
               </div>
             </section>
             <section class="policy-layout">
@@ -868,23 +897,97 @@
 
         <section class="policy-module" id="policy-module-runtime">
           <section class="panel">
-            <h2>运行时完整性策略</h2>
-            <div class="subtle">
-              当前阶段先完成启动过程度量可信。运行时完整性后续基于 Keylime IMA runtime policy 实现，用于验证宿主机运行过程中文件、脚本、keyring 等是否偏离可信基线。
+            <div class="row" style="justify-content: space-between;">
+              <div>
+                <h2 style="margin-bottom: 4px;">运行时完整性状态</h2>
+                <div id="runtimeSummary" class="subtle">正在读取 IMA runtime policy 状态...</div>
+              </div>
+              <div class="actions">
+                <button id="refreshRuntimePolicies" type="button">刷新状态</button>
+              </div>
             </div>
-            <div class="result-list" style="margin-top: 12px;">
-              <div class="result-item">
-                <div class="kv">
-                  <div class="key">Keylime 能力</div>
-                  <div class="value">IMA runtime policy / PCR10 / runtime measurements</div>
+            <div id="runtimeNodeList" class="runtime-grid">
+              <div class="runtime-card subtle">正在加载计算节点运行时状态...</div>
+            </div>
+          </section>
+
+          <section class="policy-layout" style="padding-left: 0; padding-right: 0;">
+            <div class="stack">
+              <div class="panel">
+                <div class="row" style="justify-content: space-between;">
+                  <h2 style="margin-bottom: 0;">运行时策略库</h2>
+                  <span id="runtimePolicyCount" class="chip">0 个策略</span>
                 </div>
-                <div class="kv">
-                  <div class="key">当前状态</div>
-                  <div class="value">功能入口已拆分，策略下发暂未启用</div>
+                <div id="runtimePolicyList" class="policy-list" style="margin-top: 12px;">
+                  <span class="subtle">暂无运行时策略</span>
                 </div>
-                <div class="kv">
-                  <div class="key">下一步</div>
-                  <div class="value">采集 IMA runtime baseline，生成 runtime policy，并联动 OpenStack 可信状态</div>
+              </div>
+
+              <div class="panel">
+                <h2>节点绑定与下发</h2>
+                <div class="field">
+                  <label for="runtimePolicySelect">选择运行时策略</label>
+                  <select id="runtimePolicySelect"></select>
+                </div>
+                <div class="field" style="margin-top: 10px;">
+                  <label>计算节点</label>
+                  <div id="runtimeApplyNodeList" class="apply-node-list">
+                    <span class="subtle">加载中...</span>
+                  </div>
+                </div>
+                <div class="actions" style="margin-top: 12px;">
+                  <button id="applyRuntimeSelectedPolicy">下发到选中节点</button>
+                  <button id="applyRuntimeBoundPolicies" class="primary">按绑定策略下发</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="stack">
+              <div class="panel">
+                <div class="row" style="justify-content: space-between;">
+                  <h2 style="margin-bottom: 0;">运行时策略编辑</h2>
+                  <button id="newRuntimePolicy" class="ghost" type="button">新建策略</button>
+                </div>
+                <div class="form-grid" style="margin-top: 12px;">
+                  <div class="field">
+                    <label for="runtimePolicyDisplayName">策略名称</label>
+                    <input id="runtimePolicyDisplayName" placeholder="例如 csri9 云运行时基线">
+                  </div>
+                  <div class="field">
+                    <label for="runtimePolicyId">策略 ID</label>
+                    <input id="runtimePolicyId" placeholder="自动生成或手动填写">
+                  </div>
+                  <div class="field full">
+                    <label for="runtimePolicyName">Keylime runtime policy 名称</label>
+                    <input id="runtimePolicyName" placeholder="例如 csri9-cloud-runtime-guard-v2">
+                  </div>
+                  <div class="field full">
+                    <label for="runtimePolicyPath">策略文件路径</label>
+                    <input id="runtimePolicyPath" placeholder="/var/lib/keylime-openstack-sync/policies/runtime/csri9.cloud-runtime-policy.json">
+                  </div>
+                  <div class="field full">
+                    <label for="runtimeProtectedPaths">保护对象</label>
+                    <textarea id="runtimeProtectedPaths" placeholder="/opt/keylime-cloud-integrity/cloud-runtime-guard.sh"></textarea>
+                  </div>
+                  <div class="field full">
+                    <label for="runtimeExcludes">排除规则</label>
+                    <textarea id="runtimeExcludes" placeholder="^(?!(boot_aggregate|/opt/keylime-cloud-integrity/cloud-runtime-guard.sh)$).*"></textarea>
+                  </div>
+                  <div class="field full">
+                    <label for="runtimePolicyDescription">备注</label>
+                    <textarea id="runtimePolicyDescription" placeholder="说明基线来源、适用节点和变更窗口"></textarea>
+                  </div>
+                </div>
+                <div class="actions" style="margin-top: 12px;">
+                  <button id="resetRuntimePolicyForm">重置</button>
+                  <button id="saveRuntimePolicy" class="primary">保存策略</button>
+                </div>
+              </div>
+
+              <div class="panel">
+                <h2>下发结果</h2>
+                <div id="runtimeApplyResult" class="result-list">
+                  <span class="subtle">暂无结果</span>
                 </div>
               </div>
             </div>
@@ -901,13 +1004,16 @@
       currentView: "monitor",
       statusRequestInFlight: false,
       policies: [],
+      runtimePolicies: [],
       policyNodes: [],
       templates: [],
       baseline: null,
       policyModule: "boot",
       selectedPolicyId: "",
+      selectedRuntimePolicyId: "",
       editingPolicyId: "",
-      editingPolicyModule: "boot_measurement"
+      editingPolicyModule: "boot_measurement",
+      editingRuntimePolicyId: ""
     };
 
     function el(id) {
@@ -931,9 +1037,14 @@
       const labels = {
         boot_measurement: "启动度量",
         boot_measurement_diagnostic: "启动基线",
-        runtime_integrity: "运行时完整性"
+        runtime_integrity: "运行时"
       };
       return labels[moduleName] || moduleName || "启动度量";
+    }
+
+    function policyModuleKey(policy) {
+      if (policy?.type === "ima_runtime" || policy?.module === "runtime_integrity") return "runtime";
+      return "boot";
     }
 
     function setBadge(node, kind, text) {
@@ -996,6 +1107,23 @@
       return "可信标记未知";
     }
 
+    function layer(node, name) {
+      return node?.trust_layers?.[name] || { level: "warn", text: "未知", detail: "" };
+    }
+
+    function layerBadge(node, name, fallback = "未知") {
+      const item = layer(node, name);
+      return badge(item.level || "warn", item.text || fallback);
+    }
+
+    function eventText(node) {
+      return node.decision?.last_event_id || "无";
+    }
+
+    function policyMaskText(node) {
+      return node.trust_layers?.policy?.tpm_policy_mask || "-";
+    }
+
     function vmCountText(node) {
       const count = node.vm_count;
       if (count === undefined || count === null || count === "" || count === "unknown") {
@@ -1056,6 +1184,13 @@
               <div class="value">${badge(kind, trustText(node))}</div>
             </div>
             <div class="kv">
+              <div class="key">可信证明</div>
+              <div class="value layer-row">
+                ${layerBadge(node, "boot", "启动")}
+                ${layerBadge(node, "runtime", "运行时")}
+              </div>
+            </div>
+            <div class="kv">
               <div class="key">服务状态</div>
               <div class="value">${escapeHtml(serviceStateText(node))}</div>
             </div>
@@ -1071,6 +1206,22 @@
               <div class="kv">
                 <div class="key">可信标记</div>
                 <div class="value">${escapeHtml(traitText(node))}</div>
+              </div>
+              <div class="kv">
+                <div class="key">OpenStack</div>
+                <div class="value">${layerBadge(node, "openstack", "联动")}</div>
+              </div>
+              <div class="kv">
+                <div class="key">Measured Boot</div>
+                <div class="value">${layerBadge(node, "measured_boot", "告警")}</div>
+              </div>
+              <div class="kv">
+                <div class="key">Policy Mask</div>
+                <div class="value mono">${escapeHtml(policyMaskText(node))}</div>
+              </div>
+              <div class="kv">
+                <div class="key">Keylime 事件</div>
+                <div class="value mono">${escapeHtml(eventText(node))}</div>
               </div>
               <div class="kv">
                 <div class="key">可用域</div>
@@ -1144,9 +1295,7 @@
       document.querySelectorAll(".module-tab").forEach((node) => {
         node.classList.toggle("active", node.dataset.policyModule === moduleName);
       });
-      if (moduleName === "boot") {
-        refreshPolicies();
-      }
+      refreshPolicies();
     }
 
     function digestLength(alg) {
@@ -1304,7 +1453,7 @@
         el("applyPolicySelect").innerHTML = `<option value="">暂无策略</option>`;
         return;
       }
-      if (!state.selectedPolicyId) {
+      if (!state.selectedPolicyId || !state.policies.some((policy) => policy.id === state.selectedPolicyId)) {
         state.selectedPolicyId = state.policies[0].id;
       }
       el("policyList").innerHTML = state.policies.map((policy) => {
@@ -1344,11 +1493,12 @@
     }
 
     function renderTemplateList() {
-      if (!state.templates.length) {
+      const bootTemplates = state.templates.filter((template) => policyModuleKey(template) === "boot");
+      if (!bootTemplates.length) {
         el("templateList").innerHTML = `<span class="subtle">暂无模板</span>`;
         return;
       }
-      el("templateList").innerHTML = state.templates.map((template) => `
+      el("templateList").innerHTML = bootTemplates.map((template) => `
         <button type="button" data-template-id="${escapeHtml(template.id)}">
           <strong>${escapeHtml(template.name)}</strong><br>
           <span class="subtle">${escapeHtml(template.description || "")}</span>
@@ -1363,7 +1513,7 @@
       }
       el("applyNodeList").innerHTML = state.policyNodes.map((node) => {
         const canApply = Boolean(node.can_apply);
-        const binding = node.binding || {};
+        const binding = node.bindings?.boot || node.binding || {};
         const bound = binding.policy_name ? `当前：${binding.policy_name}` : "未绑定策略";
         return `
           <label class="apply-node">
@@ -1381,7 +1531,9 @@
     }
 
     function renderPolicyOverview(data) {
-      state.policies = data.policies || [];
+      const allPolicies = data.policies || [];
+      state.policies = allPolicies.filter((policy) => policyModuleKey(policy) === "boot");
+      state.runtimePolicies = allPolicies.filter((policy) => policyModuleKey(policy) === "runtime");
       state.policyNodes = data.nodes || [];
       state.templates = data.templates || [];
       state.baseline = data.baseline || null;
@@ -1391,6 +1543,212 @@
       renderPolicyList();
       renderTemplateList();
       renderApplyNodes();
+      renderRuntimePanel();
+      renderRuntimePolicyList();
+      renderRuntimeApplyNodes();
+    }
+
+    function renderRuntimePanel() {
+      const nodes = state.policyNodes || [];
+      if (!nodes.length) {
+        el("runtimeSummary").textContent = "未发现计算节点";
+        el("runtimeNodeList").innerHTML = `<div class="runtime-card subtle">未发现 nova-compute 节点。</div>`;
+        return;
+      }
+
+      const trusted = nodes.filter((node) => node.trust_layers?.runtime?.level === "ok").length;
+      const abnormal = nodes.filter((node) => node.trust_layers?.runtime?.level === "bad").length;
+      const unknown = Math.max(0, nodes.length - trusted - abnormal);
+      el("runtimeSummary").textContent =
+        `运行时可信 ${trusted}/${nodes.length}，异常 ${abnormal}，待确认 ${unknown}`;
+
+      el("runtimeNodeList").innerHTML = nodes.map((node) => {
+        const layers = node.trust_layers || {};
+        const policy = layers.policy || {};
+        const decision = node.decision || {};
+        const placement = node.placement || {};
+        return `
+          <article class="runtime-card">
+            <div class="runtime-card-head">
+              <div>
+                <strong>${escapeHtml(node.host)}</strong>
+                <div class="subtle">${escapeHtml(node.ip || "-")}</div>
+              </div>
+              ${badge(node.trust_level || "warn", node.trust_text || "未知")}
+            </div>
+            <div class="kv">
+              <div class="key">运行时</div>
+              <div class="value">${layerBadge(node, "runtime", "运行时")}</div>
+            </div>
+            <div class="kv">
+              <div class="key">OpenStack</div>
+              <div class="value">${layerBadge(node, "openstack", "联动")}</div>
+            </div>
+            <div class="kv">
+              <div class="key">PCR Mask</div>
+              <div class="value mono">${escapeHtml(policy.tpm_policy_mask || "-")}</div>
+            </div>
+            <div class="kv">
+              <div class="key">Runtime Policy</div>
+              <div class="value">${escapeHtml(policy.has_runtime_policy === true ? "已绑定" : policy.has_runtime_policy === false ? "未绑定" : "随 Keylime 证明判定")}</div>
+            </div>
+            <div class="kv">
+              <div class="key">Guard 文件</div>
+              <div class="value mono">${escapeHtml(policy.runtime_guard_path || "-")}</div>
+            </div>
+            <div class="kv">
+              <div class="key">Verifier 状态</div>
+              <div class="value">${escapeHtml(decision.operational_state || "-")} / ${escapeHtml(decision.attestation_status || "-")}</div>
+            </div>
+            <div class="kv">
+              <div class="key">最近事件</div>
+              <div class="value mono">${escapeHtml(decision.last_event_id || "无")}</div>
+            </div>
+            <div class="kv">
+              <div class="key">可信标记</div>
+              <div class="value">${escapeHtml(placement.trait_present === true ? "存在" : placement.trait_present === false ? "不存在" : "未知")}</div>
+            </div>
+          </article>
+        `;
+      }).join("");
+    }
+
+    function splitLines(value) {
+      return String(value || "")
+        .split(/\r?\n|,/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+
+    function joinLines(value) {
+      return Array.isArray(value) ? value.join("\n") : "";
+    }
+
+    function resetRuntimePolicyForm() {
+      state.editingRuntimePolicyId = "";
+      el("runtimePolicyDisplayName").value = "";
+      el("runtimePolicyId").value = "";
+      el("runtimePolicyName").value = "";
+      el("runtimePolicyPath").value = "";
+      el("runtimeProtectedPaths").value = "/opt/keylime-cloud-integrity/cloud-runtime-guard.sh";
+      el("runtimeExcludes").value = "^(?!(boot_aggregate|/opt/keylime-cloud-integrity/cloud-runtime-guard.sh)$).*";
+      el("runtimePolicyDescription").value = "";
+    }
+
+    function readRuntimePolicyForm() {
+      const displayName = el("runtimePolicyDisplayName").value.trim();
+      const policyId = el("runtimePolicyId").value.trim() || slugify(displayName);
+      return {
+        id: policyId,
+        name: displayName,
+        description: el("runtimePolicyDescription").value.trim(),
+        type: "ima_runtime",
+        module: "runtime_integrity",
+        runtime_policy_name: el("runtimePolicyName").value.trim() || policyId,
+        runtime_policy_path: el("runtimePolicyPath").value.trim(),
+        protected_paths: splitLines(el("runtimeProtectedPaths").value),
+        excludes: splitLines(el("runtimeExcludes").value)
+      };
+    }
+
+    function validateRuntimePolicy(policy) {
+      if (!policy.name) throw new Error("策略名称不能为空");
+      if (!policy.runtime_policy_name) throw new Error("Keylime runtime policy 名称不能为空");
+      if (!policy.runtime_policy_path) throw new Error("策略文件路径不能为空");
+    }
+
+    function fillRuntimePolicyForm(policy) {
+      state.editingRuntimePolicyId = policy.id || "";
+      el("runtimePolicyDisplayName").value = policy.name || "";
+      el("runtimePolicyId").value = policy.id || "";
+      el("runtimePolicyName").value = policy.runtime_policy_name || policy.id || "";
+      el("runtimePolicyPath").value = policy.runtime_policy_path || "";
+      el("runtimeProtectedPaths").value = joinLines(policy.protected_paths || []);
+      el("runtimeExcludes").value = joinLines(policy.excludes || []);
+      el("runtimePolicyDescription").value = policy.description || "";
+    }
+
+    async function saveRuntimePolicy() {
+      try {
+        const policy = readRuntimePolicyForm();
+        validateRuntimePolicy(policy);
+        const data = await requestJson("/api/policies", {
+          method: "POST",
+          headers: apiHeaders(),
+          body: JSON.stringify(policy)
+        });
+        state.selectedRuntimePolicyId = data.policy.id;
+        await refreshPolicies(true);
+        showNotice(el("policyNotice"), "ok", `运行时策略已保存：${data.policy.name}`);
+      } catch (error) {
+        showNotice(el("policyNotice"), "bad", error.message);
+      }
+    }
+
+    function renderRuntimePolicyList() {
+      el("runtimePolicyCount").textContent = `${state.runtimePolicies.length} 个策略`;
+      if (!state.runtimePolicies.length) {
+        el("runtimePolicyList").innerHTML = `<span class="subtle">暂无运行时策略</span>`;
+        el("runtimePolicySelect").innerHTML = `<option value="">暂无策略</option>`;
+        return;
+      }
+      if (!state.selectedRuntimePolicyId || !state.runtimePolicies.some((policy) => policy.id === state.selectedRuntimePolicyId)) {
+        state.selectedRuntimePolicyId = state.runtimePolicies[0].id;
+      }
+      el("runtimePolicyList").innerHTML = state.runtimePolicies.map((policy) => {
+        const selected = policy.id === state.selectedRuntimePolicyId;
+        return `
+          <article class="policy-card ${selected ? "selected" : ""}">
+            <div class="policy-card-head">
+              <div>
+                <strong>${escapeHtml(policy.name)}</strong>
+                <span class="subtle">${escapeHtml(policy.id)}</span>
+              </div>
+              <div class="chips">${badge("ok", "IMA runtime")}</div>
+            </div>
+            <div class="kv">
+              <div class="key">Keylime 名称</div>
+              <div class="value mono">${escapeHtml(policy.runtime_policy_name || "-")}</div>
+            </div>
+            <div class="kv">
+              <div class="key">策略文件</div>
+              <div class="value mono">${escapeHtml(policy.runtime_policy_path || "-")}</div>
+            </div>
+            <div class="actions" style="margin-top: 10px;">
+              <button data-select-runtime-policy="${escapeHtml(policy.id)}">选择</button>
+              <button data-edit-runtime-policy="${escapeHtml(policy.id)}">编辑</button>
+              <button class="danger" data-delete-runtime-policy="${escapeHtml(policy.id)}">删除</button>
+            </div>
+          </article>
+        `;
+      }).join("");
+      el("runtimePolicySelect").innerHTML = state.runtimePolicies.map((policy) => `
+        <option value="${escapeHtml(policy.id)}" ${policy.id === state.selectedRuntimePolicyId ? "selected" : ""}>${escapeHtml(policy.name)}</option>
+      `).join("");
+    }
+
+    function renderRuntimeApplyNodes() {
+      if (!state.policyNodes.length) {
+        el("runtimeApplyNodeList").innerHTML = `<span class="subtle">未发现计算节点</span>`;
+        return;
+      }
+      el("runtimeApplyNodeList").innerHTML = state.policyNodes.map((node) => {
+        const canApply = Boolean(node.can_apply);
+        const binding = node.bindings?.runtime || {};
+        const bound = binding.policy_name ? `当前：${binding.policy_name}` : "未绑定运行时策略";
+        return `
+          <label class="apply-node">
+            <input type="checkbox" class="runtime-apply-host" value="${escapeHtml(node.host)}" ${canApply ? "" : "disabled"}>
+            <span>
+              <strong>${escapeHtml(node.host)}</strong>
+              <span class="subtle"> ${escapeHtml(node.ip || "-")}</span><br>
+              <span class="subtle mono">${escapeHtml(node.agent?.uuid || "缺少 UUID")}</span><br>
+              <span class="subtle">${escapeHtml(bound)}</span>
+            </span>
+            ${layerBadge(node, "runtime", "运行时")}
+          </label>
+        `;
+      }).join("");
     }
 
     function renderBaselinePanel() {
@@ -1469,7 +1827,7 @@
         const data = await requestJson("/api/policies/apply-bound", {
           method: "POST",
           headers: apiHeaders(),
-          body: JSON.stringify({ all: true, sync: true, sync_mode: "control-loop" })
+          body: JSON.stringify({ all: true, module: "boot", sync: true, sync_mode: "control-loop" })
         });
         renderApplyResult(data.results || []);
         await refreshPolicies(true);
@@ -1507,12 +1865,56 @@
       }
     }
 
-    function renderApplyResult(results) {
-      if (!results.length) {
-        el("applyResult").innerHTML = `<span class="subtle">暂无结果</span>`;
+    async function applyRuntimePolicy(all) {
+      const policyId = el("runtimePolicySelect").value || state.selectedRuntimePolicyId;
+      if (!policyId) {
+        showNotice(el("policyNotice"), "bad", "请选择运行时策略");
         return;
       }
-      el("applyResult").innerHTML = results.map((item) => {
+      const hosts = Array.from(document.querySelectorAll(".runtime-apply-host:checked")).map((item) => item.value);
+      if (!all && !hosts.length) {
+        showNotice(el("policyNotice"), "bad", "请选择计算节点");
+        return;
+      }
+      el("runtimeApplyResult").innerHTML = `<span class="subtle">正在下发...</span>`;
+      try {
+        const data = await requestJson("/api/policies/apply", {
+          method: "POST",
+          headers: apiHeaders(),
+          body: JSON.stringify({ policy_id: policyId, hosts, all })
+        });
+        renderApplyResult(data.results || [], "runtimeApplyResult");
+        await refreshPolicies(true);
+        showNotice(el("policyNotice"), data.ok ? "ok" : "warn", data.ok ? "运行时策略下发完成" : "运行时策略部分下发失败");
+      } catch (error) {
+        showNotice(el("policyNotice"), "bad", error.message);
+        el("runtimeApplyResult").innerHTML = `<div class="result-item">${escapeHtml(error.message)}</div>`;
+      }
+    }
+
+    async function applyRuntimeBoundPolicies() {
+      el("runtimeApplyResult").innerHTML = `<span class="subtle">正在按绑定运行时策略下发...</span>`;
+      try {
+        const data = await requestJson("/api/policies/apply-bound", {
+          method: "POST",
+          headers: apiHeaders(),
+          body: JSON.stringify({ all: true, module: "runtime", sync: true, sync_mode: "control-loop" })
+        });
+        renderApplyResult(data.results || [], "runtimeApplyResult");
+        await refreshPolicies(true);
+        showNotice(el("policyNotice"), data.ok ? "ok" : "warn", data.ok ? "运行时绑定策略下发完成" : "运行时绑定策略部分失败");
+      } catch (error) {
+        showNotice(el("policyNotice"), "bad", error.message);
+        el("runtimeApplyResult").innerHTML = `<div class="result-item">${escapeHtml(error.message)}</div>`;
+      }
+    }
+
+    function renderApplyResult(results, targetId = "applyResult") {
+      if (!results.length) {
+        el(targetId).innerHTML = `<span class="subtle">暂无结果</span>`;
+        return;
+      }
+      el(targetId).innerHTML = results.map((item) => {
         const kind = item.status === "success" ? "ok" : "bad";
         const message = item.message || `update_rc=${item.update_rc ?? "-"} reactivate_rc=${item.reactivate_rc ?? "-"} sync_rc=${item.sync_rc ?? "-"}`;
         return `
@@ -1576,6 +1978,7 @@
     });
     el("refreshPolicies").addEventListener("click", refreshPolicies);
     el("refreshBaseline").addEventListener("click", () => refreshPolicies(true));
+    el("refreshRuntimePolicies").addEventListener("click", () => refreshPolicies(true));
     el("importBaselinePolicies").addEventListener("click", importBaselinePolicies);
     el("applyBoundPolicies").addEventListener("click", applyBoundPolicies);
     el("newPolicy").addEventListener("click", resetPolicyForm);
@@ -1621,6 +2024,39 @@
     });
     el("applySelectedPolicy").addEventListener("click", () => applyPolicy(false));
     el("applyAllPolicy").addEventListener("click", () => applyPolicy(true));
+    el("newRuntimePolicy").addEventListener("click", resetRuntimePolicyForm);
+    el("resetRuntimePolicyForm").addEventListener("click", resetRuntimePolicyForm);
+    el("saveRuntimePolicy").addEventListener("click", saveRuntimePolicy);
+    el("runtimePolicyDisplayName").addEventListener("input", () => {
+      if (!state.editingRuntimePolicyId && !el("runtimePolicyId").value.trim()) {
+        el("runtimePolicyId").value = slugify(el("runtimePolicyDisplayName").value);
+      }
+      if (!el("runtimePolicyName").value.trim()) {
+        el("runtimePolicyName").value = el("runtimePolicyId").value.trim();
+      }
+    });
+    el("runtimePolicyList").addEventListener("click", (event) => {
+      const selectId = event.target.dataset.selectRuntimePolicy;
+      const editId = event.target.dataset.editRuntimePolicy;
+      const deleteId = event.target.dataset.deleteRuntimePolicy;
+      if (selectId) {
+        state.selectedRuntimePolicyId = selectId;
+        renderRuntimePolicyList();
+      }
+      if (editId) {
+        const policy = state.runtimePolicies.find((item) => item.id === editId);
+        if (policy) fillRuntimePolicyForm(policy);
+      }
+      if (deleteId) {
+        deletePolicy(deleteId);
+      }
+    });
+    el("runtimePolicySelect").addEventListener("change", () => {
+      state.selectedRuntimePolicyId = el("runtimePolicySelect").value;
+      renderRuntimePolicyList();
+    });
+    el("applyRuntimeSelectedPolicy").addEventListener("click", () => applyRuntimePolicy(false));
+    el("applyRuntimeBoundPolicies").addEventListener("click", applyRuntimeBoundPolicies);
 
     const savedInterval = localStorage.getItem("trustMonitorRefreshSeconds");
     if (savedInterval) {
@@ -1632,6 +2068,7 @@
     }
 
     resetPolicyForm();
+    resetRuntimePolicyForm();
     refreshStatus();
     startTimer();
   </script>

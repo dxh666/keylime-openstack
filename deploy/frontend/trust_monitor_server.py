@@ -58,6 +58,8 @@ DEFAULTS = {
     "KEYLIME_POLICY_BASE_DIR": "/var/lib/keylime-openstack-sync/policies",
     "KEYLIME_POLICY_RENDER_AUDIT_FILE": "/var/log/keylime-openstack-policy-render.json",
     "KEYLIME_POLICY_APPLY_AUDIT_FILE": "/var/log/keylime-openstack-policy-apply.json",
+    "KEYLIME_MEASURED_BOOT_MODE": "alert-only",
+    "KEYLIME_RUNTIME_GUARD_PATH": "/opt/keylime-cloud-integrity/cloud-runtime-guard.sh",
 }
 
 PCR_DIGEST_LENGTHS = {
@@ -674,6 +676,140 @@ def conclude_node(
     return {"level": "bad", "code": "KEYLIME_UNKNOWN", "text": "不可信"}
 
 
+def parse_mask_value(value: Any) -> int | None:
+    text = str(value or "").strip().strip("\"'")
+    if not text:
+        return None
+    try:
+        return int(text, 0)
+    except ValueError:
+        return None
+
+
+def mask_has_pcr(value: Any, pcr: int) -> bool | None:
+    parsed = parse_mask_value(value)
+    if parsed is None:
+        return None
+    return bool(parsed & (1 << pcr))
+
+
+def build_trust_layers(
+    config: dict[str, Any],
+    service: dict[str, Any],
+    agent_configured: bool,
+    decision: dict[str, Any] | None,
+    trait_present: bool | None,
+    marker: dict[str, Any],
+) -> dict[str, Any]:
+    decision = decision or {}
+    result = str(decision.get("result") or "")
+    event_id = str(decision.get("last_event_id") or "")
+    attestation_status = str(decision.get("attestation_status") or "")
+    operational_state = str(decision.get("operational_state") or "")
+    mask = str(decision.get("tpm_policy_mask") or "")
+    has_runtime_policy = decision.get("has_runtime_policy")
+    boot_pcr7 = decision.get("boot_pcr7_enforced")
+    runtime_pcr10 = decision.get("runtime_pcr10_enforced")
+
+    if boot_pcr7 is None:
+        boot_pcr7 = mask_has_pcr(mask, 7)
+    if runtime_pcr10 is None:
+        runtime_pcr10 = mask_has_pcr(mask, 10)
+
+    if not agent_configured:
+        keylime = {
+            "level": "warn",
+            "code": "NO_AGENT",
+            "text": "未装代理",
+            "detail": "该计算节点尚未配置 Keylime agent。",
+        }
+        boot = {**keylime, "text": "未纳管"}
+        runtime = {**keylime, "text": "未纳管"}
+    elif result == "PASS_FRESH":
+        keylime = {
+            "level": "ok",
+            "code": "PASS_FRESH",
+            "text": "证明新鲜",
+            "detail": f"attestation_status={attestation_status or 'PASS'}, state={operational_state or '-'}",
+        }
+        boot = {
+            "level": "ok",
+            "code": "BOOT_TRUSTED",
+            "text": "PCR7 通过" if boot_pcr7 is True else "启动通过",
+            "detail": "TPM quote 已通过当前启动策略校验。",
+        }
+        if has_runtime_policy is False:
+            runtime = {
+                "level": "warn",
+                "code": "RUNTIME_POLICY_UNKNOWN",
+                "text": "未确认",
+                "detail": "Keylime 状态未显示 runtime policy 已绑定。",
+            }
+        else:
+            runtime = {
+                "level": "ok",
+                "code": "RUNTIME_TRUSTED",
+                "text": "IMA 通过" if runtime_pcr10 is True or has_runtime_policy is True else "运行时通过",
+                "detail": "PCR10 / IMA runtime policy 当前未发现偏离。",
+            }
+    else:
+        keylime = {
+            "level": "bad",
+            "code": "ATTESTATION_NOT_PASS",
+            "text": "证明失败",
+            "detail": event_id or decision.get("reason") or "Keylime attestation 未通过。",
+        }
+        boot = {
+            "level": "bad",
+            "code": "BOOT_OR_TPM_FAILED",
+            "text": "未通过",
+            "detail": decision.get("reason") or operational_state or "TPM quote 未通过。",
+        }
+        runtime = {
+            "level": "bad" if "ima" in event_id.lower() else "warn",
+            "code": "IMA_FAILED" if "ima" in event_id.lower() else "RUNTIME_IMPACTED",
+            "text": "IMA 异常" if "ima" in event_id.lower() else "受影响",
+            "detail": event_id or "运行时完整性随 Keylime 证明失败进入异常状态。",
+        }
+
+    openstack_ok = (
+        service.get("state") == "up"
+        and service.get("status") == "enabled"
+        and trait_present is True
+        and marker.get("present") is False
+    )
+    openstack = {
+        "level": "ok" if openstack_ok else "bad",
+        "code": "OPENSTACK_TRUSTED" if openstack_ok else "OPENSTACK_RESTRICTED",
+        "text": "已准入" if openstack_ok else "已限制",
+        "detail": f"trait={trait_present}, service={service.get('status')}/{service.get('state')}, marker={marker.get('present')}",
+    }
+
+    measured_mode = str(config.get("KEYLIME_MEASURED_BOOT_MODE", "alert-only"))
+    measured_event = event_id.startswith("measured_boot.")
+    measured_boot = {
+        "level": "warn" if measured_mode == "alert-only" or measured_event else ("ok" if result == "PASS_FRESH" else "bad"),
+        "code": "MEASURED_BOOT_ALERT_ONLY" if measured_mode == "alert-only" else "MEASURED_BOOT_ENFORCED",
+        "text": "告警观察" if measured_mode == "alert-only" else ("已启用" if result == "PASS_FRESH" else "异常"),
+        "detail": "当前环境 measured boot 作为告警信号，不直接隔离节点。" if measured_mode == "alert-only" else (event_id or "Measured boot policy enforced."),
+    }
+
+    return {
+        "keylime": keylime,
+        "boot": boot,
+        "runtime": runtime,
+        "openstack": openstack,
+        "measured_boot": measured_boot,
+        "policy": {
+            "tpm_policy_mask": mask,
+            "has_runtime_policy": has_runtime_policy,
+            "boot_pcr7_enforced": boot_pcr7,
+            "runtime_pcr10_enforced": runtime_pcr10,
+            "runtime_guard_path": str(config.get("KEYLIME_RUNTIME_GUARD_PATH", "")),
+        },
+    }
+
+
 def build_node(
     config: dict[str, Any],
     service: dict[str, Any],
@@ -696,6 +832,14 @@ def build_node(
     node_decision = read_node_decision(config, host) if agent_configured else None
     trait_present = trusted_trait in traits if provider.get("uuid") else None
     conclusion = conclude_node(service, agent_configured, node_decision, trait_present, marker)
+    trust_layers = build_trust_layers(
+        config,
+        service,
+        agent_configured,
+        node_decision,
+        trait_present,
+        marker,
+    )
     node_ip = (
         str(agent_ip_by_host.get(host, ""))
         or str(hypervisor.get("host_ip", ""))
@@ -736,6 +880,7 @@ def build_node(
         },
         "marker": marker,
         "conclusion": conclusion,
+        "trust_layers": trust_layers,
     }
 
 
@@ -954,7 +1099,64 @@ def save_policy_store(config: dict[str, Any], store: dict[str, Any]) -> None:
 
 def slugify(value: str) -> str:
     slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", value.strip().lower()).strip("-")
-    return slug or "tpm-pcr-policy"
+    return slug or "keylime-policy"
+
+
+def policy_module_key(policy_or_payload: dict[str, Any] | None) -> str:
+    if not isinstance(policy_or_payload, dict):
+        return "boot"
+    policy_type = str(policy_or_payload.get("type", "")).strip()
+    module = str(policy_or_payload.get("module", "")).strip()
+    if policy_type == "ima_runtime" or module == "runtime_integrity":
+        return "runtime"
+    return "boot"
+
+
+def normalize_list_field(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    lines: list[str] = []
+    for chunk in str(value).replace(",", "\n").splitlines():
+        item = chunk.strip()
+        if item:
+            lines.append(item)
+    return lines
+
+
+def get_module_binding(bindings: dict[str, Any], host: str, module_key: str) -> dict[str, Any]:
+    binding = bindings.get(host, {})
+    if not isinstance(binding, dict):
+        return {}
+    if module_key in ("boot", "runtime") and isinstance(binding.get(module_key), dict):
+        return binding[module_key]
+    if module_key == "boot" and binding.get("policy_id"):
+        return binding
+    return {}
+
+
+def set_module_binding(bindings: dict[str, Any], host: str, module_key: str, record: dict[str, Any]) -> None:
+    current = bindings.get(host, {})
+    if not isinstance(current, dict) or (current.get("policy_id") and not current.get("boot")):
+        current = {"boot": current} if isinstance(current, dict) and current.get("policy_id") else {}
+    current[module_key] = record
+    bindings[host] = current
+
+
+def delete_policy_bindings(bindings: dict[str, Any], policy_id: str) -> None:
+    for host, binding in list(bindings.items()):
+        if not isinstance(binding, dict):
+            continue
+        if binding.get("policy_id") == policy_id:
+            del bindings[host]
+            continue
+        for module_key in ("boot", "runtime"):
+            module_binding = binding.get(module_key)
+            if isinstance(module_binding, dict) and module_binding.get("policy_id") == policy_id:
+                del binding[module_key]
+        if not binding:
+            del bindings[host]
 
 
 def normalize_digest(value: Any, hash_alg: str) -> str:
@@ -1017,28 +1219,27 @@ def normalize_pcrs(payload: Any, hash_alg: str) -> dict[str, str]:
     return dict(sorted(pcrs.items(), key=lambda item: int(item[0])))
 
 
-def normalize_policy_payload(payload: dict[str, Any], existing: dict[str, Any] | None = None) -> dict[str, Any]:
-    if not isinstance(payload, dict):
-        raise ApiError(HTTPStatus.BAD_REQUEST, "请求体必须是 JSON 对象")
-
-    name = str(payload.get("name") or (existing or {}).get("name") or "").strip()
-    if not name:
-        raise ApiError(HTTPStatus.BAD_REQUEST, "策略名称不能为空")
-
-    policy_id = slugify(str(payload.get("id") or (existing or {}).get("id") or name))
+def normalize_boot_policy_payload(
+    payload: dict[str, Any],
+    existing: dict[str, Any] | None,
+    policy_id: str,
+    name: str,
+    now: str,
+    created_at: str,
+) -> dict[str, Any]:
     hash_alg = str(payload.get("hash_alg") or (existing or {}).get("hash_alg") or "sha256").lower()
     if hash_alg not in PCR_DIGEST_LENGTHS:
         raise ApiError(HTTPStatus.BAD_REQUEST, "hash_alg 仅支持 sha1、sha256、sha384、sha512")
 
     pcrs_source = payload.get("pcrs", (existing or {}).get("pcrs", {}))
     pcrs = normalize_pcrs(pcrs_source, hash_alg)
-    now = utc_now()
-    created_at = str((existing or {}).get("created_at_utc") or now)
     module = str(payload.get("module") or (existing or {}).get("module") or "boot_measurement").strip()
+    if module == "runtime_integrity":
+        module = "boot_measurement"
     if policy_id.startswith("bad-") or module == "boot_measurement_negative_test":
         raise ApiError(HTTPStatus.BAD_REQUEST, "管理系统不允许保存非生产策略")
 
-    policy = {
+    return {
         "id": policy_id,
         "name": name,
         "description": str(payload.get("description") or (existing or {}).get("description") or "").strip(),
@@ -1051,7 +1252,63 @@ def normalize_policy_payload(payload: dict[str, Any], existing: dict[str, Any] |
         "created_at_utc": created_at,
         "updated_at_utc": now,
     }
-    return policy
+
+
+def normalize_runtime_policy_payload(
+    payload: dict[str, Any],
+    existing: dict[str, Any] | None,
+    policy_id: str,
+    name: str,
+    now: str,
+    created_at: str,
+) -> dict[str, Any]:
+    runtime_policy_name = str(
+        payload.get("runtime_policy_name")
+        or (existing or {}).get("runtime_policy_name")
+        or policy_id
+    ).strip()
+    runtime_policy_path = str(
+        payload.get("runtime_policy_path")
+        or (existing or {}).get("runtime_policy_path")
+        or ""
+    ).strip()
+    if not runtime_policy_name:
+        raise ApiError(HTTPStatus.BAD_REQUEST, "runtime policy 名称不能为空")
+    if not runtime_policy_path:
+        raise ApiError(HTTPStatus.BAD_REQUEST, "runtime policy 文件路径不能为空")
+
+    return {
+        "id": policy_id,
+        "name": name,
+        "description": str(payload.get("description") or (existing or {}).get("description") or "").strip(),
+        "type": "ima_runtime",
+        "module": "runtime_integrity",
+        "runtime_policy_name": runtime_policy_name,
+        "runtime_policy_path": runtime_policy_path,
+        "protected_paths": normalize_list_field(payload.get("protected_paths", (existing or {}).get("protected_paths", []))),
+        "excludes": normalize_list_field(payload.get("excludes", (existing or {}).get("excludes", []))),
+        "created_at_utc": created_at,
+        "updated_at_utc": now,
+    }
+
+
+def normalize_policy_payload(payload: dict[str, Any], existing: dict[str, Any] | None = None) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise ApiError(HTTPStatus.BAD_REQUEST, "请求体必须是 JSON 对象")
+
+    name = str(payload.get("name") or (existing or {}).get("name") or "").strip()
+    if not name:
+        raise ApiError(HTTPStatus.BAD_REQUEST, "策略名称不能为空")
+
+    policy_id = slugify(str(payload.get("id") or (existing or {}).get("id") or name))
+    now = utc_now()
+    created_at = str((existing or {}).get("created_at_utc") or now)
+    if policy_id.startswith("bad-"):
+        raise ApiError(HTTPStatus.BAD_REQUEST, "管理系统不允许保存非生产策略")
+
+    if policy_module_key({**(existing or {}), **payload}) == "runtime":
+        return normalize_runtime_policy_payload(payload, existing, policy_id, name, now, created_at)
+    return normalize_boot_policy_payload(payload, existing, policy_id, name, now, created_at)
 
 
 def find_policy(store: dict[str, Any], policy_id: str) -> dict[str, Any] | None:
@@ -1112,9 +1369,7 @@ def delete_policy(config: dict[str, Any], policy_id: str) -> dict[str, Any]:
     ]
     if len(store["policies"]) == before:
         raise ApiError(HTTPStatus.NOT_FOUND, f"策略不存在: {policy_id}")
-    for host, binding in list(store.get("bindings", {}).items()):
-        if isinstance(binding, dict) and binding.get("policy_id") == policy_id:
-            del store["bindings"][host]
+    delete_policy_bindings(store.setdefault("bindings", {}), policy_id)
     store.setdefault("events", []).append(
         {"at_utc": utc_now(), "action": "policy_deleted", "policy_id": policy_id}
     )
@@ -1141,6 +1396,17 @@ def policy_templates() -> list[dict[str, Any]]:
             "hash_alg": "sha256",
             "pcrs": {str(i): "0" * 64 for i in range(8)},
         },
+        {
+            "id": "ima-runtime-policy-file",
+            "name": "IMA 运行时策略文件",
+            "description": "引用由 Keylime 官方 runtime policy 工具生成的 JSON 文件，按节点绑定后下发。",
+            "type": "ima_runtime",
+            "module": "runtime_integrity",
+            "runtime_policy_name": "cloud-runtime-guard",
+            "runtime_policy_path": "/var/lib/keylime-openstack-sync/policies/runtime/cloud-runtime-policy.json",
+            "protected_paths": ["/opt/keylime-cloud-integrity/cloud-runtime-guard.sh"],
+            "excludes": ["^(?!(boot_aggregate|/opt/keylime-cloud-integrity/cloud-runtime-guard.sh)$).*"],
+        },
     ]
 
 
@@ -1156,27 +1422,41 @@ def collect_policy_overview(config: dict[str, Any], status: dict[str, Any] | Non
         policy = dict(item)
         if not is_management_policy(policy):
             continue
-        if isinstance(policy.get("pcrs"), dict):
+        policy["module_key"] = policy_module_key(policy)
+        if policy.get("type") == "tpm_pcr" and isinstance(policy.get("pcrs"), dict):
             policy["mask"] = calculate_mask(policy["pcrs"])
             policy["tpm_policy"] = build_tpm_policy(policy["pcrs"])
-        policy["tpm_policy_json"] = json.dumps(policy.get("tpm_policy", {}), ensure_ascii=False, sort_keys=True)
+        if policy.get("type") == "tpm_pcr":
+            policy["tpm_policy_json"] = json.dumps(policy.get("tpm_policy", {}), ensure_ascii=False, sort_keys=True)
         policies.append(policy)
     management_policy_ids = {str(policy.get("id", "")) for policy in policies}
 
     nodes = []
     for node in status.get("nodes", []):
-        binding = bindings.get(node.get("host", ""), {})
-        if isinstance(binding, dict) and str(binding.get("policy_id", "")) not in management_policy_ids:
-            binding = {}
+        host = str(node.get("host", ""))
+        boot_binding = get_module_binding(bindings, host, "boot")
+        runtime_binding = get_module_binding(bindings, host, "runtime")
+        if str(boot_binding.get("policy_id", "")) not in management_policy_ids:
+            boot_binding = {}
+        if str(runtime_binding.get("policy_id", "")) not in management_policy_ids:
+            runtime_binding = {}
         node_summary = {
-            "host": node.get("host", ""),
+            "host": host,
             "ip": node.get("ip", ""),
             "trust_text": node.get("conclusion", {}).get("text", "未知"),
             "trust_level": node.get("conclusion", {}).get("level", "warn"),
             "service_state": node.get("service", {}).get("state", ""),
             "service_status": node.get("service", {}).get("status", ""),
             "agent": node.get("agent", {}),
-            "binding": binding if isinstance(binding, dict) else {},
+            "decision": node.get("decision", {}),
+            "placement": node.get("placement", {}),
+            "marker": node.get("marker", {}),
+            "trust_layers": node.get("trust_layers", {}),
+            "bindings": {
+                "boot": boot_binding if isinstance(boot_binding, dict) else {},
+                "runtime": runtime_binding if isinstance(runtime_binding, dict) else {},
+            },
+            "binding": boot_binding if isinstance(boot_binding, dict) else {},
             "can_apply": bool(node.get("agent", {}).get("uuid") and node.get("ip") not in ("", "unknown")),
         }
         nodes.append(node_summary)
@@ -1343,14 +1623,15 @@ def import_baseline_policies(config: dict[str, Any], payload: dict[str, Any]) ->
 
         if bind_mode in ("pcr7", "pcr0-7"):
             bound = pcr7_policy if bind_mode == "pcr7" else pcr0_7_policy
-            store.setdefault("bindings", {})[host] = {
+            set_module_binding(store.setdefault("bindings", {}), host, "boot", {
                 "host": host,
                 "policy_id": bound["id"],
                 "policy_name": bound["name"],
+                "policy_type": bound["type"],
                 "binding_mode": bind_mode,
                 "bound_at_utc": utc_now(),
                 "source": "frontend-import-baseline",
-            }
+            })
         rendered.append({"host": host, "pcr7_policy_id": pcr7_policy["id"], "pcr0_7_policy_id": pcr0_7_policy["id"]})
 
     event = {
@@ -1374,11 +1655,19 @@ def import_baseline_policies(config: dict[str, Any], payload: dict[str, Any]) ->
     }
 
 
-def run_keylime_tenant(config: dict[str, Any], args: list[str], timeout: int = 180) -> dict[str, Any]:
+def run_keylime_tenant(
+    config: dict[str, Any],
+    args: list[str],
+    timeout: int = 180,
+    volumes: list[tuple[str, str, str]] | None = None,
+) -> dict[str, Any]:
     keylime_dir = Path(str(config["KEYLIME_DIR"]))
     if not keylime_dir.is_dir():
         return {"rc": 1, "stdout": "", "stderr": f"Keylime docker directory not found: {keylime_dir}"}
-    command = ["docker", "compose", "run", "--rm", "keylime-tenant", *args]
+    command = ["docker", "compose", "run", "--rm"]
+    for host_path, container_path, mode in volumes or []:
+        command.extend(["-v", f"{host_path}:{container_path}:{mode}"])
+    command.extend(["keylime-tenant", *args])
     return run_command(command, timeout=timeout, cwd=str(keylime_dir))
 
 
@@ -1411,6 +1700,7 @@ def apply_policy(config: dict[str, Any], payload: dict[str, Any]) -> dict[str, A
         raise ApiError(HTTPStatus.NOT_FOUND, f"策略不存在: {policy_id}")
     if not is_management_policy(policy):
         raise ApiError(HTTPStatus.BAD_REQUEST, "管理系统不允许下发非生产策略")
+    module_key = policy_module_key(policy)
 
     status = collect_status(config)
     nodes_by_host = {node["host"]: node for node in status.get("nodes", [])}
@@ -1423,8 +1713,23 @@ def apply_policy(config: dict[str, Any], payload: dict[str, Any]) -> dict[str, A
     if not requested_hosts:
         raise ApiError(HTTPStatus.BAD_REQUEST, "至少选择一个计算节点")
 
-    tpm_policy = build_tpm_policy(policy.get("pcrs", {}))
-    tpm_policy_json = json.dumps(tpm_policy, separators=(",", ":"), sort_keys=True)
+    tpm_policy: dict[str, Any] | None = None
+    tpm_policy_json = ""
+    runtime_policy_path: Path | None = None
+    runtime_container_path = ""
+    runtime_volumes: list[tuple[str, str, str]] = []
+    if module_key == "runtime":
+        runtime_policy_path = Path(str(policy.get("runtime_policy_path", "")))
+        if not runtime_policy_path.is_file():
+            raise ApiError(HTTPStatus.BAD_REQUEST, f"runtime policy 文件不可读: {runtime_policy_path}")
+        runtime_container_path = f"/keylime-runtime-policy/{runtime_policy_path.name}"
+        runtime_volumes = [(str(runtime_policy_path.parent), "/keylime-runtime-policy", "ro")]
+    else:
+        tpm_policy = build_tpm_policy(policy.get("pcrs", {}))
+        # Keylime tenant accepts PCR numbers as policy keys; mask is kept for local display only.
+        tpm_policy_for_tenant = dict(tpm_policy)
+        tpm_policy_for_tenant.pop("mask", None)
+        tpm_policy_json = json.dumps(tpm_policy_for_tenant, separators=(",", ":"), sort_keys=True)
     verifier_ip = str(config["KEYLIME_VERIFIER_IP"])
     verifier_port = str(config["KEYLIME_VERIFIER_PORT"])
     registrar_ip = str(config["KEYLIME_REGISTRAR_IP"])
@@ -1458,17 +1763,28 @@ def apply_policy(config: dict[str, Any], payload: dict[str, Any]) -> dict[str, A
             "-r", registrar_ip,
             "-rp", registrar_port,
         ]
-        update_result = run_keylime_tenant(
-            config,
-            [
+        update_args = [
                 "-c", "update",
                 "-t", agent_ip,
                 "-tp", agent_port,
                 *common,
                 "--agent-api-version", agent_api_version,
-                "--tpm_policy", tpm_policy_json,
-            ],
+        ]
+        if module_key == "runtime":
+            update_args.extend(
+                [
+                    "--runtime-policy-name", str(policy.get("runtime_policy_name") or policy["id"]),
+                    "--runtime-policy", runtime_container_path,
+                ]
+            )
+        else:
+            update_args.extend(["--tpm_policy", tpm_policy_json])
+
+        update_result = run_keylime_tenant(
+            config,
+            update_args,
             timeout=240,
+            volumes=runtime_volumes,
         )
         reactivate_result = {"rc": 0, "stdout": "", "stderr": "reactivate skipped"}
         if update_result["rc"] == 0 and should_reactivate:
@@ -1489,7 +1805,11 @@ def apply_policy(config: dict[str, Any], payload: dict[str, Any]) -> dict[str, A
             "agent_ip": agent_ip,
             "policy_id": policy["id"],
             "policy_name": policy["name"],
+            "policy_type": policy.get("type", "tpm_pcr"),
+            "policy_module": module_key,
             "tpm_policy": tpm_policy,
+            "runtime_policy_name": policy.get("runtime_policy_name", ""),
+            "runtime_policy_path": str(runtime_policy_path or ""),
             "status": "success" if success else "failed",
             "applied_at_utc": utc_now(),
             "update_rc": update_result["rc"],
@@ -1510,7 +1830,7 @@ def apply_policy(config: dict[str, Any], payload: dict[str, Any]) -> dict[str, A
                 ] if part and part not in ("reactivate skipped", "sync skipped")
             )),
         }
-        store.setdefault("bindings", {})[host] = record
+        set_module_binding(store.setdefault("bindings", {}), host, module_key, record)
         store.setdefault("events", []).append(
             {
                 "at_utc": record["applied_at_utc"],
@@ -1534,19 +1854,23 @@ def apply_bound_policies(config: dict[str, Any], payload: dict[str, Any]) -> dic
     store = load_policy_store(config)
     status = collect_status(config)
     nodes_by_host = {node["host"]: node for node in status.get("nodes", [])}
+    module_key = str(payload.get("module") or "boot").strip()
+    if module_key not in ("boot", "runtime"):
+        raise ApiError(HTTPStatus.BAD_REQUEST, "module 仅支持 boot 或 runtime")
     requested_hosts = [str(host).strip() for host in payload.get("hosts", []) if str(host).strip()]
     if payload.get("all"):
-        requested_hosts = [
-            host for host in nodes_by_host
-            if isinstance(store.get("bindings", {}).get(host), dict)
-            and is_management_policy(find_policy(store, str(store.get("bindings", {}).get(host, {}).get("policy_id", ""))) or {})
-        ]
+        requested_hosts = []
+        for host in nodes_by_host:
+            policy_id = str(get_module_binding(store.get("bindings", {}), host, module_key).get("policy_id", ""))
+            policy = find_policy(store, policy_id) if policy_id else None
+            if policy and is_management_policy(policy):
+                requested_hosts.append(host)
     if not requested_hosts:
         raise ApiError(HTTPStatus.BAD_REQUEST, "至少选择一个已绑定策略的计算节点")
 
     results: list[dict[str, Any]] = []
     for host in requested_hosts:
-        binding = store.get("bindings", {}).get(host, {})
+        binding = get_module_binding(store.get("bindings", {}), host, module_key)
         if not isinstance(binding, dict) or not binding.get("policy_id"):
             results.append({"host": host, "status": "failed", "message": "节点未绑定策略"})
             continue

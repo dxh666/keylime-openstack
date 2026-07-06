@@ -151,6 +151,53 @@ last_event_id = pick([
     r"last_event_id\s*:\s*([^\n,}]+)",
 ])
 
+has_runtime_policy_raw = pick([
+    r'"has_runtime_policy"\s*:\s*(true|false|1|0)',
+    r"'has_runtime_policy'\s*:\s*(True|False|true|false|1|0)",
+    r"has_runtime_policy\s*:\s*(True|False|true|false|1|0)",
+])
+
+tpm_policy_mask = pick([
+    r'\\"tpm_policy\\"\s*:\s*\\"[\s\S]*?\\"mask\\"\s*:\s*\\"([^\\"]+)\\"',
+    r"\\'tpm_policy\\'\s*:\s*\\'[\s\S]*?\\'mask\\'\s*:\s*\\'([^\\']+)\\'",
+    r'"tpm_policy"\s*:\s*\{[\s\S]*?"mask"\s*:\s*"([^"]+)"',
+    r"'tpm_policy'\s*:\s*\{[\s\S]*?'mask'\s*:\s*'([^']+)'",
+    r'\\"mask\\"\s*:\s*\\"([^\\"]+)\\"',
+    r"\\'mask\\'\s*:\s*\\'([^\\']+)\\'",
+    r'"mask"\s*:\s*"([^"]+)"',
+    r"'mask'\s*:\s*'([^']+)'",
+    r"tpm_policy[\s\S]*?mask['\"]?\s*:\s*['\"]?([^,'\"\s}]+)",
+])
+
+def parse_optional_bool(value):
+    normalized = (value or "").strip().strip("\"'").lower()
+    if normalized in ("1", "true", "yes"):
+        return True
+    if normalized in ("0", "false", "no"):
+        return False
+    return None
+
+def parse_mask(value):
+    normalized = (value or "").strip().strip("\"'")
+    if not normalized:
+        return None
+    try:
+        return int(normalized, 0)
+    except ValueError:
+        return None
+
+def mask_has_pcr(value, pcr):
+    parsed = parse_mask(value)
+    if parsed is None:
+        return None
+    return bool(parsed & (1 << pcr))
+
+has_runtime_policy = parse_optional_bool(has_runtime_policy_raw)
+boot_pcr7_enforced = mask_has_pcr(tpm_policy_mask, 7)
+runtime_pcr10_enforced = mask_has_pcr(tpm_policy_mask, 10)
+if has_runtime_policy is True and runtime_pcr10_enforced is None:
+    runtime_pcr10_enforced = True
+
 def parse_timestamp(value):
     value = (value or "").strip()
     if not value:
@@ -196,6 +243,10 @@ decision = {
     "last_successful_attestation_age_seconds": age,
     "max_attestation_age_seconds": max_age_s,
     "last_event_id": last_event_id,
+    "has_runtime_policy": has_runtime_policy,
+    "tpm_policy_mask": tpm_policy_mask,
+    "boot_pcr7_enforced": boot_pcr7_enforced,
+    "runtime_pcr10_enforced": runtime_pcr10_enforced,
     "checked_at_utc": now.isoformat(),
 }
 

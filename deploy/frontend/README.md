@@ -133,10 +133,11 @@ export KEYLIME_PCR_POLICY_FILE="/var/lib/keylime-openstack-sync/tpm-pcr-policies
   当前已实现，围绕 TPM PCR baseline、PCR7 准入策略、按节点绑定和下发展开。
 
 运行时完整性策略
-  已预留独立入口，后续基于 Keylime IMA runtime policy / PCR10 / runtime measurements 实现。
+  当前展示 Keylime IMA runtime policy / PCR10 / runtime measurements 的节点状态，
+  并支持 runtime policy 记录、编辑、删除、按节点绑定和下发。
 ```
 
-默认页面只展示启动度量常用操作；策略 JSON 编辑、模板和手动下发在“高级策略编辑与手动下发”折叠区中。
+启动策略和运行时策略分别绑定到计算节点，互不覆盖。运行时策略文件仍由 Keylime 官方 runtime policy 工具生成；管理系统负责记录策略名称、策略文件路径、保护对象、节点绑定和下发结果。
 
 相关文件：
 
@@ -162,6 +163,8 @@ POST /api/policies/apply-bound
 刷新基线
 从基线导入策略
 按绑定策略下发
+运行时策略增删改查
+运行时策略按节点绑定和下发
 ```
 
 默认推荐绑定 PCR7 baseline。管理系统不提供破坏性策略下发或负向验证入口；已有策略恢复、单节点下发等操作统一通过高级策略区的标准下发流程完成。

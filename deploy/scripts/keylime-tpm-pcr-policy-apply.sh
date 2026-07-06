@@ -72,7 +72,9 @@ store, policy_id = sys.argv[1], sys.argv[2]
 d = json.load(open(store, encoding="utf-8"))
 for p in d.get("policies", []):
     if p.get("id") == policy_id:
-        print(json.dumps(p.get("tpm_policy", {}), separators=(",", ":"), sort_keys=True))
+        policy = dict(p.get("tpm_policy", {}))
+        policy.pop("mask", None)
+        print(json.dumps(policy, separators=(",", ":"), sort_keys=True))
         break
 PY
   )"
@@ -181,4 +183,3 @@ if [ "$failed_count" != "0" ]; then
   echo "ERROR: one or more policy apply actions failed"
   exit 1
 fi
-

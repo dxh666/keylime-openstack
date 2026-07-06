@@ -12,7 +12,7 @@
 下发结果记录
 ```
 
-第一版只覆盖 TPM PCR 策略，不包含 IMA runtime policy 和 measured boot policy。
+当前版本将策略管理拆为两个生产模块：TPM PCR 启动策略管理和 IMA runtime 运行时策略管理。启动策略负责 PCR7/PCR0-7 等 TPM quote 约束；运行时策略引用 Keylime 官方 runtime policy JSON 文件，负责 PCR10/IMA runtime measurements 的完整性约束。Measured Boot 在 Dell R740 当前固件栈中作为告警观察项展示，不直接触发 OpenStack 隔离。
 
 ## 策略模型
 
