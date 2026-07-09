@@ -41,6 +41,7 @@ append_env_default "KEYLIME_TPM_EVIDENCE_BASELINE_JSON" "export KEYLIME_TPM_EVID
 append_env_default "KEYLIME_POLICY_BASE_DIR" "export KEYLIME_POLICY_BASE_DIR=\"/var/lib/keylime-openstack-sync/policies\""
 append_env_default "KEYLIME_POLICY_RENDER_AUDIT_FILE" "export KEYLIME_POLICY_RENDER_AUDIT_FILE=\"/var/log/keylime-openstack-policy-render.json\""
 append_env_default "KEYLIME_POLICY_APPLY_AUDIT_FILE" "export KEYLIME_POLICY_APPLY_AUDIT_FILE=\"/var/log/keylime-openstack-policy-apply.json\""
+append_env_default "KEYLIME_POLICY_APPLY_ADD_IF_MISSING" "export KEYLIME_POLICY_APPLY_ADD_IF_MISSING=\"true\""
 append_env_default "KEYLIME_POLICY_RENDER_BIND_MODE" "export KEYLIME_POLICY_RENDER_BIND_MODE=\"pcr7\""
 append_env_default "KEYLIME_POLICY_RENDER_CREATE_BAD_PCR7" "export KEYLIME_POLICY_RENDER_CREATE_BAD_PCR7=\"false\""
 append_env_default "KEYLIME_REQUIRE_BOOT_PCR7" "export KEYLIME_REQUIRE_BOOT_PCR7=\"true\""
@@ -53,6 +54,7 @@ append_env_default "KEYLIME_RUNTIME_PROTECTED_PATHS" "export KEYLIME_RUNTIME_PRO
 append_env_default "KEYLIME_RUNTIME_EXCLUDES" "export KEYLIME_RUNTIME_EXCLUDES='^(?!(boot_aggregate|/opt/keylime-cloud-integrity/cloud-runtime-guard.sh)$).*'"
 append_env_default "KEYLIME_RUNTIME_POLICY_COPY" "export KEYLIME_RUNTIME_POLICY_COPY=\"true\""
 append_env_default "KEYLIME_RUNTIME_POLICY_INCLUDE_BOUND_BOOT" "export KEYLIME_RUNTIME_POLICY_INCLUDE_BOUND_BOOT=\"true\""
+append_env_default "KEYLIME_RUNTIME_POLICY_APPLY_ADD_IF_MISSING" "export KEYLIME_RUNTIME_POLICY_APPLY_ADD_IF_MISSING=\"true\""
 
 install -d -m 0755 /var/lib/keylime-openstack-sync
 install -d -m 0755 /var/lib/keylime-openstack-sync/policies

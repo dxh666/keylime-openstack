@@ -31,6 +31,7 @@ DEFAULTS = {
     "KEYLIME_OPENSTACK_STATE_DIR": "/var/lib/keylime-openstack-sync",
     "KEYLIME_PCR_POLICY_FILE": "",
     "KEYLIME_POLICY_ADMIN_TOKEN": "",
+    "KEYLIME_POLICY_APPLY_ADD_IF_MISSING": "true",
     "KEYLIME_POLICY_APPLY_REACTIVATE": "true",
     "KEYLIME_POLICY_APPLY_SYNC": "false",
     "KEYLIME_POLICY_APPLY_SYNC_MODE": "placement",
@@ -1754,6 +1755,7 @@ def apply_policy(config: dict[str, Any], payload: dict[str, Any]) -> dict[str, A
     agent_port = str(config.get("KEYLIME_AGENT_PORT", "9002"))
     agent_api_version = str(config.get("KEYLIME_AGENT_API_VERSION", "2.5"))
     should_reactivate = is_truthy(config.get("KEYLIME_POLICY_APPLY_REACTIVATE", "true"))
+    should_add_if_missing = is_truthy(config.get("KEYLIME_POLICY_APPLY_ADD_IF_MISSING", "true"))
     should_sync = is_truthy(payload.get("sync", config.get("KEYLIME_POLICY_APPLY_SYNC", "false")))
     sync_mode = str(payload.get("sync_mode") or config.get("KEYLIME_POLICY_APPLY_SYNC_MODE", "placement"))
     include_bound_boot = is_truthy(config.get("KEYLIME_RUNTIME_POLICY_INCLUDE_BOUND_BOOT", "true"))
@@ -1785,8 +1787,7 @@ def apply_policy(config: dict[str, Any], payload: dict[str, Any]) -> dict[str, A
             "-r", registrar_ip,
             "-rp", registrar_port,
         ]
-        update_args = [
-                "-c", "update",
+        policy_args = [
                 "-t", agent_ip,
                 "-tp", agent_port,
                 *common,
@@ -1803,26 +1804,40 @@ def apply_policy(config: dict[str, Any], payload: dict[str, Any]) -> dict[str, A
                     boot_tpm_policy_for_tenant = dict(bound_boot_tpm_policy)
                     boot_tpm_policy_for_tenant.pop("mask", None)
                     if boot_tpm_policy_for_tenant:
-                        update_args.extend([
+                        policy_args.extend([
                             "--tpm_policy",
                             json.dumps(boot_tpm_policy_for_tenant, separators=(",", ":"), sort_keys=True),
                         ])
                         bound_boot_policy_included = True
-            update_args.extend(
+            policy_args.extend(
                 [
                     "--runtime-policy-name", str(policy.get("runtime_policy_name") or policy["id"]),
                     "--runtime-policy", runtime_container_path,
                 ]
             )
         else:
-            update_args.extend(["--tpm_policy", tpm_policy_json])
+            policy_args.extend(["--tpm_policy", tpm_policy_json])
 
         update_result = run_keylime_tenant(
             config,
-            update_args,
+            ["-c", "update", *policy_args],
             timeout=240,
             volumes=runtime_volumes,
         )
+        add_result = {"rc": 0, "stdout": "", "stderr": "add skipped"}
+        if update_result["rc"] != 0 and should_add_if_missing:
+            add_result = run_keylime_tenant(
+                config,
+                ["-c", "add", *policy_args],
+                timeout=240,
+                volumes=runtime_volumes,
+            )
+            if add_result["rc"] == 0:
+                update_result = {
+                    "rc": 0,
+                    "stdout": "\n".join(part for part in [update_result["stdout"], add_result["stdout"]] if part),
+                    "stderr": "\n".join(part for part in [update_result["stderr"], add_result["stderr"]] if part),
+                }
         reactivate_result = {"rc": 0, "stdout": "", "stderr": "reactivate skipped"}
         if update_result["rc"] == 0 and should_reactivate:
             reactivate_result = run_keylime_tenant(
@@ -1854,6 +1869,7 @@ def apply_policy(config: dict[str, Any], payload: dict[str, Any]) -> dict[str, A
             "status": "success" if success else "failed",
             "applied_at_utc": utc_now(),
             "update_rc": update_result["rc"],
+            "add_rc": add_result["rc"],
             "reactivate_rc": reactivate_result["rc"],
             "sync_rc": sync_result["rc"],
             "stdout": tail_text("\n".join(

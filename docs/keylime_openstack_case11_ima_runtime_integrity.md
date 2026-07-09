@@ -186,6 +186,8 @@ PCR10 / IMA enforcement should not be inferred only from the TPM PCR mask.
 When applying runtime policy, the control-plane scripts also pass the host's
 bound PCR7 boot policy to `keylime_tenant update` so verifier state does not
 fall back to a runtime-only `0x400` TPM policy.
+If the verifier has lost the agent record, runtime apply retries with
+`keylime_tenant add` using the same PCR7 + runtime policy arguments.
 
 反向验证应只在受控窗口中做，并使用专用 guard 文件，例如：
 

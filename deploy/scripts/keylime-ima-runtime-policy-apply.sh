@@ -40,6 +40,7 @@ REGISTRAR_PORT="${KEYLIME_REGISTRAR_PORT:-8891}"
 RUN_SYNC="${KEYLIME_RUNTIME_POLICY_APPLY_SYNC_NOW:-true}"
 SYNC_MODE="${KEYLIME_RUNTIME_POLICY_APPLY_SYNC_MODE:-control-loop}"
 INCLUDE_BOUND_BOOT="${KEYLIME_RUNTIME_POLICY_INCLUDE_BOUND_BOOT:-true}"
+ADD_IF_MISSING="${KEYLIME_RUNTIME_POLICY_APPLY_ADD_IF_MISSING:-true}"
 
 test -d "$KEYLIME_DIR"
 test -r "$STORE_FILE"
@@ -180,6 +181,19 @@ PY
   elif [ "$include_bound_boot" = "true" ]; then
     echo "WARN: no bound boot TPM policy found for $host; runtime update will not carry PCR7 policy."
   fi
+  tenant_policy_args=(
+    -t "$ip"
+    -tp "$AGENT_PORT"
+    -u "$uuid"
+    -v "$VERIFIER_IP"
+    -vp "$VERIFIER_PORT"
+    -r "$REGISTRAR_IP"
+    -rp "$REGISTRAR_PORT"
+    --agent-api-version "$AGENT_API_VERSION"
+    --runtime-policy-name "$runtime_policy_name"
+    --runtime-policy "$runtime_container_path"
+    "${boot_tpm_policy_args[@]}"
+  )
 
   set +e
   (
@@ -188,37 +202,51 @@ PY
       -v "$runtime_policy_dir:/keylime-runtime-policy:ro" \
       keylime-tenant \
       -c update \
-      -t "$ip" \
-      -tp "$AGENT_PORT" \
-      -u "$uuid" \
-      -v "$VERIFIER_IP" \
-      -vp "$VERIFIER_PORT" \
-      -r "$REGISTRAR_IP" \
-      -rp "$REGISTRAR_PORT" \
-      --agent-api-version "$AGENT_API_VERSION" \
-      --runtime-policy-name "$runtime_policy_name" \
-      --runtime-policy "$runtime_container_path" \
-      "${boot_tpm_policy_args[@]}"
+      "${tenant_policy_args[@]}"
   )
   update_rc=$?
+  add_rc=0
 
-  (
-    cd "$KEYLIME_DIR"
-    docker compose run --rm keylime-tenant \
-      -c reactivate \
-      -u "$uuid" \
-      -v "$VERIFIER_IP" \
-      -vp "$VERIFIER_PORT" \
-      -r "$REGISTRAR_IP" \
-      -rp "$REGISTRAR_PORT"
-  )
-  reactivate_rc=$?
+  include_add_if_missing=false
+  case "${ADD_IF_MISSING,,}" in
+    1|true|yes|y|on) include_add_if_missing=true ;;
+  esac
+  if [ "$update_rc" -ne 0 ] && [ "$include_add_if_missing" = "true" ]; then
+    echo "WARN: runtime update failed for $host rc=$update_rc; try tenant add for verifier enrollment."
+    (
+      cd "$KEYLIME_DIR"
+      docker compose run --rm \
+        -v "$runtime_policy_dir:/keylime-runtime-policy:ro" \
+        keylime-tenant \
+        -c add \
+        "${tenant_policy_args[@]}"
+    )
+    add_rc=$?
+    if [ "$add_rc" -eq 0 ]; then
+      update_rc=0
+    fi
+  fi
+
+  reactivate_rc=0
+  if [ "$update_rc" -eq 0 ]; then
+    (
+      cd "$KEYLIME_DIR"
+      docker compose run --rm keylime-tenant \
+        -c reactivate \
+        -u "$uuid" \
+        -v "$VERIFIER_IP" \
+        -vp "$VERIFIER_PORT" \
+        -r "$REGISTRAR_IP" \
+        -rp "$REGISTRAR_PORT"
+    )
+    reactivate_rc=$?
+  fi
   set -e
 
-  python3 - "$tmp" "$host" "$ip" "$uuid" "$selected_policy_id" "$policy_name" "$runtime_policy_name" "$runtime_policy_path" "$boot_policy_id" "$boot_policy_name" "$bound_boot_policy_included" "$update_rc" "$reactivate_rc" <<'PY'
+  python3 - "$tmp" "$host" "$ip" "$uuid" "$selected_policy_id" "$policy_name" "$runtime_policy_name" "$runtime_policy_path" "$boot_policy_id" "$boot_policy_name" "$bound_boot_policy_included" "$update_rc" "$add_rc" "$reactivate_rc" <<'PY'
 import json
 import sys
-p, host, ip, uuid, policy_id, policy_name, runtime_policy_name, runtime_policy_path, boot_policy_id, boot_policy_name, bound_boot_policy_included, update_rc, reactivate_rc = sys.argv[1:]
+p, host, ip, uuid, policy_id, policy_name, runtime_policy_name, runtime_policy_path, boot_policy_id, boot_policy_name, bound_boot_policy_included, update_rc, add_rc, reactivate_rc = sys.argv[1:]
 d = json.load(open(p))
 item = {
     "host": host,
@@ -232,6 +260,7 @@ item = {
     "bound_boot_policy_name": boot_policy_name,
     "bound_boot_policy_included": bound_boot_policy_included == "true",
     "update_rc": int(update_rc),
+    "add_rc": int(add_rc),
     "reactivate_rc": int(reactivate_rc),
 }
 if int(update_rc) == 0 and int(reactivate_rc) == 0:
