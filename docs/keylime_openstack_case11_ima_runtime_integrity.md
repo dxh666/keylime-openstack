@@ -183,6 +183,9 @@ trusted flavor 可继续调度到 csri8/csri9
 Note: `tpm_policy_mask` may remain `0x80` after runtime policy apply. Keylime
 reports IMA runtime policy state separately with `has_runtime_policy=true`;
 PCR10 / IMA enforcement should not be inferred only from the TPM PCR mask.
+When applying runtime policy, the control-plane scripts also pass the host's
+bound PCR7 boot policy to `keylime_tenant update` so verifier state does not
+fall back to a runtime-only `0x400` TPM policy.
 
 反向验证应只在受控窗口中做，并使用专用 guard 文件，例如：
 

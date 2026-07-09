@@ -102,6 +102,7 @@ evaluate_keylime_status() {
   python3 - "$RAW_STATUS_FILE" "$MAX_ATTESTATION_AGE_SECONDS" "$keylime_rc" "$DECISION_FILE" <<'PY'
 import datetime as dt
 import json
+import os
 import re
 import sys
 
@@ -192,6 +193,9 @@ def mask_has_pcr(value, pcr):
         return None
     return bool(parsed & (1 << pcr))
 
+def is_truthy(value):
+    return str(value or "").strip().lower() in ("1", "true", "yes", "y", "on")
+
 has_runtime_policy = parse_optional_bool(has_runtime_policy_raw)
 boot_pcr7_enforced = mask_has_pcr(tpm_policy_mask, 7)
 runtime_pcr10_enforced = mask_has_pcr(tpm_policy_mask, 10)
@@ -200,6 +204,7 @@ runtime_pcr10_enforced = mask_has_pcr(tpm_policy_mask, 10)
 # only (0x80), so do not treat a missing PCR10 mask bit as "not enforced".
 if has_runtime_policy is True:
     runtime_pcr10_enforced = True
+require_boot_pcr7 = is_truthy(os.environ.get("KEYLIME_REQUIRE_BOOT_PCR7", "true"))
 
 def parse_timestamp(value):
     value = (value or "").strip()
@@ -262,6 +267,8 @@ elif attestation_status != "PASS":
     decision["reason"] = "ATTESTATION_STATUS_NOT_PASS"
 elif any(s in state_lower for s in bad_states):
     decision["reason"] = "OPERATIONAL_STATE_UNSAFE"
+elif require_boot_pcr7 and boot_pcr7_enforced is not True:
+    decision["reason"] = "BOOT_PCR7_POLICY_NOT_ENFORCED"
 elif last_dt is None:
     decision["reason"] = "MISSING_OR_UNPARSEABLE_LAST_SUCCESSFUL_ATTESTATION"
 elif age is not None and age < -30:

@@ -58,9 +58,11 @@ DEFAULTS = {
     "KEYLIME_POLICY_BASE_DIR": "/var/lib/keylime-openstack-sync/policies",
     "KEYLIME_POLICY_RENDER_AUDIT_FILE": "/var/log/keylime-openstack-policy-render.json",
     "KEYLIME_POLICY_APPLY_AUDIT_FILE": "/var/log/keylime-openstack-policy-apply.json",
+    "KEYLIME_REQUIRE_BOOT_PCR7": "true",
     "KEYLIME_IMA_RUNTIME_BASELINE_JSON": "/var/log/keylime-openstack-ima-runtime-baseline.json",
     "KEYLIME_RUNTIME_POLICY_REGISTER_AUDIT_FILE": "/var/log/keylime-openstack-runtime-policy-register.json",
     "KEYLIME_RUNTIME_POLICY_APPLY_AUDIT_FILE": "/var/log/keylime-openstack-runtime-policy-apply.json",
+    "KEYLIME_RUNTIME_POLICY_INCLUDE_BOUND_BOOT": "true",
     "KEYLIME_MEASURED_BOOT_MODE": "alert-only",
     "KEYLIME_RUNTIME_GUARD_PATH": "/opt/keylime-cloud-integrity/cloud-runtime-guard.sh",
 }
@@ -723,6 +725,7 @@ def build_trust_layers(
     # active through the runtime policy.
     if has_runtime_policy is True:
         runtime_pcr10 = True
+    require_boot_pcr7 = is_truthy(config.get("KEYLIME_REQUIRE_BOOT_PCR7", "true"))
 
     if not agent_configured:
         keylime = {
@@ -740,11 +743,12 @@ def build_trust_layers(
             "text": "证明新鲜",
             "detail": f"attestation_status={attestation_status or 'PASS'}, state={operational_state or '-'}",
         }
+        boot_ok = boot_pcr7 is True or not require_boot_pcr7
         boot = {
-            "level": "ok",
-            "code": "BOOT_TRUSTED",
-            "text": "PCR7 通过" if boot_pcr7 is True else "启动通过",
-            "detail": "TPM quote 已通过当前启动策略校验。",
+            "level": "ok" if boot_ok else "bad",
+            "code": "BOOT_TRUSTED" if boot_ok else "BOOT_PCR7_NOT_ENFORCED",
+            "text": "PCR7 通过" if boot_pcr7 is True else ("PCR7 未启用" if require_boot_pcr7 else "启动通过"),
+            "detail": "TPM quote 已通过当前启动策略校验。" if boot_ok else "Keylime TPM policy mask does not include PCR7.",
         }
         if has_runtime_policy is False:
             runtime = {
@@ -1752,6 +1756,7 @@ def apply_policy(config: dict[str, Any], payload: dict[str, Any]) -> dict[str, A
     should_reactivate = is_truthy(config.get("KEYLIME_POLICY_APPLY_REACTIVATE", "true"))
     should_sync = is_truthy(payload.get("sync", config.get("KEYLIME_POLICY_APPLY_SYNC", "false")))
     sync_mode = str(payload.get("sync_mode") or config.get("KEYLIME_POLICY_APPLY_SYNC_MODE", "placement"))
+    include_bound_boot = is_truthy(config.get("KEYLIME_RUNTIME_POLICY_INCLUDE_BOUND_BOOT", "true"))
     results = []
 
     for host in requested_hosts:
@@ -1769,6 +1774,10 @@ def apply_policy(config: dict[str, Any], payload: dict[str, Any]) -> dict[str, A
             results.append({"host": host, "status": "failed", "message": "缺少 agent IP"})
             continue
 
+        bound_boot_policy_id = ""
+        bound_boot_policy_name = ""
+        bound_boot_policy_included = False
+        bound_boot_tpm_policy: dict[str, Any] | None = None
         common = [
             "-u", agent_uuid,
             "-v", verifier_ip,
@@ -1784,6 +1793,21 @@ def apply_policy(config: dict[str, Any], payload: dict[str, Any]) -> dict[str, A
                 "--agent-api-version", agent_api_version,
         ]
         if module_key == "runtime":
+            if include_bound_boot:
+                boot_binding = get_module_binding(store.get("bindings", {}), host, "boot")
+                bound_boot_policy_id = str(boot_binding.get("policy_id", ""))
+                boot_policy = find_policy(store, bound_boot_policy_id) if bound_boot_policy_id else None
+                if boot_policy and boot_policy.get("type") == "tpm_pcr":
+                    bound_boot_policy_name = str(boot_policy.get("name", ""))
+                    bound_boot_tpm_policy = build_tpm_policy(boot_policy.get("pcrs", {}))
+                    boot_tpm_policy_for_tenant = dict(bound_boot_tpm_policy)
+                    boot_tpm_policy_for_tenant.pop("mask", None)
+                    if boot_tpm_policy_for_tenant:
+                        update_args.extend([
+                            "--tpm_policy",
+                            json.dumps(boot_tpm_policy_for_tenant, separators=(",", ":"), sort_keys=True),
+                        ])
+                        bound_boot_policy_included = True
             update_args.extend(
                 [
                     "--runtime-policy-name", str(policy.get("runtime_policy_name") or policy["id"]),
@@ -1821,6 +1845,10 @@ def apply_policy(config: dict[str, Any], payload: dict[str, Any]) -> dict[str, A
             "policy_type": policy.get("type", "tpm_pcr"),
             "policy_module": module_key,
             "tpm_policy": tpm_policy,
+            "bound_boot_policy_id": bound_boot_policy_id,
+            "bound_boot_policy_name": bound_boot_policy_name,
+            "bound_boot_policy_included": bound_boot_policy_included,
+            "bound_boot_tpm_policy": bound_boot_tpm_policy,
             "runtime_policy_name": policy.get("runtime_policy_name", ""),
             "runtime_policy_path": str(runtime_policy_path or ""),
             "status": "success" if success else "failed",

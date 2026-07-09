@@ -196,6 +196,8 @@ POST /api/policies/apply-bound
 
 推荐流程是先采集 IMA/PCR10 baseline，再使用与当前 Keylime 版本匹配的官方工具生成 runtime policy JSON，最后把该 JSON 注册进策略库并绑定到节点。管理系统和 API 负责保存策略元数据、展示运行时层状态、下发 `--runtime-policy-name` / `--runtime-policy`，以及在 Keylime 判定失败时复用现有 Placement trait、nova-compute 隔离和 VM 风险标记链路。
 
+Runtime policy 下发会默认携带同一节点已绑定的 PCR7 boot TPM policy。这样 `keylime_tenant update` 不会把 verifier 状态从 PCR7 启动策略切换成 runtime-only `0x400` 策略。
+
 ## 写 API 令牌
 
 如果设置了：
