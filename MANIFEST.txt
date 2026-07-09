@@ -5,9 +5,12 @@ deploy\examples\case11-ima-runtime-integrity-commands.sh
 deploy\examples\case8-dynamic-trusted-pool-commands.sh
 deploy\examples\phase3-private-flavor-commands.sh
 deploy\examples\verification-commands.md
+deploy\frontend\app.js
 deploy\frontend\index.html
 deploy\frontend\README.md
+deploy\frontend\styles.css
 deploy\frontend\trust_monitor_server.py
+deploy\frontend\vendor\vue.global.prod.js
 deploy\scripts\keylime-agent-container-restart.sh
 deploy\scripts\keylime-agent-inventory-refresh.sh
 deploy\scripts\keylime-ima-runtime-evidence-audit.sh

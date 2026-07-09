@@ -61,9 +61,13 @@ find "$REPO_ROOT/deploy/scripts" -maxdepth 1 -type f -name "keylime-*.sh" -print
     install -m 0755 "$script" "$SYNC_DIR/$(basename "$script")"
   done
 
-install -m 0644 "$REPO_ROOT/deploy/frontend/index.html" "$CONSOLE_DIR/index.html"
-install -m 0644 "$REPO_ROOT/deploy/frontend/trust_monitor_server.py" "$CONSOLE_DIR/trust_monitor_server.py"
-install -m 0644 "$REPO_ROOT/deploy/frontend/README.md" "$CONSOLE_DIR/README.md"
+find "$REPO_ROOT/deploy/frontend" -type f \
+  ! -path "*/__pycache__/*" \
+  ! -name "*.pyc" \
+  -print0 | while IFS= read -r -d '' frontend_file; do
+    rel_path="${frontend_file#"$REPO_ROOT/deploy/frontend/"}"
+    install -D -m 0644 "$frontend_file" "$CONSOLE_DIR/$rel_path"
+  done
 
 install -m 0644 "$REPO_ROOT/deploy/systemd/keylime-openstack-sync.service" \
   "$SYSTEMD_DIR/keylime-openstack-sync.service"

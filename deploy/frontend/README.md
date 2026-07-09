@@ -1,5 +1,17 @@
 # Keylime + OpenStack 管理系统
 
+2026-07-09 更新：前端已重构为 Vue 3 静态应用。部署仍然不需要 Node.js
+构建步骤；`deploy/frontend/vendor/vue.global.prod.js` 已随仓库提供，`app.js`
+和 `styles.css` 由 `trust_monitor_server.py` 直接静态服务。
+
+主要交互现在收敛为三个工作区：
+
+```text
+总览：可信池摘要、节点层级状态、需要处理的节点
+节点：Keylime / PCR7 / IMA / OpenStack 分层详情
+策略：PCR7 启动策略和 IMA runtime 策略的导入、绑定、下发
+```
+
 当前前端包含两个功能模块：
 
 ```text

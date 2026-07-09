@@ -4,2073 +4,359 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>可信云管理系统</title>
-  <style>
-    :root {
-      --bg: #f4f7f7;
-      --panel: #ffffff;
-      --sidebar: #19343a;
-      --sidebar-soft: #244850;
-      --line: #d8e1e3;
-      --text: #162429;
-      --muted: #65767c;
-      --accent: #0b6872;
-      --accent-soft: #e1f3f5;
-      --ok: #0f8a5f;
-      --ok-bg: #e7f6ef;
-      --warn: #b66b00;
-      --warn-bg: #fff4dc;
-      --bad: #c7352b;
-      --bad-bg: #fde9e7;
-      --shadow: 0 10px 24px rgba(24, 48, 54, 0.08);
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
-    body {
-      margin: 0;
-      min-height: 100vh;
-      background: var(--bg);
-      color: var(--text);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-size: 14px;
-      line-height: 1.45;
-    }
-
-    button,
-    input,
-    select,
-    textarea {
-      font: inherit;
-    }
-
-    input,
-    select,
-    textarea {
-      width: 100%;
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      background: #ffffff;
-      color: var(--text);
-      padding: 8px 10px;
-    }
-
-    textarea {
-      min-height: 74px;
-      resize: vertical;
-    }
-
-    button {
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      background: #ffffff;
-      color: var(--text);
-      padding: 8px 11px;
-      cursor: pointer;
-    }
-
-    button:hover {
-      border-color: #aeb9c3;
-      background: #fbfcfc;
-    }
-
-    button.primary {
-      border-color: var(--accent);
-      background: var(--accent);
-      color: #ffffff;
-    }
-
-    button.danger {
-      border-color: #efaaa4;
-      color: var(--bad);
-      background: #fff8f7;
-    }
-
-    button.ghost {
-      background: transparent;
-    }
-
-    button:disabled {
-      cursor: not-allowed;
-      opacity: 0.58;
-    }
-
-    code,
-    pre {
-      font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
-      font-size: 12px;
-    }
-
-    pre {
-      margin: 0;
-      white-space: pre-wrap;
-      overflow-wrap: anywhere;
-    }
-
-    h1,
-    h2,
-    h3,
-    p {
-      margin-top: 0;
-    }
-
-    h1 {
-      margin-bottom: 0;
-      font-size: 24px;
-      line-height: 1.2;
-    }
-
-    h2 {
-      margin-bottom: 10px;
-      font-size: 17px;
-    }
-
-    h3 {
-      margin-bottom: 6px;
-      font-size: 15px;
-    }
-
-    .layout {
-      display: grid;
-      grid-template-columns: 240px minmax(0, 1fr);
-      min-height: 100vh;
-    }
-
-    .sidebar {
-      background: var(--sidebar);
-      color: #eaf1f4;
-      padding: 20px 14px;
-    }
-
-    .brand {
-      padding: 0 8px 20px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.14);
-      margin-bottom: 14px;
-    }
-
-    .brand strong {
-      display: block;
-      font-size: 17px;
-      margin-bottom: 5px;
-    }
-
-    .brand span {
-      color: #b6c7cc;
-      font-size: 12px;
-    }
-
-    .nav {
-      display: grid;
-      gap: 8px;
-    }
-
-    .nav-item {
-      width: 100%;
-      text-align: left;
-      border: 0;
-      border-radius: 8px;
-      padding: 10px 11px;
-      color: #d9e5ea;
-      background: transparent;
-    }
-
-    .nav-item.active {
-      background: var(--sidebar-soft);
-      color: #ffffff;
-      box-shadow: inset 3px 0 0 #65c6d0;
-    }
-
-    .main {
-      min-width: 0;
-      padding: 22px;
-    }
-
-    .view {
-      display: none;
-    }
-
-    .view.active {
-      display: block;
-    }
-
-    .topbar {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 16px;
-      margin-bottom: 16px;
-    }
-
-    .subtle {
-      color: var(--muted);
-    }
-
-    .row,
-    .chips,
-    .actions {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      align-items: center;
-    }
-
-    .actions {
-      justify-content: flex-end;
-    }
-
-    .chips {
-      justify-content: flex-end;
-    }
-
-    .chip,
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      border-radius: 999px;
-      border: 1px solid var(--line);
-      background: #ffffff;
-      color: var(--muted);
-      padding: 4px 8px;
-      font-size: 12px;
-      white-space: nowrap;
-    }
-
-    .badge.ok {
-      color: var(--ok);
-      border-color: #9ad7bd;
-      background: var(--ok-bg);
-    }
-
-    .badge.warn {
-      color: var(--warn);
-      border-color: #e5c073;
-      background: var(--warn-bg);
-    }
-
-    .badge.bad {
-      color: var(--bad);
-      border-color: #f3aaa4;
-      background: var(--bad-bg);
-    }
-
-    .dot {
-      width: 12px;
-      height: 12px;
-      border-radius: 999px;
-      display: inline-block;
-      flex: 0 0 auto;
-      box-shadow: 0 0 0 4px rgba(100, 116, 139, 0.12);
-    }
-
-    .dot.ok {
-      background: var(--ok);
-    }
-
-    .dot.warn {
-      background: var(--warn);
-    }
-
-    .dot.bad {
-      background: var(--bad);
-    }
-
-    .panel,
-    .stat,
-    .node-card,
-    .policy-card {
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: var(--panel);
-      box-shadow: var(--shadow);
-    }
-
-    .panel {
-      padding: 14px;
-    }
-
-    .stats {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 12px;
-      margin-bottom: 16px;
-    }
-
-    .stat {
-      padding: 13px;
-      min-height: 86px;
-    }
-
-    .stat .label {
-      color: var(--muted);
-      font-size: 12px;
-      margin-bottom: 6px;
-    }
-
-    .stat .value {
-      font-size: 24px;
-      font-weight: 760;
-    }
-
-    .toolbar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 14px;
-    }
-
-    .node-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, max-content));
-      gap: 14px;
-      align-items: start;
-    }
-
-    .node-card {
-      width: min(100%, 360px);
-      min-width: 280px;
-      padding: 15px;
-      cursor: pointer;
-      transition: transform 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
-    }
-
-    .node-card:hover,
-    .node-card:focus {
-      border-color: #aab8c2;
-      box-shadow: 0 14px 32px rgba(20, 35, 45, 0.12);
-      outline: none;
-      transform: translateY(-1px);
-    }
-
-    .node-head {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 12px;
-      margin-bottom: 13px;
-    }
-
-    .node-title {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      min-width: 0;
-    }
-
-    .node-title strong {
-      display: block;
-      font-size: 17px;
-      overflow-wrap: anywhere;
-    }
-
-    .expand-mark {
-      color: var(--muted);
-      font-size: 12px;
-      flex: 0 0 auto;
-    }
-
-    .kv {
-      display: grid;
-      grid-template-columns: 88px minmax(0, 1fr);
-      gap: 9px;
-      padding: 6px 0;
-      border-top: 1px solid #edf1f3;
-    }
-
-    .kv .key,
-    .field label {
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    .kv .value {
-      overflow-wrap: anywhere;
-      min-width: 0;
-    }
-
-    .details {
-      display: none;
-      margin-top: 8px;
-    }
-
-    .node-card.expanded .details {
-      display: block;
-    }
-
-    .notice {
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: #ffffff;
-      color: var(--muted);
-      padding: 10px 12px;
-      margin-bottom: 14px;
-      display: none;
-    }
-
-    .notice.show {
-      display: block;
-    }
-
-    .notice.ok {
-      border-color: #9ad7bd;
-      background: var(--ok-bg);
-      color: var(--ok);
-    }
-
-    .notice.warn {
-      border-color: #e5c073;
-      background: var(--warn-bg);
-      color: var(--warn);
-    }
-
-    .notice.bad {
-      border-color: #f3aaa4;
-      background: var(--bad-bg);
-      color: var(--bad);
-    }
-
-    .module-tabs {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-bottom: 14px;
-    }
-
-    .module-tab {
-      background: #fff;
-      border-color: var(--line);
-      color: var(--muted);
-      font-weight: 700;
-    }
-
-    .module-tab.active {
-      border-color: var(--accent);
-      background: var(--accent-soft);
-      color: var(--accent);
-    }
-
-    .policy-module {
-      display: none;
-    }
-
-    .policy-module.active {
-      display: block;
-    }
-
-    .advanced-panel {
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: var(--panel);
-      box-shadow: var(--shadow);
-      margin-top: 14px;
-    }
-
-    .advanced-panel > summary {
-      cursor: pointer;
-      font-weight: 700;
-      padding: 13px 14px;
-    }
-
-    .advanced-panel[open] > summary {
-      border-bottom: 1px solid var(--line);
-    }
-
-    .advanced-toolbar {
-      padding: 14px;
-      border-bottom: 1px solid var(--line);
-    }
-
-    .policy-layout {
-      display: grid;
-      grid-template-columns: minmax(360px, 480px) minmax(0, 1fr);
-      gap: 14px;
-      align-items: start;
-      padding: 14px;
-    }
-
-    .stack {
-      display: grid;
-      gap: 14px;
-    }
-
-    .form-grid {
-      display: grid;
-      grid-template-columns: 1fr 160px;
-      gap: 10px;
-    }
-
-    .field {
-      display: grid;
-      gap: 5px;
-    }
-
-    .field.full {
-      grid-column: 1 / -1;
-    }
-
-    .pcr-row {
-      display: grid;
-      grid-template-columns: 78px minmax(0, 1fr) auto;
-      gap: 8px;
-      margin-bottom: 8px;
-    }
-
-    .code-box {
-      border: 1px solid #dbe5e7;
-      border-radius: 8px;
-      background: #f8fbfb;
-      padding: 10px;
-      max-height: 180px;
-      overflow: auto;
-    }
-
-    .policy-list {
-      display: grid;
-      gap: 10px;
-    }
-
-    .policy-card {
-      padding: 13px;
-    }
-
-    .policy-card.selected {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 2px rgba(11, 104, 114, 0.12), var(--shadow);
-    }
-
-    .policy-card-head {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      align-items: flex-start;
-      margin-bottom: 8px;
-    }
-
-    .policy-card strong {
-      display: block;
-      overflow-wrap: anywhere;
-    }
-
-    .template-list,
-    .apply-node-list {
-      display: grid;
-      gap: 8px;
-    }
-
-    .template-list button {
-      text-align: left;
-    }
-
-    .apply-node {
-      display: grid;
-      grid-template-columns: auto minmax(0, 1fr) auto;
-      gap: 10px;
-      align-items: center;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 10px;
-      background: #fbfcfc;
-    }
-
-    .apply-node input {
-      width: auto;
-    }
-
-    .apply-node strong,
-    .mono {
-      overflow-wrap: anywhere;
-    }
-
-    .result-list {
-      display: grid;
-      gap: 8px;
-    }
-
-    .result-item {
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 10px;
-      background: #ffffff;
-    }
-
-    .layer-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      align-items: center;
-    }
-
-    .runtime-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 12px;
-      margin-top: 12px;
-    }
-
-    .runtime-card {
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: #ffffff;
-      padding: 12px;
-    }
-
-    .runtime-card-head {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      align-items: flex-start;
-      margin-bottom: 10px;
-    }
-
-    @media (max-width: 1100px) {
-      .policy-layout {
-        grid-template-columns: 1fr;
-      }
-    }
-
-    @media (max-width: 980px) {
-      .layout {
-        grid-template-columns: 1fr;
-      }
-
-      .sidebar {
-        padding: 14px;
-      }
-
-      .brand {
-        margin-bottom: 10px;
-        padding-bottom: 12px;
-      }
-
-      .main {
-        padding: 16px;
-      }
-
-      .topbar,
-      .toolbar {
-        flex-direction: column;
-        align-items: stretch;
-      }
-
-      .chips,
-      .actions {
-        justify-content: flex-start;
-      }
-
-      .stats {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
-
-      .node-grid {
-        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      }
-
-      .node-card {
-        width: 100%;
-      }
-    }
-
-    @media (max-width: 620px) {
-      .stats,
-      .node-grid,
-      .form-grid,
-      .pcr-row {
-        grid-template-columns: 1fr;
-      }
-
-      .apply-node {
-        grid-template-columns: 1fr;
-      }
-    }
-  </style>
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div class="layout">
+  <div id="app" v-cloak>
     <aside class="sidebar">
       <div class="brand">
-        <strong>可信云管理</strong>
+        <strong>可信云管理系统</strong>
         <span>Keylime + OpenStack</span>
       </div>
-      <nav class="nav" aria-label="功能导航">
-        <button class="nav-item active" data-view="monitor">计算节点监控</button>
-        <button class="nav-item" data-view="policies">Keylime 策略管理</button>
+      <nav class="nav" aria-label="主导航">
+        <button :class="['nav-button', { active: view === 'overview' }]" @click="view = 'overview'">
+          总览
+        </button>
+        <button :class="['nav-button', { active: view === 'nodes' }]" @click="view = 'nodes'">
+          节点
+        </button>
+        <button :class="['nav-button', { active: view === 'policies' }]" @click="view = 'policies'">
+          策略
+        </button>
       </nav>
+      <div class="sidebar-footer">
+        <span :class="['status-dot', levelClass(summary.level)]"></span>
+        <span>{{ summaryText }}</span>
+      </div>
     </aside>
 
     <main class="main">
-      <section class="view active" id="view-monitor">
-        <div class="topbar">
-          <h1>计算节点可信状态实时监控</h1>
-          <div class="chips">
-            <span id="apiBadge" class="badge warn">API 连接中</span>
-            <span id="summaryBadge" class="badge warn">等待状态</span>
-            <span id="lastUpdate" class="chip">尚未刷新</span>
-          </div>
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Trust Control Plane</p>
+          <h1>{{ pageTitle }}</h1>
+        </div>
+        <div class="top-actions">
+          <label class="token-field">
+            <span>管理令牌</span>
+            <input v-model="adminToken" type="password" autocomplete="off" placeholder="未设置">
+          </label>
+          <select v-model.number="refreshSeconds" aria-label="刷新间隔">
+            <option :value="2">2 秒</option>
+            <option :value="5">5 秒</option>
+            <option :value="10">10 秒</option>
+            <option :value="30">30 秒</option>
+          </select>
+          <button class="primary" :disabled="busy.status" @click="refreshStatus(true)">刷新</button>
+        </div>
+      </header>
+
+      <section v-if="notice.text" :class="['notice', notice.kind]">
+        {{ notice.text }}
+      </section>
+
+      <section v-if="view === 'overview'" class="screen">
+        <div class="summary-grid">
+          <article class="metric">
+            <span>计算节点</span>
+            <strong>{{ summary.total || 0 }}</strong>
+          </article>
+          <article class="metric ok">
+            <span>可信</span>
+            <strong>{{ summary.trusted || 0 }}</strong>
+          </article>
+          <article class="metric bad">
+            <span>不可信</span>
+            <strong>{{ summary.untrusted || 0 }}</strong>
+          </article>
+          <article class="metric warn">
+            <span>未纳管</span>
+            <strong>{{ summary.no_agent || 0 }}</strong>
+          </article>
         </div>
 
-        <div id="apiNotice" class="notice warn">
-          未连接到状态 API：<code>python3 trust_monitor_server.py --host 172.31.100.10 --port 8088</code>
-        </div>
+        <section class="workbench">
+          <div class="panel wide">
+            <div class="panel-head">
+              <div>
+                <h2>可信池状态</h2>
+                <p>{{ checkedAtText }}</p>
+              </div>
+              <span :class="['badge', levelClass(summary.level)]">{{ summaryText }}</span>
+            </div>
+            <div class="node-table">
+              <div class="node-row header">
+                <span>节点</span>
+                <span>Keylime</span>
+                <span>启动</span>
+                <span>运行时</span>
+                <span>OpenStack</span>
+                <span>VM</span>
+              </div>
+              <button v-for="node in nodes" :key="node.host" class="node-row" @click="selectNode(node.host); view = 'nodes'">
+                <span>
+                  <strong>{{ node.host }}</strong>
+                  <small>{{ node.ip || '-' }}</small>
+                </span>
+                <span><em :class="['pill', layerLevel(node, 'keylime')]">{{ layerText(node, 'keylime') }}</em></span>
+                <span><em :class="['pill', layerLevel(node, 'boot')]">{{ layerText(node, 'boot') }}</em></span>
+                <span><em :class="['pill', layerLevel(node, 'runtime')]">{{ layerText(node, 'runtime') }}</em></span>
+                <span><em :class="['pill', layerLevel(node, 'openstack')]">{{ layerText(node, 'openstack') }}</em></span>
+                <span>{{ node.vm_count ?? 0 }}</span>
+              </button>
+            </div>
+          </div>
 
-        <section class="toolbar">
-          <div class="row">
-            <button id="refreshNow" class="primary">立即刷新</button>
-            <label class="row">
-              <span class="subtle">刷新间隔</span>
-              <select id="refreshInterval">
-                <option value="1">1 秒</option>
-                <option value="2" selected>2 秒</option>
-                <option value="3">3 秒</option>
-                <option value="5">5 秒</option>
-                <option value="10">10 秒</option>
-                <option value="30">30 秒</option>
-              </select>
-            </label>
-          </div>
-          <span id="timerState" class="chip">timer: unknown</span>
-        </section>
-
-        <section class="stats" aria-label="节点统计">
-          <div class="stat">
-            <div class="label">计算节点</div>
-            <div id="totalCount" class="value">0</div>
-          </div>
-          <div class="stat">
-            <div class="label">可信</div>
-            <div id="trustedCount" class="value">0</div>
-          </div>
-          <div class="stat">
-            <div class="label">不可信 / 下线</div>
-            <div id="untrustedCount" class="value">0</div>
-          </div>
-          <div class="stat">
-            <div class="label">未装代理</div>
-            <div id="noAgentCount" class="value">0</div>
-          </div>
-        </section>
-
-        <section>
-          <div class="node-grid" id="nodeGrid">
-            <div class="panel subtle">正在加载计算节点状态...</div>
+          <div class="panel">
+            <div class="panel-head">
+              <h2>当前关注</h2>
+            </div>
+            <div class="action-list">
+              <article v-for="item in focusItems" :key="item.host" class="action-item">
+                <strong>{{ item.host }}</strong>
+                <span>{{ item.text }}</span>
+              </article>
+              <p v-if="!focusItems.length" class="muted">暂无需要人工处理的节点。</p>
+            </div>
           </div>
         </section>
       </section>
 
-      <section class="view" id="view-policies">
-        <div class="topbar">
-          <h1>Keylime 策略管理</h1>
-          <div class="chips">
-            <span id="policyApiBadge" class="badge warn">API 连接中</span>
-            <span id="policyStorePath" class="chip">策略文件: -</span>
-            <label class="row">
-              <span class="subtle">管理令牌</span>
-              <input id="adminToken" type="password" autocomplete="off" placeholder="可选" style="width: 160px;">
-            </label>
+      <section v-if="view === 'nodes'" class="screen">
+        <div class="toolbar">
+          <input v-model.trim="nodeSearch" placeholder="搜索节点、IP、UUID">
+          <select v-model="nodeFilter">
+            <option value="all">全部节点</option>
+            <option value="trusted">可信</option>
+            <option value="untrusted">不可信</option>
+            <option value="no_agent">未纳管</option>
+          </select>
+        </div>
+
+        <section class="node-layout">
+          <div class="node-list">
+            <button
+              v-for="node in filteredNodes"
+              :key="node.host"
+              :class="['node-card', { selected: selectedNode && selectedNode.host === node.host }]"
+              @click="selectNode(node.host)"
+            >
+              <span :class="['status-dot', levelClass(node.conclusion?.level)]"></span>
+              <span>
+                <strong>{{ node.host }}</strong>
+                <small>{{ node.ip || '-' }}</small>
+              </span>
+              <em>{{ node.conclusion?.text || '未知' }}</em>
+            </button>
           </div>
-        </div>
 
-        <div id="policyNotice" class="notice"></div>
-
-        <div class="module-tabs" role="tablist" aria-label="Keylime 策略模块">
-          <button class="module-tab active" type="button" data-policy-module="boot">启动度量策略</button>
-          <button class="module-tab" type="button" data-policy-module="runtime">运行时完整性策略</button>
-        </div>
-
-        <section class="policy-module active" id="policy-module-boot">
-          <section class="panel" id="baselinePanel">
-            <div class="row" style="justify-content: space-between;">
+          <article v-if="selectedNode" class="panel detail-panel">
+            <div class="panel-head">
               <div>
-                <h2 style="margin-bottom: 4px;">启动度量策略</h2>
-                <div id="baselineSummary" class="subtle">正在读取 TPM evidence baseline...</div>
+                <h2>{{ selectedNode.host }}</h2>
+                <p>{{ selectedNode.ip || '-' }}</p>
               </div>
-              <div class="actions">
-                <button id="refreshBaseline" type="button">刷新基线</button>
-                <button id="importBaselinePolicies" type="button">从基线导入策略</button>
-                <button id="applyBoundPolicies" type="button" class="primary">按绑定策略下发</button>
-              </div>
+              <span :class="['badge', levelClass(selectedNode.conclusion?.level)]">
+                {{ selectedNode.conclusion?.text || '未知' }}
+              </span>
             </div>
-            <div id="baselineNodeList" class="result-list" style="margin-top: 12px;"></div>
-          </section>
 
-          <details class="advanced-panel">
-            <summary>高级策略编辑与手动下发</summary>
-            <section class="advanced-toolbar">
-              <div class="row" style="justify-content: space-between;">
-                <div class="row">
-                  <button id="refreshPolicies" class="primary">刷新策略库</button>
-                  <button id="newPolicy" class="ghost">新建策略</button>
-                </div>
-              </div>
+            <div class="layer-grid">
+              <section v-for="key in layerKeys" :key="key" class="layer-box">
+                <span>{{ layerLabel(key) }}</span>
+                <strong>{{ layerText(selectedNode, key) }}</strong>
+                <small>{{ layerDetail(selectedNode, key) }}</small>
+              </section>
+            </div>
+
+            <div class="facts">
+              <div><span>Agent UUID</span><strong>{{ selectedNode.agent?.uuid || '-' }}</strong></div>
+              <div><span>Decision</span><strong>{{ selectedNode.decision?.result || '-' }}</strong></div>
+              <div><span>PCR Mask</span><strong>{{ policyOf(selectedNode).tpm_policy_mask || '-' }}</strong></div>
+              <div><span>Runtime Policy</span><strong>{{ runtimePolicyText(selectedNode) }}</strong></div>
+              <div><span>Placement Trait</span><strong>{{ boolText(selectedNode.placement?.trait_present) }}</strong></div>
+              <div><span>nova-compute</span><strong>{{ serviceText(selectedNode) }}</strong></div>
+              <div><span>风险标记</span><strong>{{ selectedNode.marker?.present ? '存在' : '无' }}</strong></div>
+              <div><span>最近 attestation</span><strong>{{ attestationAge(selectedNode) }}</strong></div>
+            </div>
+
+            <section class="recommendation">
+              <span>处置建议</span>
+              <strong>{{ recommendation(selectedNode) }}</strong>
             </section>
-            <section class="policy-layout">
-              <div class="stack">
-                <div class="panel">
-                  <h2>策略编辑</h2>
-              <div class="form-grid">
-                <div class="field">
-                  <label for="policyName">策略名称</label>
-                  <input id="policyName" placeholder="例如 csri8-PCR7-基线">
-                </div>
-                <div class="field">
-                  <label for="policyHashAlg">哈希算法</label>
-                  <select id="policyHashAlg">
-                    <option value="sha256">sha256</option>
-                    <option value="sha1">sha1</option>
-                    <option value="sha384">sha384</option>
-                    <option value="sha512">sha512</option>
-                  </select>
-                </div>
-                <div class="field full">
-                  <label for="policyId">策略 ID</label>
-                  <input id="policyId" placeholder="自动生成或手动填写">
-                </div>
-                <div class="field full">
-                  <label for="policyDescription">备注</label>
-                  <textarea id="policyDescription" placeholder="PCR 来源、适用节点、实验阶段"></textarea>
-                </div>
-                <div class="field full">
-                  <label>PCR 摘要</label>
-                  <div id="pcrRows"></div>
-                  <button id="addPcrRow" type="button">添加 PCR</button>
-                </div>
-                <div class="field full">
-                  <label>生成的 tpm_policy</label>
-                  <div class="code-box">
-                    <pre id="generatedPolicyJson">{}</pre>
-                  </div>
-                </div>
-              </div>
-              <div class="actions" style="margin-top: 12px;">
-                <button id="resetPolicyForm">重置</button>
-                <button id="savePolicy" class="primary">保存策略</button>
-              </div>
-            </div>
-
-            <div class="panel">
-              <h2>策略模板</h2>
-              <div id="templateList" class="template-list">
-                <span class="subtle">加载中...</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="stack">
-            <div class="panel">
-              <div class="row" style="justify-content: space-between;">
-                <h2 style="margin-bottom: 0;">策略库</h2>
-                <span id="policyCount" class="chip">0 个策略</span>
-              </div>
-              <div id="policyList" class="policy-list" style="margin-top: 12px;">
-                <span class="subtle">暂无策略</span>
-              </div>
-            </div>
-
-            <div class="panel">
-              <h2>策略下发</h2>
-              <div class="field">
-                <label for="applyPolicySelect">选择策略</label>
-                <select id="applyPolicySelect"></select>
-              </div>
-              <div class="field" style="margin-top: 10px;">
-                <label>计算节点</label>
-                <div id="applyNodeList" class="apply-node-list">
-                  <span class="subtle">加载中...</span>
-                </div>
-              </div>
-              <div class="actions" style="margin-top: 12px;">
-                <button id="applySelectedPolicy">下发到选中节点</button>
-                <button id="applyAllPolicy" class="primary">统一下发</button>
-              </div>
-            </div>
-
-            <div class="panel">
-              <h2>下发结果</h2>
-              <div id="applyResult" class="result-list">
-                <span class="subtle">暂无结果</span>
-              </div>
-            </div>
-          </div>
+          </article>
         </section>
-        </details>
-        </section>
+      </section>
 
-        <section class="policy-module" id="policy-module-runtime">
-          <section class="panel">
-            <div class="row" style="justify-content: space-between;">
+      <section v-if="view === 'policies'" class="screen">
+        <div class="module-tabs">
+          <button :class="{ active: policyModule === 'boot' }" @click="policyModule = 'boot'">启动度量</button>
+          <button :class="{ active: policyModule === 'runtime' }" @click="policyModule = 'runtime'">运行时完整性</button>
+        </div>
+
+        <section v-if="policyModule === 'boot'" class="workbench">
+          <div class="panel wide">
+            <div class="panel-head">
               <div>
-                <h2 style="margin-bottom: 4px;">运行时完整性状态</h2>
-                <div id="runtimeSummary" class="subtle">正在读取 IMA runtime policy 状态...</div>
+                <h2>PCR7 启动策略</h2>
+                <p>{{ baselineText }}</p>
               </div>
-              <div class="actions">
-                <button id="refreshRuntimePolicies" type="button">刷新状态</button>
-              </div>
-            </div>
-            <div id="runtimeNodeList" class="runtime-grid">
-              <div class="runtime-card subtle">正在加载计算节点运行时状态...</div>
-            </div>
-          </section>
-
-          <section class="policy-layout" style="padding-left: 0; padding-right: 0;">
-            <div class="stack">
-              <div class="panel">
-                <div class="row" style="justify-content: space-between;">
-                  <h2 style="margin-bottom: 0;">运行时策略库</h2>
-                  <span id="runtimePolicyCount" class="chip">0 个策略</span>
-                </div>
-                <div id="runtimePolicyList" class="policy-list" style="margin-top: 12px;">
-                  <span class="subtle">暂无运行时策略</span>
-                </div>
-              </div>
-
-              <div class="panel">
-                <h2>节点绑定与下发</h2>
-                <div class="field">
-                  <label for="runtimePolicySelect">选择运行时策略</label>
-                  <select id="runtimePolicySelect"></select>
-                </div>
-                <div class="field" style="margin-top: 10px;">
-                  <label>计算节点</label>
-                  <div id="runtimeApplyNodeList" class="apply-node-list">
-                    <span class="subtle">加载中...</span>
-                  </div>
-                </div>
-                <div class="actions" style="margin-top: 12px;">
-                  <button id="applyRuntimeSelectedPolicy">下发到选中节点</button>
-                  <button id="applyRuntimeBoundPolicies" class="primary">按绑定策略下发</button>
-                </div>
+              <div class="button-row">
+                <button @click="refreshPolicies">刷新</button>
+                <button @click="importBaselinePolicies">导入基线</button>
+                <button class="primary" @click="applyBoundPolicies('boot')">按绑定下发</button>
               </div>
             </div>
-
-            <div class="stack">
-              <div class="panel">
-                <div class="row" style="justify-content: space-between;">
-                  <h2 style="margin-bottom: 0;">运行时策略编辑</h2>
-                  <button id="newRuntimePolicy" class="ghost" type="button">新建策略</button>
-                </div>
-                <div class="form-grid" style="margin-top: 12px;">
-                  <div class="field">
-                    <label for="runtimePolicyDisplayName">策略名称</label>
-                    <input id="runtimePolicyDisplayName" placeholder="例如 csri9 云运行时基线">
-                  </div>
-                  <div class="field">
-                    <label for="runtimePolicyId">策略 ID</label>
-                    <input id="runtimePolicyId" placeholder="自动生成或手动填写">
-                  </div>
-                  <div class="field full">
-                    <label for="runtimePolicyName">Keylime runtime policy 名称</label>
-                    <input id="runtimePolicyName" placeholder="例如 csri9-cloud-runtime-guard-v2">
-                  </div>
-                  <div class="field full">
-                    <label for="runtimePolicyPath">策略文件路径</label>
-                    <input id="runtimePolicyPath" placeholder="/var/lib/keylime-openstack-sync/policies/runtime/csri9.cloud-runtime-policy.json">
-                  </div>
-                  <div class="field full">
-                    <label for="runtimeProtectedPaths">保护对象</label>
-                    <textarea id="runtimeProtectedPaths" placeholder="/opt/keylime-cloud-integrity/cloud-runtime-guard.sh"></textarea>
-                  </div>
-                  <div class="field full">
-                    <label for="runtimeExcludes">排除规则</label>
-                    <textarea id="runtimeExcludes" placeholder="^(?!(boot_aggregate|/opt/keylime-cloud-integrity/cloud-runtime-guard.sh)$).*"></textarea>
-                  </div>
-                  <div class="field full">
-                    <label for="runtimePolicyDescription">备注</label>
-                    <textarea id="runtimePolicyDescription" placeholder="说明基线来源、适用节点和变更窗口"></textarea>
-                  </div>
-                </div>
-                <div class="actions" style="margin-top: 12px;">
-                  <button id="resetRuntimePolicyForm">重置</button>
-                  <button id="saveRuntimePolicy" class="primary">保存策略</button>
-                </div>
+            <div class="policy-table">
+              <div class="policy-row header">
+                <span>节点</span>
+                <span>PCR7</span>
+                <span>证据</span>
+                <span>当前绑定</span>
               </div>
-
-              <div class="panel">
-                <h2>下发结果</h2>
-                <div id="runtimeApplyResult" class="result-list">
-                  <span class="subtle">暂无结果</span>
-                </div>
+              <div v-for="node in policyNodes" :key="node.host" class="policy-row">
+                <span><strong>{{ node.host }}</strong><small>{{ node.ip || '-' }}</small></span>
+                <span class="mono">{{ baselinePcr7(node.host) }}</span>
+                <span>{{ baselineEvidence(node.host) }}</span>
+                <span>{{ node.bindings?.boot?.policy_name || '未绑定' }}</span>
               </div>
             </div>
-          </section>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head">
+              <h2>手动下发</h2>
+            </div>
+            <label class="field">
+              <span>策略</span>
+              <select v-model="selectedBootPolicyId">
+                <option value="">选择策略</option>
+                <option v-for="policy in bootPolicies" :key="policy.id" :value="policy.id">{{ policy.name }}</option>
+              </select>
+            </label>
+            <div class="check-list">
+              <label v-for="node in policyNodes" :key="node.host">
+                <input v-model="selectedBootHosts" type="checkbox" :value="node.host" :disabled="!node.can_apply">
+                <span>{{ node.host }}</span>
+              </label>
+            </div>
+            <div class="button-row end">
+              <button @click="applyPolicy('boot', false)">下发到选中</button>
+              <button class="primary" @click="applyPolicy('boot', true)">统一下发</button>
+            </div>
+            <div v-if="applyResults.length" class="result-list">
+              <article v-for="item in applyResults" :key="item.host + item.applied_at_utc" :class="['result', item.status]">
+                <strong>{{ item.host }}</strong>
+                <span>{{ item.status === 'success' ? '成功' : (item.message || '失败') }}</span>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section v-if="policyModule === 'runtime'" class="workbench">
+          <div class="panel wide">
+            <div class="panel-head">
+              <div>
+                <h2>IMA / PCR10 运行时策略</h2>
+                <p>{{ runtimeSummaryText }}</p>
+              </div>
+              <div class="button-row">
+                <button @click="refreshPolicies">刷新</button>
+                <button class="primary" @click="applyBoundPolicies('runtime')">按绑定下发</button>
+              </div>
+            </div>
+            <div class="policy-table">
+              <div class="policy-row header">
+                <span>节点</span>
+                <span>运行时状态</span>
+                <span>Mask</span>
+                <span>绑定策略</span>
+              </div>
+              <div v-for="node in policyNodes" :key="node.host" class="policy-row">
+                <span><strong>{{ node.host }}</strong><small>{{ node.ip || '-' }}</small></span>
+                <span><em :class="['pill', layerLevel(node, 'runtime')]">{{ layerText(node, 'runtime') }}</em></span>
+                <span class="mono">{{ policyOf(node).tpm_policy_mask || '-' }}</span>
+                <span>{{ node.bindings?.runtime?.policy_name || '未绑定' }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head">
+              <h2>注册 runtime policy</h2>
+            </div>
+            <label class="field">
+              <span>显示名称</span>
+              <input v-model.trim="runtimeForm.name" placeholder="cloud runtime guard">
+            </label>
+            <label class="field">
+              <span>策略 ID</span>
+              <input v-model.trim="runtimeForm.id" placeholder="cloud-runtime-guard">
+            </label>
+            <label class="field">
+              <span>Keylime policy 名称</span>
+              <input v-model.trim="runtimeForm.runtime_policy_name" placeholder="cloud-runtime-guard">
+            </label>
+            <label class="field">
+              <span>JSON 文件路径</span>
+              <input v-model.trim="runtimeForm.runtime_policy_path" placeholder="/var/lib/keylime-openstack-sync/policies/runtime/policy.json">
+            </label>
+            <label class="field">
+              <span>备注</span>
+              <textarea v-model.trim="runtimeForm.description"></textarea>
+            </label>
+            <div class="button-row end">
+              <button @click="resetRuntimeForm">清空</button>
+              <button class="primary" @click="saveRuntimePolicy">保存</button>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head">
+              <h2>策略库</h2>
+              <span class="chip">{{ runtimePolicies.length }} 个</span>
+            </div>
+            <div class="policy-list">
+              <article v-for="policy in runtimePolicies" :key="policy.id" class="policy-card">
+                <strong>{{ policy.name }}</strong>
+                <span class="mono">{{ policy.runtime_policy_path }}</span>
+                <div class="button-row">
+                  <button @click="editRuntimePolicy(policy)">编辑</button>
+                  <button class="danger" @click="deletePolicy(policy.id)">删除</button>
+                </div>
+              </article>
+              <p v-if="!runtimePolicies.length" class="muted">暂无 runtime policy。</p>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head">
+              <h2>手动下发</h2>
+            </div>
+            <label class="field">
+              <span>策略</span>
+              <select v-model="selectedRuntimePolicyId">
+                <option value="">选择策略</option>
+                <option v-for="policy in runtimePolicies" :key="policy.id" :value="policy.id">{{ policy.name }}</option>
+              </select>
+            </label>
+            <div class="check-list">
+              <label v-for="node in policyNodes" :key="node.host">
+                <input v-model="selectedRuntimeHosts" type="checkbox" :value="node.host" :disabled="!node.can_apply">
+                <span>{{ node.host }}</span>
+              </label>
+            </div>
+            <div class="button-row end">
+              <button @click="applyPolicy('runtime', false)">下发到选中</button>
+              <button class="primary" @click="applyPolicy('runtime', true)">统一下发</button>
+            </div>
+          </div>
         </section>
       </section>
     </main>
   </div>
 
-  <script>
-    const state = {
-      timerId: null,
-      expandedHosts: new Set(),
-      currentView: "monitor",
-      statusRequestInFlight: false,
-      policies: [],
-      runtimePolicies: [],
-      policyNodes: [],
-      templates: [],
-      baseline: null,
-      policyModule: "boot",
-      selectedPolicyId: "",
-      selectedRuntimePolicyId: "",
-      editingPolicyId: "",
-      editingPolicyModule: "boot_measurement",
-      editingRuntimePolicyId: ""
-    };
-
-    function el(id) {
-      return document.getElementById(id);
-    }
-
-    function escapeHtml(value) {
-      return String(value ?? "")
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-    }
-
-    function badge(kind, text) {
-      return `<span class="badge ${kind}">${escapeHtml(text)}</span>`;
-    }
-
-    function policyModuleLabel(moduleName) {
-      const labels = {
-        boot_measurement: "启动度量",
-        boot_measurement_diagnostic: "启动基线",
-        runtime_integrity: "运行时"
-      };
-      return labels[moduleName] || moduleName || "启动度量";
-    }
-
-    function policyModuleKey(policy) {
-      if (policy?.type === "ima_runtime" || policy?.module === "runtime_integrity") return "runtime";
-      return "boot";
-    }
-
-    function setBadge(node, kind, text) {
-      node.className = `badge ${kind}`;
-      node.textContent = text;
-    }
-
-    function showNotice(node, kind, message) {
-      node.className = `notice show ${kind}`;
-      node.textContent = message;
-    }
-
-    function hideNotice(node) {
-      node.className = "notice";
-      node.textContent = "";
-    }
-
-    function apiHeaders() {
-      const headers = { "Content-Type": "application/json" };
-      const token = localStorage.getItem("keylimePolicyAdminToken") || "";
-      if (token) {
-        headers["X-Admin-Token"] = token;
-      }
-      return headers;
-    }
-
-    async function requestJson(url, options = {}) {
-      const response = await fetch(url, { cache: "no-store", ...options });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(data.error || `HTTP ${response.status}`);
-      }
-      return data;
-    }
-
-    function statusKind(node) {
-      return node?.conclusion?.level || "warn";
-    }
-
-    function trustText(node) {
-      return node?.conclusion?.text || "未知";
-    }
-
-    function serviceStateText(node) {
-      const service = node.service || {};
-      if (service.state === "up" && service.status === "enabled") return "上线";
-      if (service.state === "up" && service.status === "disabled") return "上线 / 禁用";
-      if (service.state === "down") return "下线";
-      return service.state || "未知";
-    }
-
-    function agentText(node) {
-      return node.agent?.configured ? "已装代理" : "未装代理";
-    }
-
-    function traitText(node) {
-      const value = node.placement?.trait_present;
-      if (value === true) return "可信标记存在";
-      if (value === false) return "无可信标记";
-      return "可信标记未知";
-    }
-
-    function layer(node, name) {
-      return node?.trust_layers?.[name] || { level: "warn", text: "未知", detail: "" };
-    }
-
-    function layerBadge(node, name, fallback = "未知") {
-      const item = layer(node, name);
-      return badge(item.level || "warn", item.text || fallback);
-    }
-
-    function eventText(node) {
-      return node.decision?.last_event_id || "无";
-    }
-
-    function policyMaskText(node) {
-      return node.trust_layers?.policy?.tpm_policy_mask || "-";
-    }
-
-    function vmCountText(node) {
-      const count = node.vm_count;
-      if (count === undefined || count === null || count === "" || count === "unknown") {
-        return "未知";
-      }
-      return `${count}`;
-    }
-
-    function renderStatus(data) {
-      const summary = data.summary || {};
-      const timer = data.timer || {};
-      const nodes = data.nodes || [];
-
-      hideNotice(el("apiNotice"));
-      setBadge(el("apiBadge"), "ok", "API 已连接");
-      setBadge(el("summaryBadge"), summary.level || "warn", summary.text || "等待状态");
-      const cache = data.cache || {};
-      const age = cache.age_seconds === undefined ? "-" : `${cache.age_seconds}s`;
-      el("lastUpdate").textContent = `页面 ${new Date().toLocaleTimeString()} / 数据 ${age}`;
-      el("timerState").textContent = `timer: ${timer.active || "unknown"} / ${timer.enabled || "unknown"}`;
-
-      el("totalCount").textContent = summary.total ?? nodes.length;
-      el("trustedCount").textContent = summary.trusted ?? 0;
-      el("untrustedCount").textContent = summary.untrusted ?? 0;
-      el("noAgentCount").textContent = summary.no_agent ?? 0;
-
-      renderCards(nodes);
-    }
-
-    function renderCards(nodes) {
-      if (!nodes.length) {
-        el("nodeGrid").innerHTML = `<div class="panel subtle">未发现 nova-compute 节点。</div>`;
-        return;
-      }
-
-      el("nodeGrid").innerHTML = nodes.map((node) => {
-        const kind = statusKind(node);
-        const expanded = state.expandedHosts.has(node.host);
-        return `
-          <article class="node-card ${expanded ? "expanded" : ""}" data-host="${escapeHtml(node.host)}" tabindex="0" role="button" aria-expanded="${expanded}">
-            <div class="node-head">
-              <div class="node-title">
-                <span class="dot ${kind}" aria-hidden="true"></span>
-                <strong>${escapeHtml(node.host)}</strong>
-              </div>
-              <span class="expand-mark">${expanded ? "收起" : "详情"}</span>
-            </div>
-            <div class="kv">
-              <div class="key">IP 地址</div>
-              <div class="value">${escapeHtml(node.ip || "unknown")}</div>
-            </div>
-            <div class="kv">
-              <div class="key">虚拟机</div>
-              <div class="value">${escapeHtml(vmCountText(node))}</div>
-            </div>
-            <div class="kv">
-              <div class="key">可信状态</div>
-              <div class="value">${badge(kind, trustText(node))}</div>
-            </div>
-            <div class="kv">
-              <div class="key">可信证明</div>
-              <div class="value layer-row">
-                ${layerBadge(node, "boot", "启动")}
-                ${layerBadge(node, "runtime", "运行时")}
-              </div>
-            </div>
-            <div class="kv">
-              <div class="key">服务状态</div>
-              <div class="value">${escapeHtml(serviceStateText(node))}</div>
-            </div>
-            <div class="details">
-              <div class="kv">
-                <div class="key">Keylime</div>
-                <div class="value">${escapeHtml(agentText(node))}</div>
-              </div>
-              <div class="kv">
-                <div class="key">Agent UUID</div>
-                <div class="value">${escapeHtml(node.agent?.uuid || "-")}</div>
-              </div>
-              <div class="kv">
-                <div class="key">可信标记</div>
-                <div class="value">${escapeHtml(traitText(node))}</div>
-              </div>
-              <div class="kv">
-                <div class="key">OpenStack</div>
-                <div class="value">${layerBadge(node, "openstack", "联动")}</div>
-              </div>
-              <div class="kv">
-                <div class="key">Measured Boot</div>
-                <div class="value">${layerBadge(node, "measured_boot", "告警")}</div>
-              </div>
-              <div class="kv">
-                <div class="key">Policy Mask</div>
-                <div class="value mono">${escapeHtml(policyMaskText(node))}</div>
-              </div>
-              <div class="kv">
-                <div class="key">Keylime 事件</div>
-                <div class="value mono">${escapeHtml(eventText(node))}</div>
-              </div>
-              <div class="kv">
-                <div class="key">可用域</div>
-                <div class="value">${escapeHtml(node.zone || "-")}</div>
-              </div>
-              <div class="kv">
-                <div class="key">数量来源</div>
-                <div class="value">${escapeHtml(node.vm_count_source || "-")}</div>
-              </div>
-              <div class="kv">
-                <div class="key">更新时间</div>
-                <div class="value">${escapeHtml(node.service?.updated_at || "-")}</div>
-              </div>
-            </div>
-          </article>
-        `;
-      }).join("");
-    }
-
-    function renderApiError(error) {
-      setBadge(el("apiBadge"), "bad", "API 未连接");
-      setBadge(el("summaryBadge"), "warn", "等待实时 API");
-      showNotice(el("apiNotice"), "warn", `无法读取实时状态：${error.message}`);
-      el("lastUpdate").textContent = `失败 ${new Date().toLocaleTimeString()}`;
-      el("nodeGrid").innerHTML = `
-        <div class="panel">无法读取实时状态：${escapeHtml(error.message)}</div>
-      `;
-    }
-
-    async function refreshStatus(force = false) {
-      if (state.statusRequestInFlight && !force) {
-        return;
-      }
-      state.statusRequestInFlight = true;
-      try {
-        const data = await requestJson(`/api/status?ts=${Date.now()}${force ? "&force=1" : ""}`);
-        renderStatus(data);
-      } catch (error) {
-        renderApiError(error);
-      } finally {
-        state.statusRequestInFlight = false;
-      }
-    }
-
-    function startTimer() {
-      if (state.timerId) {
-        window.clearInterval(state.timerId);
-      }
-      const seconds = Number(el("refreshInterval").value || 2);
-      state.timerId = window.setInterval(refreshStatus, seconds * 1000);
-    }
-
-    function switchView(view) {
-      state.currentView = view;
-      document.querySelectorAll(".view").forEach((node) => {
-        node.classList.toggle("active", node.id === `view-${view}`);
-      });
-      document.querySelectorAll(".nav-item").forEach((node) => {
-        node.classList.toggle("active", node.dataset.view === view);
-      });
-      if (view === "policies") {
-        refreshPolicies();
-      }
-    }
-
-    function switchPolicyModule(moduleName) {
-      state.policyModule = moduleName;
-      document.querySelectorAll(".policy-module").forEach((node) => {
-        node.classList.toggle("active", node.id === `policy-module-${moduleName}`);
-      });
-      document.querySelectorAll(".module-tab").forEach((node) => {
-        node.classList.toggle("active", node.dataset.policyModule === moduleName);
-      });
-      refreshPolicies();
-    }
-
-    function digestLength(alg) {
-      return { sha1: 40, sha256: 64, sha384: 96, sha512: 128 }[alg] || 64;
-    }
-
-    function slugify(value) {
-      return String(value || "")
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9_.-]+/g, "-")
-        .replace(/^-+|-+$/g, "") || "tpm-pcr-policy";
-    }
-
-    function addPcrRow(index = "", digest = "") {
-      const row = document.createElement("div");
-      row.className = "pcr-row";
-      row.innerHTML = `
-        <input class="pcr-index" placeholder="PCR" value="${escapeHtml(index)}">
-        <input class="pcr-digest" placeholder="十六进制摘要" value="${escapeHtml(digest)}">
-        <button type="button" class="danger remove-pcr">删除</button>
-      `;
-      el("pcrRows").appendChild(row);
-      row.querySelectorAll("input").forEach((input) => input.addEventListener("input", updateGeneratedPolicyJson));
-      row.querySelector(".remove-pcr").addEventListener("click", () => {
-        row.remove();
-        updateGeneratedPolicyJson();
-      });
-      updateGeneratedPolicyJson();
-    }
-
-    function readPolicyForm() {
-      const hashAlg = el("policyHashAlg").value;
-      const pcrs = {};
-      document.querySelectorAll("#pcrRows .pcr-row").forEach((row) => {
-        const index = row.querySelector(".pcr-index").value.trim();
-        const digest = row.querySelector(".pcr-digest").value.trim().replace(/^0x/i, "").toUpperCase();
-        if (index || digest) {
-          pcrs[index] = digest;
-        }
-      });
-      const policyId = el("policyId").value.trim() || slugify(el("policyName").value);
-      return {
-        id: policyId,
-        name: el("policyName").value.trim(),
-        description: el("policyDescription").value.trim(),
-        module: state.editingPolicyModule || "boot_measurement",
-        hash_alg: hashAlg,
-        pcrs
-      };
-    }
-
-    function generatedTpmPolicy() {
-      const policy = readPolicyForm();
-      let mask = 0;
-      const generated = {};
-      Object.keys(policy.pcrs).forEach((key) => {
-        const idx = Number(key);
-        if (Number.isInteger(idx) && idx >= 0 && idx <= 23) {
-          mask |= 1 << idx;
-          generated[key] = [String(policy.pcrs[key]).toLowerCase()];
-        }
-      });
-      return { mask: `0x${mask.toString(16)}`, ...generated };
-    }
-
-    function updateGeneratedPolicyJson() {
-      const generated = generatedTpmPolicy();
-      el("generatedPolicyJson").textContent = JSON.stringify(generated, null, 2);
-    }
-
-    function resetPolicyForm() {
-      state.editingPolicyId = "";
-      state.editingPolicyModule = "boot_measurement";
-      el("policyName").value = "";
-      el("policyId").value = "";
-      el("policyDescription").value = "";
-      el("policyHashAlg").value = "sha256";
-      el("pcrRows").innerHTML = "";
-      addPcrRow("7", "");
-      updateGeneratedPolicyJson();
-    }
-
-    function fillPolicyForm(policy) {
-      state.editingPolicyId = policy.id || "";
-      state.editingPolicyModule = policy.module || "boot_measurement";
-      el("policyName").value = policy.name || "";
-      el("policyId").value = policy.id || "";
-      el("policyDescription").value = policy.description || "";
-      el("policyHashAlg").value = policy.hash_alg || "sha256";
-      el("pcrRows").innerHTML = "";
-      const pcrs = policy.pcrs || {};
-      Object.keys(pcrs).sort((a, b) => Number(a) - Number(b)).forEach((key) => {
-        addPcrRow(key, pcrs[key]);
-      });
-      if (!Object.keys(pcrs).length) {
-        addPcrRow("7", "");
-      }
-      updateGeneratedPolicyJson();
-    }
-
-    function validatePolicyForm(policy) {
-      if (!policy.name) throw new Error("策略名称不能为空");
-      const expectedLength = digestLength(policy.hash_alg);
-      const keys = Object.keys(policy.pcrs);
-      if (!keys.length) throw new Error("至少需要设置一个 PCR");
-      keys.forEach((key) => {
-        const idx = Number(key);
-        const digest = policy.pcrs[key];
-        if (!Number.isInteger(idx) || idx < 0 || idx > 23) {
-          throw new Error("PCR 编号必须是 0-23 的整数");
-        }
-        if (!/^[0-9A-F]+$/.test(digest) || digest.length !== expectedLength) {
-          throw new Error(`${policy.hash_alg} 摘要长度应为 ${expectedLength} 个十六进制字符`);
-        }
-      });
-    }
-
-    async function savePolicy() {
-      try {
-        const policy = readPolicyForm();
-        validatePolicyForm(policy);
-        const data = await requestJson("/api/policies", {
-          method: "POST",
-          headers: apiHeaders(),
-          body: JSON.stringify(policy)
-        });
-        state.selectedPolicyId = data.policy.id;
-        await refreshPolicies(true);
-        showNotice(el("policyNotice"), "ok", `策略已保存：${data.policy.name}`);
-      } catch (error) {
-        showNotice(el("policyNotice"), "bad", error.message);
-      }
-    }
-
-    async function deletePolicy(policyId) {
-      if (!window.confirm(`删除策略 ${policyId}？`)) return;
-      try {
-        await requestJson(`/api/policies/${encodeURIComponent(policyId)}`, {
-          method: "DELETE",
-          headers: apiHeaders()
-        });
-        if (state.selectedPolicyId === policyId) state.selectedPolicyId = "";
-        await refreshPolicies(true);
-        showNotice(el("policyNotice"), "ok", "策略已删除");
-      } catch (error) {
-        showNotice(el("policyNotice"), "bad", error.message);
-      }
-    }
-
-    function renderPolicyList() {
-      el("policyCount").textContent = `${state.policies.length} 个策略`;
-      if (!state.policies.length) {
-        el("policyList").innerHTML = `<span class="subtle">暂无策略</span>`;
-        el("applyPolicySelect").innerHTML = `<option value="">暂无策略</option>`;
-        return;
-      }
-      if (!state.selectedPolicyId || !state.policies.some((policy) => policy.id === state.selectedPolicyId)) {
-        state.selectedPolicyId = state.policies[0].id;
-      }
-      el("policyList").innerHTML = state.policies.map((policy) => {
-        const selected = policy.id === state.selectedPolicyId;
-        const pcrKeys = Object.keys(policy.pcrs || {}).sort((a, b) => Number(a) - Number(b)).join(", ");
-        return `
-          <article class="policy-card ${selected ? "selected" : ""}">
-            <div class="policy-card-head">
-              <div>
-                <strong>${escapeHtml(policy.name)}</strong>
-                <span class="subtle">${escapeHtml(policy.id)}</span>
-              </div>
-              <div class="chips">
-                ${badge("ok", policyModuleLabel(policy.module))}
-                ${badge("ok", policy.hash_alg || "sha256")}
-              </div>
-            </div>
-            <div class="kv">
-              <div class="key">PCR</div>
-              <div class="value">${escapeHtml(pcrKeys || "-")}</div>
-            </div>
-            <div class="kv">
-              <div class="key">Mask</div>
-              <div class="value mono">${escapeHtml(policy.mask || "-")}</div>
-            </div>
-            <div class="actions" style="margin-top: 10px;">
-              <button data-select-policy="${escapeHtml(policy.id)}">选择</button>
-              <button data-edit-policy="${escapeHtml(policy.id)}">编辑</button>
-              <button class="danger" data-delete-policy="${escapeHtml(policy.id)}">删除</button>
-            </div>
-          </article>
-        `;
-      }).join("");
-      el("applyPolicySelect").innerHTML = state.policies.map((policy) => `
-        <option value="${escapeHtml(policy.id)}" ${policy.id === state.selectedPolicyId ? "selected" : ""}>${escapeHtml(policy.name)}</option>
-      `).join("");
-    }
-
-    function renderTemplateList() {
-      const bootTemplates = state.templates.filter((template) => policyModuleKey(template) === "boot");
-      if (!bootTemplates.length) {
-        el("templateList").innerHTML = `<span class="subtle">暂无模板</span>`;
-        return;
-      }
-      el("templateList").innerHTML = bootTemplates.map((template) => `
-        <button type="button" data-template-id="${escapeHtml(template.id)}">
-          <strong>${escapeHtml(template.name)}</strong><br>
-          <span class="subtle">${escapeHtml(template.description || "")}</span>
-        </button>
-      `).join("");
-    }
-
-    function renderApplyNodes() {
-      if (!state.policyNodes.length) {
-        el("applyNodeList").innerHTML = `<span class="subtle">未发现计算节点</span>`;
-        return;
-      }
-      el("applyNodeList").innerHTML = state.policyNodes.map((node) => {
-        const canApply = Boolean(node.can_apply);
-        const binding = node.bindings?.boot || node.binding || {};
-        const bound = binding.policy_name ? `当前：${binding.policy_name}` : "未绑定策略";
-        return `
-          <label class="apply-node">
-            <input type="checkbox" class="apply-host" value="${escapeHtml(node.host)}" ${canApply ? "" : "disabled"}>
-            <span>
-              <strong>${escapeHtml(node.host)}</strong>
-              <span class="subtle"> ${escapeHtml(node.ip || "-")}</span><br>
-              <span class="subtle mono">${escapeHtml(node.agent?.uuid || "缺少 UUID")}</span><br>
-              <span class="subtle">${escapeHtml(bound)}</span>
-            </span>
-            ${badge(node.trust_level || "warn", node.trust_text || "未知")}
-          </label>
-        `;
-      }).join("");
-    }
-
-    function renderPolicyOverview(data) {
-      const allPolicies = data.policies || [];
-      state.policies = allPolicies.filter((policy) => policyModuleKey(policy) === "boot");
-      state.runtimePolicies = allPolicies.filter((policy) => policyModuleKey(policy) === "runtime");
-      state.policyNodes = data.nodes || [];
-      state.templates = data.templates || [];
-      state.baseline = data.baseline || null;
-      el("policyStorePath").textContent = `策略文件: ${data.store_path || "-"}`;
-      setBadge(el("policyApiBadge"), "ok", "API 已连接");
-      renderBaselinePanel();
-      renderPolicyList();
-      renderTemplateList();
-      renderApplyNodes();
-      renderRuntimePanel();
-      renderRuntimePolicyList();
-      renderRuntimeApplyNodes();
-    }
-
-    function renderRuntimePanel() {
-      const nodes = state.policyNodes || [];
-      if (!nodes.length) {
-        el("runtimeSummary").textContent = "未发现计算节点";
-        el("runtimeNodeList").innerHTML = `<div class="runtime-card subtle">未发现 nova-compute 节点。</div>`;
-        return;
-      }
-
-      const trusted = nodes.filter((node) => node.trust_layers?.runtime?.level === "ok").length;
-      const abnormal = nodes.filter((node) => node.trust_layers?.runtime?.level === "bad").length;
-      const unknown = Math.max(0, nodes.length - trusted - abnormal);
-      el("runtimeSummary").textContent =
-        `运行时可信 ${trusted}/${nodes.length}，异常 ${abnormal}，待确认 ${unknown}`;
-
-      el("runtimeNodeList").innerHTML = nodes.map((node) => {
-        const layers = node.trust_layers || {};
-        const policy = layers.policy || {};
-        const decision = node.decision || {};
-        const placement = node.placement || {};
-        return `
-          <article class="runtime-card">
-            <div class="runtime-card-head">
-              <div>
-                <strong>${escapeHtml(node.host)}</strong>
-                <div class="subtle">${escapeHtml(node.ip || "-")}</div>
-              </div>
-              ${badge(node.trust_level || "warn", node.trust_text || "未知")}
-            </div>
-            <div class="kv">
-              <div class="key">运行时</div>
-              <div class="value">${layerBadge(node, "runtime", "运行时")}</div>
-            </div>
-            <div class="kv">
-              <div class="key">OpenStack</div>
-              <div class="value">${layerBadge(node, "openstack", "联动")}</div>
-            </div>
-            <div class="kv">
-              <div class="key">PCR Mask</div>
-              <div class="value mono">${escapeHtml(policy.tpm_policy_mask || "-")}</div>
-            </div>
-            <div class="kv">
-              <div class="key">Runtime Policy</div>
-              <div class="value">${escapeHtml(policy.has_runtime_policy === true ? "已绑定" : policy.has_runtime_policy === false ? "未绑定" : "随 Keylime 证明判定")}</div>
-            </div>
-            <div class="kv">
-              <div class="key">Guard 文件</div>
-              <div class="value mono">${escapeHtml(policy.runtime_guard_path || "-")}</div>
-            </div>
-            <div class="kv">
-              <div class="key">Verifier 状态</div>
-              <div class="value">${escapeHtml(decision.operational_state || "-")} / ${escapeHtml(decision.attestation_status || "-")}</div>
-            </div>
-            <div class="kv">
-              <div class="key">最近事件</div>
-              <div class="value mono">${escapeHtml(decision.last_event_id || "无")}</div>
-            </div>
-            <div class="kv">
-              <div class="key">可信标记</div>
-              <div class="value">${escapeHtml(placement.trait_present === true ? "存在" : placement.trait_present === false ? "不存在" : "未知")}</div>
-            </div>
-          </article>
-        `;
-      }).join("");
-    }
-
-    function splitLines(value) {
-      return String(value || "")
-        .split(/\r?\n|,/)
-        .map((item) => item.trim())
-        .filter(Boolean);
-    }
-
-    function joinLines(value) {
-      return Array.isArray(value) ? value.join("\n") : "";
-    }
-
-    function resetRuntimePolicyForm() {
-      state.editingRuntimePolicyId = "";
-      el("runtimePolicyDisplayName").value = "";
-      el("runtimePolicyId").value = "";
-      el("runtimePolicyName").value = "";
-      el("runtimePolicyPath").value = "";
-      el("runtimeProtectedPaths").value = "/opt/keylime-cloud-integrity/cloud-runtime-guard.sh";
-      el("runtimeExcludes").value = "^(?!(boot_aggregate|/opt/keylime-cloud-integrity/cloud-runtime-guard.sh)$).*";
-      el("runtimePolicyDescription").value = "";
-    }
-
-    function readRuntimePolicyForm() {
-      const displayName = el("runtimePolicyDisplayName").value.trim();
-      const policyId = el("runtimePolicyId").value.trim() || slugify(displayName);
-      return {
-        id: policyId,
-        name: displayName,
-        description: el("runtimePolicyDescription").value.trim(),
-        type: "ima_runtime",
-        module: "runtime_integrity",
-        runtime_policy_name: el("runtimePolicyName").value.trim() || policyId,
-        runtime_policy_path: el("runtimePolicyPath").value.trim(),
-        protected_paths: splitLines(el("runtimeProtectedPaths").value),
-        excludes: splitLines(el("runtimeExcludes").value)
-      };
-    }
-
-    function validateRuntimePolicy(policy) {
-      if (!policy.name) throw new Error("策略名称不能为空");
-      if (!policy.runtime_policy_name) throw new Error("Keylime runtime policy 名称不能为空");
-      if (!policy.runtime_policy_path) throw new Error("策略文件路径不能为空");
-    }
-
-    function fillRuntimePolicyForm(policy) {
-      state.editingRuntimePolicyId = policy.id || "";
-      el("runtimePolicyDisplayName").value = policy.name || "";
-      el("runtimePolicyId").value = policy.id || "";
-      el("runtimePolicyName").value = policy.runtime_policy_name || policy.id || "";
-      el("runtimePolicyPath").value = policy.runtime_policy_path || "";
-      el("runtimeProtectedPaths").value = joinLines(policy.protected_paths || []);
-      el("runtimeExcludes").value = joinLines(policy.excludes || []);
-      el("runtimePolicyDescription").value = policy.description || "";
-    }
-
-    async function saveRuntimePolicy() {
-      try {
-        const policy = readRuntimePolicyForm();
-        validateRuntimePolicy(policy);
-        const data = await requestJson("/api/policies", {
-          method: "POST",
-          headers: apiHeaders(),
-          body: JSON.stringify(policy)
-        });
-        state.selectedRuntimePolicyId = data.policy.id;
-        await refreshPolicies(true);
-        showNotice(el("policyNotice"), "ok", `运行时策略已保存：${data.policy.name}`);
-      } catch (error) {
-        showNotice(el("policyNotice"), "bad", error.message);
-      }
-    }
-
-    function renderRuntimePolicyList() {
-      el("runtimePolicyCount").textContent = `${state.runtimePolicies.length} 个策略`;
-      if (!state.runtimePolicies.length) {
-        el("runtimePolicyList").innerHTML = `<span class="subtle">暂无运行时策略</span>`;
-        el("runtimePolicySelect").innerHTML = `<option value="">暂无策略</option>`;
-        return;
-      }
-      if (!state.selectedRuntimePolicyId || !state.runtimePolicies.some((policy) => policy.id === state.selectedRuntimePolicyId)) {
-        state.selectedRuntimePolicyId = state.runtimePolicies[0].id;
-      }
-      el("runtimePolicyList").innerHTML = state.runtimePolicies.map((policy) => {
-        const selected = policy.id === state.selectedRuntimePolicyId;
-        return `
-          <article class="policy-card ${selected ? "selected" : ""}">
-            <div class="policy-card-head">
-              <div>
-                <strong>${escapeHtml(policy.name)}</strong>
-                <span class="subtle">${escapeHtml(policy.id)}</span>
-              </div>
-              <div class="chips">${badge("ok", "IMA runtime")}</div>
-            </div>
-            <div class="kv">
-              <div class="key">Keylime 名称</div>
-              <div class="value mono">${escapeHtml(policy.runtime_policy_name || "-")}</div>
-            </div>
-            <div class="kv">
-              <div class="key">策略文件</div>
-              <div class="value mono">${escapeHtml(policy.runtime_policy_path || "-")}</div>
-            </div>
-            <div class="actions" style="margin-top: 10px;">
-              <button data-select-runtime-policy="${escapeHtml(policy.id)}">选择</button>
-              <button data-edit-runtime-policy="${escapeHtml(policy.id)}">编辑</button>
-              <button class="danger" data-delete-runtime-policy="${escapeHtml(policy.id)}">删除</button>
-            </div>
-          </article>
-        `;
-      }).join("");
-      el("runtimePolicySelect").innerHTML = state.runtimePolicies.map((policy) => `
-        <option value="${escapeHtml(policy.id)}" ${policy.id === state.selectedRuntimePolicyId ? "selected" : ""}>${escapeHtml(policy.name)}</option>
-      `).join("");
-    }
-
-    function renderRuntimeApplyNodes() {
-      if (!state.policyNodes.length) {
-        el("runtimeApplyNodeList").innerHTML = `<span class="subtle">未发现计算节点</span>`;
-        return;
-      }
-      el("runtimeApplyNodeList").innerHTML = state.policyNodes.map((node) => {
-        const canApply = Boolean(node.can_apply);
-        const binding = node.bindings?.runtime || {};
-        const bound = binding.policy_name ? `当前：${binding.policy_name}` : "未绑定运行时策略";
-        return `
-          <label class="apply-node">
-            <input type="checkbox" class="runtime-apply-host" value="${escapeHtml(node.host)}" ${canApply ? "" : "disabled"}>
-            <span>
-              <strong>${escapeHtml(node.host)}</strong>
-              <span class="subtle"> ${escapeHtml(node.ip || "-")}</span><br>
-              <span class="subtle mono">${escapeHtml(node.agent?.uuid || "缺少 UUID")}</span><br>
-              <span class="subtle">${escapeHtml(bound)}</span>
-            </span>
-            ${layerBadge(node, "runtime", "运行时")}
-          </label>
-        `;
-      }).join("");
-    }
-
-    function renderBaselinePanel() {
-      const baseline = state.baseline || {};
-      if (!baseline.ok) {
-        el("baselineSummary").textContent = baseline.message || "未找到 TPM evidence baseline";
-        el("baselineNodeList").innerHTML = `
-          <div class="result-item">
-            <div class="kv">
-              <div class="key">基线文件</div>
-              <div class="value mono">${escapeHtml(baseline.path || "-")}</div>
-            </div>
-          </div>
-        `;
-        return;
-      }
-
-      el("baselineSummary").textContent =
-        `基线时间: ${baseline.checked_at_utc || "-"} / 原始目录: ${baseline.raw_dir || "-"} / 推荐绑定: ${baseline.recommended_bind_mode || "pcr7"}`;
-      const nodes = baseline.nodes || [];
-      el("baselineNodeList").innerHTML = nodes.map((node) => `
-        <div class="result-item">
-          <div class="row" style="justify-content: space-between;">
-            <div>
-              <strong>${escapeHtml(node.host)}</strong>
-              <span class="subtle">${escapeHtml(node.ip || "-")}</span>
-            </div>
-            ${badge(node.sha256_pcr_count >= 8 ? "ok" : "warn", `PCR ${node.sha256_pcr_count || 0}/8`)}
-          </div>
-          <div class="kv">
-            <div class="key">PCR7</div>
-            <div class="value mono">${escapeHtml(node.pcr7 || "-")}</div>
-          </div>
-          <div class="kv">
-            <div class="key">证据</div>
-            <div class="value">
-              event_log=${escapeHtml(node.has_event_log)}
-              IMA=${escapeHtml(node.has_ima_ascii_log || node.has_ima_binary_log)}
-              agent=${escapeHtml(node.keylime_agent_container_seen)}
-            </div>
-          </div>
-        </div>
-      `).join("") || `<span class="subtle">基线中没有计算节点</span>`;
-    }
-
-    async function refreshPolicies(silent = false) {
-      try {
-        const data = await requestJson(`/api/policies?ts=${Date.now()}`);
-        if (!silent) {
-          hideNotice(el("policyNotice"));
-        }
-        renderPolicyOverview(data);
-      } catch (error) {
-        setBadge(el("policyApiBadge"), "bad", "API 未连接");
-        showNotice(el("policyNotice"), "bad", error.message);
-      }
-    }
-
-    async function importBaselinePolicies() {
-      try {
-        const data = await requestJson("/api/policies/import-baseline", {
-          method: "POST",
-          headers: apiHeaders(),
-          body: JSON.stringify({ bind_mode: "pcr7" })
-        });
-        await refreshPolicies(true);
-        showNotice(el("policyNotice"), "ok", `已从基线导入策略：${data.rendered.length} 项`);
-      } catch (error) {
-        showNotice(el("policyNotice"), "bad", error.message);
-      }
-    }
-
-    async function applyBoundPolicies() {
-      el("applyResult").innerHTML = `<span class="subtle">正在按绑定策略下发...</span>`;
-      try {
-        const data = await requestJson("/api/policies/apply-bound", {
-          method: "POST",
-          headers: apiHeaders(),
-          body: JSON.stringify({ all: true, module: "boot", sync: true, sync_mode: "control-loop" })
-        });
-        renderApplyResult(data.results || []);
-        await refreshPolicies(true);
-        showNotice(el("policyNotice"), data.ok ? "ok" : "warn", data.ok ? "绑定策略下发完成" : "绑定策略部分下发失败");
-      } catch (error) {
-        showNotice(el("policyNotice"), "bad", error.message);
-        el("applyResult").innerHTML = `<div class="result-item">${escapeHtml(error.message)}</div>`;
-      }
-    }
-
-    async function applyPolicy(all) {
-      const policyId = el("applyPolicySelect").value || state.selectedPolicyId;
-      if (!policyId) {
-        showNotice(el("policyNotice"), "bad", "请选择策略");
-        return;
-      }
-      const hosts = Array.from(document.querySelectorAll(".apply-host:checked")).map((item) => item.value);
-      if (!all && !hosts.length) {
-        showNotice(el("policyNotice"), "bad", "请选择计算节点");
-        return;
-      }
-      el("applyResult").innerHTML = `<span class="subtle">正在下发...</span>`;
-      try {
-        const data = await requestJson("/api/policies/apply", {
-          method: "POST",
-          headers: apiHeaders(),
-          body: JSON.stringify({ policy_id: policyId, hosts, all })
-        });
-        renderApplyResult(data.results || []);
-        await refreshPolicies(true);
-        showNotice(el("policyNotice"), data.ok ? "ok" : "warn", data.ok ? "策略下发完成" : "部分节点下发失败");
-      } catch (error) {
-        showNotice(el("policyNotice"), "bad", error.message);
-        el("applyResult").innerHTML = `<div class="result-item">${escapeHtml(error.message)}</div>`;
-      }
-    }
-
-    async function applyRuntimePolicy(all) {
-      const policyId = el("runtimePolicySelect").value || state.selectedRuntimePolicyId;
-      if (!policyId) {
-        showNotice(el("policyNotice"), "bad", "请选择运行时策略");
-        return;
-      }
-      const hosts = Array.from(document.querySelectorAll(".runtime-apply-host:checked")).map((item) => item.value);
-      if (!all && !hosts.length) {
-        showNotice(el("policyNotice"), "bad", "请选择计算节点");
-        return;
-      }
-      el("runtimeApplyResult").innerHTML = `<span class="subtle">正在下发...</span>`;
-      try {
-        const data = await requestJson("/api/policies/apply", {
-          method: "POST",
-          headers: apiHeaders(),
-          body: JSON.stringify({ policy_id: policyId, hosts, all })
-        });
-        renderApplyResult(data.results || [], "runtimeApplyResult");
-        await refreshPolicies(true);
-        showNotice(el("policyNotice"), data.ok ? "ok" : "warn", data.ok ? "运行时策略下发完成" : "运行时策略部分下发失败");
-      } catch (error) {
-        showNotice(el("policyNotice"), "bad", error.message);
-        el("runtimeApplyResult").innerHTML = `<div class="result-item">${escapeHtml(error.message)}</div>`;
-      }
-    }
-
-    async function applyRuntimeBoundPolicies() {
-      el("runtimeApplyResult").innerHTML = `<span class="subtle">正在按绑定运行时策略下发...</span>`;
-      try {
-        const data = await requestJson("/api/policies/apply-bound", {
-          method: "POST",
-          headers: apiHeaders(),
-          body: JSON.stringify({ all: true, module: "runtime", sync: true, sync_mode: "control-loop" })
-        });
-        renderApplyResult(data.results || [], "runtimeApplyResult");
-        await refreshPolicies(true);
-        showNotice(el("policyNotice"), data.ok ? "ok" : "warn", data.ok ? "运行时绑定策略下发完成" : "运行时绑定策略部分失败");
-      } catch (error) {
-        showNotice(el("policyNotice"), "bad", error.message);
-        el("runtimeApplyResult").innerHTML = `<div class="result-item">${escapeHtml(error.message)}</div>`;
-      }
-    }
-
-    function renderApplyResult(results, targetId = "applyResult") {
-      if (!results.length) {
-        el(targetId).innerHTML = `<span class="subtle">暂无结果</span>`;
-        return;
-      }
-      el(targetId).innerHTML = results.map((item) => {
-        const kind = item.status === "success" ? "ok" : "bad";
-        const message = item.message || `update_rc=${item.update_rc ?? "-"} reactivate_rc=${item.reactivate_rc ?? "-"} sync_rc=${item.sync_rc ?? "-"}`;
-        return `
-          <div class="result-item">
-            <div class="row" style="justify-content: space-between;">
-              <strong>${escapeHtml(item.host)}</strong>
-              ${badge(kind, item.status || "unknown")}
-            </div>
-            <div class="kv">
-              <div class="key">Agent</div>
-              <div class="value mono">${escapeHtml(item.agent_uuid || "-")}</div>
-            </div>
-            <div class="kv">
-              <div class="key">结果</div>
-              <div class="value">${escapeHtml(message)}</div>
-            </div>
-            ${item.stderr ? `<div class="kv"><div class="key">stderr</div><div class="value mono">${escapeHtml(item.stderr)}</div></div>` : ""}
-          </div>
-        `;
-      }).join("");
-    }
-
-    document.querySelectorAll(".nav-item").forEach((item) => {
-      item.addEventListener("click", () => switchView(item.dataset.view));
-    });
-    document.querySelectorAll(".module-tab").forEach((item) => {
-      item.addEventListener("click", () => switchPolicyModule(item.dataset.policyModule));
-    });
-
-    el("refreshNow").addEventListener("click", () => refreshStatus(true));
-    el("refreshInterval").addEventListener("change", () => {
-      localStorage.setItem("trustMonitorRefreshSeconds", el("refreshInterval").value);
-      startTimer();
-    });
-    el("nodeGrid").addEventListener("click", (event) => {
-      const card = event.target.closest(".node-card");
-      if (!card) return;
-      const host = card.dataset.host;
-      if (state.expandedHosts.has(host)) {
-        state.expandedHosts.delete(host);
-      } else {
-        state.expandedHosts.add(host);
-      }
-      card.classList.toggle("expanded");
-      card.setAttribute("aria-expanded", String(state.expandedHosts.has(host)));
-      const mark = card.querySelector(".expand-mark");
-      if (mark) {
-        mark.textContent = state.expandedHosts.has(host) ? "收起" : "详情";
-      }
-    });
-    el("nodeGrid").addEventListener("keydown", (event) => {
-      if (event.key !== "Enter" && event.key !== " ") return;
-      const card = event.target.closest(".node-card");
-      if (!card) return;
-      event.preventDefault();
-      card.click();
-    });
-
-    el("adminToken").addEventListener("input", () => {
-      localStorage.setItem("keylimePolicyAdminToken", el("adminToken").value);
-    });
-    el("refreshPolicies").addEventListener("click", refreshPolicies);
-    el("refreshBaseline").addEventListener("click", () => refreshPolicies(true));
-    el("refreshRuntimePolicies").addEventListener("click", () => refreshPolicies(true));
-    el("importBaselinePolicies").addEventListener("click", importBaselinePolicies);
-    el("applyBoundPolicies").addEventListener("click", applyBoundPolicies);
-    el("newPolicy").addEventListener("click", resetPolicyForm);
-    el("addPcrRow").addEventListener("click", () => addPcrRow("", ""));
-    el("resetPolicyForm").addEventListener("click", resetPolicyForm);
-    el("savePolicy").addEventListener("click", savePolicy);
-    el("policyName").addEventListener("input", () => {
-      if (!state.editingPolicyId && !el("policyId").value.trim()) {
-        el("policyId").value = slugify(el("policyName").value);
-      }
-      updateGeneratedPolicyJson();
-    });
-    el("policyId").addEventListener("input", updateGeneratedPolicyJson);
-    el("policyHashAlg").addEventListener("change", updateGeneratedPolicyJson);
-    el("policyList").addEventListener("click", (event) => {
-      const selectId = event.target.dataset.selectPolicy;
-      const editId = event.target.dataset.editPolicy;
-      const deleteId = event.target.dataset.deletePolicy;
-      if (selectId) {
-        state.selectedPolicyId = selectId;
-        renderPolicyList();
-      }
-      if (editId) {
-        const policy = state.policies.find((item) => item.id === editId);
-        if (policy) fillPolicyForm(policy);
-      }
-      if (deleteId) {
-        deletePolicy(deleteId);
-      }
-    });
-    el("templateList").addEventListener("click", (event) => {
-      const button = event.target.closest("[data-template-id]");
-      if (!button) return;
-      const template = state.templates.find((item) => item.id === button.dataset.templateId);
-      if (template) {
-        fillPolicyForm(template);
-        state.editingPolicyId = "";
-      }
-    });
-    el("applyPolicySelect").addEventListener("change", () => {
-      state.selectedPolicyId = el("applyPolicySelect").value;
-      renderPolicyList();
-    });
-    el("applySelectedPolicy").addEventListener("click", () => applyPolicy(false));
-    el("applyAllPolicy").addEventListener("click", () => applyPolicy(true));
-    el("newRuntimePolicy").addEventListener("click", resetRuntimePolicyForm);
-    el("resetRuntimePolicyForm").addEventListener("click", resetRuntimePolicyForm);
-    el("saveRuntimePolicy").addEventListener("click", saveRuntimePolicy);
-    el("runtimePolicyDisplayName").addEventListener("input", () => {
-      if (!state.editingRuntimePolicyId && !el("runtimePolicyId").value.trim()) {
-        el("runtimePolicyId").value = slugify(el("runtimePolicyDisplayName").value);
-      }
-      if (!el("runtimePolicyName").value.trim()) {
-        el("runtimePolicyName").value = el("runtimePolicyId").value.trim();
-      }
-    });
-    el("runtimePolicyList").addEventListener("click", (event) => {
-      const selectId = event.target.dataset.selectRuntimePolicy;
-      const editId = event.target.dataset.editRuntimePolicy;
-      const deleteId = event.target.dataset.deleteRuntimePolicy;
-      if (selectId) {
-        state.selectedRuntimePolicyId = selectId;
-        renderRuntimePolicyList();
-      }
-      if (editId) {
-        const policy = state.runtimePolicies.find((item) => item.id === editId);
-        if (policy) fillRuntimePolicyForm(policy);
-      }
-      if (deleteId) {
-        deletePolicy(deleteId);
-      }
-    });
-    el("runtimePolicySelect").addEventListener("change", () => {
-      state.selectedRuntimePolicyId = el("runtimePolicySelect").value;
-      renderRuntimePolicyList();
-    });
-    el("applyRuntimeSelectedPolicy").addEventListener("click", () => applyRuntimePolicy(false));
-    el("applyRuntimeBoundPolicies").addEventListener("click", applyRuntimeBoundPolicies);
-
-    const savedInterval = localStorage.getItem("trustMonitorRefreshSeconds");
-    if (savedInterval) {
-      el("refreshInterval").value = savedInterval;
-    }
-    const savedToken = localStorage.getItem("keylimePolicyAdminToken");
-    if (savedToken) {
-      el("adminToken").value = savedToken;
-    }
-
-    resetPolicyForm();
-    resetRuntimePolicyForm();
-    refreshStatus();
-    startTimer();
-  </script>
+  <script src="vendor/vue.global.prod.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
