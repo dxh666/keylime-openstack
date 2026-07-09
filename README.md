@@ -198,6 +198,25 @@ surface only production-safe policy operations in the management console
 
 This case completes the first boot-measurement trust loop. PCR7 is the current stable attestation policy for csri8/csri9. PCR0-7 exact policies are kept as diagnostics for measured boot work because they triggered `measured_boot.parser.tpm2_eventlog.warning` during Case 10B. Runtime integrity policy is now a separate management-console module and is reserved for the next IMA-based stage.
 
+### Case 11A: IMA Runtime Integrity Control Plane Scaffolding
+
+The next runtime-integrity stage now has deployable control-plane scripts:
+
+```text
+collect IMA / PCR10 runtime evidence from csri8/csri9
+register Keylime runtime policy JSON files in the existing policy store
+bind runtime policies separately from PCR7 boot policies
+apply runtime policies through keylime-tenant update + reactivate
+reuse the existing Keylime decision -> Placement trait -> quarantine -> VM marker loop
+```
+
+The repository intentionally does not synthesize Keylime runtime policy JSON by guessing the format. Generate that JSON with the Keylime tooling that matches the running verifier/tenant version, then register it with:
+
+```text
+deploy/scripts/keylime-ima-runtime-policy-register.sh
+deploy/scripts/keylime-ima-runtime-policy-apply.sh
+```
+
 ## Integrated Runtime
 
 The automated lab control plane now runs from systemd:
@@ -265,4 +284,5 @@ add alerting, dampening, and human approval for host quarantine
 13. `docs/keylime_openstack_case8_dynamic_trusted_pool.md`
 14. `docs/keylime_openstack_case9_vm_risk_marker.md`
 15. `docs/keylime_openstack_case10b_pcr_policy_management.md`
-16. `docs/keylime_openstack_integrated_capability_audit.md`
+16. `docs/keylime_openstack_case11_ima_runtime_integrity.md`
+17. `docs/keylime_openstack_integrated_capability_audit.md`

@@ -14,6 +14,14 @@
 
 当前版本将策略管理拆为两个生产模块：TPM PCR 启动策略管理和 IMA runtime 运行时策略管理。启动策略负责 PCR7/PCR0-7 等 TPM quote 约束；运行时策略引用 Keylime 官方 runtime policy JSON 文件，负责 PCR10/IMA runtime measurements 的完整性约束。Measured Boot 在 Dell R740 当前固件栈中作为告警观察项展示，不直接触发 OpenStack 隔离。
 
+2026-07-07 更新：Case 11 为运行时完整性模块补齐了脚本入口。管理系统仍然不直接生成 Keylime runtime policy JSON，而是登记、绑定并下发与当前 Keylime 版本匹配的官方工具生成结果。
+
+```text
+keylime-ima-runtime-evidence-audit.sh
+keylime-ima-runtime-policy-register.sh
+keylime-ima-runtime-policy-apply.sh
+```
+
 ## 策略模型
 
 前端保存结构化策略：
@@ -100,6 +108,14 @@ export KEYLIME_TRAIT_SLOW_FALLBACK="true"
 
 ```bash
 export KEYLIME_PCR_POLICY_FILE="/var/lib/keylime-openstack-sync/tpm-pcr-policies.json"
+```
+
+运行时完整性相关审计文件：
+
+```text
+/var/log/keylime-openstack-ima-runtime-baseline.json
+/var/log/keylime-openstack-runtime-policy-register.json
+/var/log/keylime-openstack-runtime-policy-apply.json
 ```
 
 ## 多节点 agent 映射
@@ -206,4 +222,37 @@ PCR 摘要是否来自同一节点
 hash_alg 是否为 sha256
 PCR 编号是否正确
 节点是否重启或 BIOS / Secure Boot 状态是否变化
+```
+
+## IMA runtime 策略验证
+
+先在 csri10 采集 runtime 证据：
+
+```bash
+/opt/keylime-openstack-sync/keylime-ima-runtime-evidence-audit.sh
+python3 -m json.tool /var/log/keylime-openstack-ima-runtime-baseline.json
+```
+
+确认 csri8/csri9 至少具备：
+
+```text
+has_ima_ascii_log=true
+ima_ascii_count > 0
+pcr10_sha256 不为空
+```
+
+然后把现场生成的 Keylime runtime policy JSON 注册到策略库：
+
+```bash
+/opt/keylime-openstack-sync/keylime-ima-runtime-policy-register.sh \
+  all \
+  /var/lib/keylime-openstack-sync/policies/runtime/cloud-runtime-policy.json \
+  cloud-runtime-guard \
+  "cloud runtime guard"
+```
+
+按绑定策略下发：
+
+```bash
+/opt/keylime-openstack-sync/keylime-ima-runtime-policy-apply.sh all bound
 ```

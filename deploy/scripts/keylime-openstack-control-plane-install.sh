@@ -43,9 +43,18 @@ append_env_default "KEYLIME_POLICY_RENDER_AUDIT_FILE" "export KEYLIME_POLICY_REN
 append_env_default "KEYLIME_POLICY_APPLY_AUDIT_FILE" "export KEYLIME_POLICY_APPLY_AUDIT_FILE=\"/var/log/keylime-openstack-policy-apply.json\""
 append_env_default "KEYLIME_POLICY_RENDER_BIND_MODE" "export KEYLIME_POLICY_RENDER_BIND_MODE=\"pcr7\""
 append_env_default "KEYLIME_POLICY_RENDER_CREATE_BAD_PCR7" "export KEYLIME_POLICY_RENDER_CREATE_BAD_PCR7=\"false\""
+append_env_default "KEYLIME_IMA_RUNTIME_BASELINE_JSON" "export KEYLIME_IMA_RUNTIME_BASELINE_JSON=\"/var/log/keylime-openstack-ima-runtime-baseline.json\""
+append_env_default "KEYLIME_IMA_RUNTIME_EVIDENCE_DIR" "export KEYLIME_IMA_RUNTIME_EVIDENCE_DIR=\"/var/log/keylime-openstack-ima-runtime-evidence\""
+append_env_default "KEYLIME_RUNTIME_POLICY_REGISTER_AUDIT_FILE" "export KEYLIME_RUNTIME_POLICY_REGISTER_AUDIT_FILE=\"/var/log/keylime-openstack-runtime-policy-register.json\""
+append_env_default "KEYLIME_RUNTIME_POLICY_APPLY_AUDIT_FILE" "export KEYLIME_RUNTIME_POLICY_APPLY_AUDIT_FILE=\"/var/log/keylime-openstack-runtime-policy-apply.json\""
+append_env_default "KEYLIME_RUNTIME_GUARD_PATH" "export KEYLIME_RUNTIME_GUARD_PATH=\"/opt/keylime-cloud-integrity/cloud-runtime-guard.sh\""
+append_env_default "KEYLIME_RUNTIME_PROTECTED_PATHS" "export KEYLIME_RUNTIME_PROTECTED_PATHS=\"/opt/keylime-cloud-integrity/cloud-runtime-guard.sh\""
+append_env_default "KEYLIME_RUNTIME_EXCLUDES" "export KEYLIME_RUNTIME_EXCLUDES='^(?!(boot_aggregate|/opt/keylime-cloud-integrity/cloud-runtime-guard.sh)$).*'"
+append_env_default "KEYLIME_RUNTIME_POLICY_COPY" "export KEYLIME_RUNTIME_POLICY_COPY=\"true\""
 
 install -d -m 0755 /var/lib/keylime-openstack-sync
 install -d -m 0755 /var/lib/keylime-openstack-sync/policies
+install -d -m 0755 /var/lib/keylime-openstack-sync/policies/runtime
 
 find "$REPO_ROOT/deploy/scripts" -maxdepth 1 -type f -name "keylime-*.sh" -print0 | \
   while IFS= read -r -d '' script; do

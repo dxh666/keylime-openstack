@@ -58,6 +58,9 @@ DEFAULTS = {
     "KEYLIME_POLICY_BASE_DIR": "/var/lib/keylime-openstack-sync/policies",
     "KEYLIME_POLICY_RENDER_AUDIT_FILE": "/var/log/keylime-openstack-policy-render.json",
     "KEYLIME_POLICY_APPLY_AUDIT_FILE": "/var/log/keylime-openstack-policy-apply.json",
+    "KEYLIME_IMA_RUNTIME_BASELINE_JSON": "/var/log/keylime-openstack-ima-runtime-baseline.json",
+    "KEYLIME_RUNTIME_POLICY_REGISTER_AUDIT_FILE": "/var/log/keylime-openstack-runtime-policy-register.json",
+    "KEYLIME_RUNTIME_POLICY_APPLY_AUDIT_FILE": "/var/log/keylime-openstack-runtime-policy-apply.json",
     "KEYLIME_MEASURED_BOOT_MODE": "alert-only",
     "KEYLIME_RUNTIME_GUARD_PATH": "/opt/keylime-cloud-integrity/cloud-runtime-guard.sh",
 }
@@ -1522,6 +1525,9 @@ def collect_policy_audit_files(config: dict[str, Any]) -> dict[str, Any]:
     files = {
         "render": Path(str(config.get("KEYLIME_POLICY_RENDER_AUDIT_FILE", "/var/log/keylime-openstack-policy-render.json"))),
         "apply": Path(str(config.get("KEYLIME_POLICY_APPLY_AUDIT_FILE", "/var/log/keylime-openstack-policy-apply.json"))),
+        "runtime_baseline": Path(str(config.get("KEYLIME_IMA_RUNTIME_BASELINE_JSON", "/var/log/keylime-openstack-ima-runtime-baseline.json"))),
+        "runtime_register": Path(str(config.get("KEYLIME_RUNTIME_POLICY_REGISTER_AUDIT_FILE", "/var/log/keylime-openstack-runtime-policy-register.json"))),
+        "runtime_apply": Path(str(config.get("KEYLIME_RUNTIME_POLICY_APPLY_AUDIT_FILE", "/var/log/keylime-openstack-runtime-policy-apply.json"))),
     }
     result: dict[str, Any] = {}
     for name, path in files.items():
@@ -1534,6 +1540,8 @@ def collect_policy_audit_files(config: dict[str, Any]) -> dict[str, Any]:
                     "rendered": len(parsed.get("rendered", [])) if isinstance(parsed.get("rendered"), list) else None,
                     "applied": len(parsed.get("applied", [])) if isinstance(parsed.get("applied"), list) else None,
                     "failed": len(parsed.get("failed", [])) if isinstance(parsed.get("failed"), list) else None,
+                    "registered": len(parsed.get("registered", [])) if isinstance(parsed.get("registered"), list) else None,
+                    "nodes": len(parsed.get("nodes", [])) if isinstance(parsed.get("nodes"), list) else None,
                 }
         result[name] = item
     return result

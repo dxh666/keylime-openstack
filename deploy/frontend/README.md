@@ -147,6 +147,9 @@ export KEYLIME_PCR_POLICY_FILE="/var/lib/keylime-openstack-sync/tpm-pcr-policies
 /var/lib/keylime-openstack-sync/policies/
 /var/log/keylime-openstack-policy-render.json
 /var/log/keylime-openstack-policy-apply.json
+/var/log/keylime-openstack-ima-runtime-baseline.json
+/var/log/keylime-openstack-runtime-policy-register.json
+/var/log/keylime-openstack-runtime-policy-apply.json
 ```
 
 相关 API：
@@ -168,6 +171,18 @@ POST /api/policies/apply-bound
 ```
 
 默认推荐绑定 PCR7 baseline。管理系统不提供破坏性策略下发或负向验证入口；已有策略恢复、单节点下发等操作统一通过高级策略区的标准下发流程完成。
+
+## Case 11 IMA Runtime 策略能力
+
+运行时完整性模块现在可以配合以下脚本使用：
+
+```text
+/opt/keylime-openstack-sync/keylime-ima-runtime-evidence-audit.sh
+/opt/keylime-openstack-sync/keylime-ima-runtime-policy-register.sh
+/opt/keylime-openstack-sync/keylime-ima-runtime-policy-apply.sh
+```
+
+推荐流程是先采集 IMA/PCR10 baseline，再使用与当前 Keylime 版本匹配的官方工具生成 runtime policy JSON，最后把该 JSON 注册进策略库并绑定到节点。管理系统和 API 负责保存策略元数据、展示运行时层状态、下发 `--runtime-policy-name` / `--runtime-policy`，以及在 Keylime 判定失败时复用现有 Placement trait、nova-compute 隔离和 VM 风险标记链路。
 
 ## 写 API 令牌
 

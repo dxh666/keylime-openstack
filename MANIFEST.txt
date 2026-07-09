@@ -1,6 +1,7 @@
 .gitignore
 deploy\env\openstack-keylime-lab.env
 deploy\examples\case10b-pcr-policy-management-commands.sh
+deploy\examples\case11-ima-runtime-integrity-commands.sh
 deploy\examples\case8-dynamic-trusted-pool-commands.sh
 deploy\examples\phase3-private-flavor-commands.sh
 deploy\examples\verification-commands.md
@@ -8,6 +9,9 @@ deploy\frontend\index.html
 deploy\frontend\README.md
 deploy\frontend\trust_monitor_server.py
 deploy\scripts\keylime-agent-inventory-refresh.sh
+deploy\scripts\keylime-ima-runtime-evidence-audit.sh
+deploy\scripts\keylime-ima-runtime-policy-apply.sh
+deploy\scripts\keylime-ima-runtime-policy-register.sh
 deploy\scripts\keylime-nova-compute-quarantine.sh
 deploy\scripts\keylime-openstack-capability-check.sh
 deploy\scripts\keylime-openstack-control-plane-install.sh
@@ -28,6 +32,7 @@ docs\keylime_agent_inventory_auto_discovery.md
 docs\keylime_docker_missing_logging_conf_fix.md
 docs\keylime_docker_phase1_csri9_openstack.md
 docs\keylime_openstack_case10b_pcr_policy_management.md
+docs\keylime_openstack_case11_ima_runtime_integrity.md
 docs\keylime_openstack_case4_host_quarantine.md
 docs\keylime_openstack_case8_dynamic_trusted_pool.md
 docs\keylime_openstack_case9_vm_risk_marker.md

@@ -12,6 +12,18 @@ Case 9 已验证失信 host 上已有 VM 可通过 OpenStack metadata 自动标�
 详见 docs/keylime_openstack_case9_vm_risk_marker.md。
 ```
 
+2026-07-07 更新：
+
+```text
+Case 10B 已完成 PCR7 启动可信控制面。
+Case 11 进入 PCR10 / IMA runtime integrity 阶段：
+  先采集 IMA/PCR10 runtime evidence baseline，
+  再注册并下发 Keylime runtime policy JSON，
+  最后复用既有 trait / trusted flavor / quarantine / VM metadata 联动链路。
+详见 docs/keylime_openstack_case10b_pcr_policy_management.md。
+详见 docs/keylime_openstack_case11_ima_runtime_integrity.md。
+```
+
 ## 1. 案例背景
 
 本案例的目标不是简单部署 Keylime，而是验证：
