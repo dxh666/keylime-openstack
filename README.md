@@ -210,6 +210,13 @@ apply runtime policies through keylime-tenant update + reactivate
 reuse the existing Keylime decision -> Placement trait -> quarantine -> VM marker loop
 ```
 
+Additional compute nodes can be added by running a Keylime agent with a stable UUID and
+then refreshing the registrar-backed inventory. The generic agent container helper is:
+
+```text
+deploy/scripts/keylime-agent-container-restart.sh
+```
+
 The repository intentionally does not synthesize Keylime runtime policy JSON by guessing the format. Generate that JSON with the Keylime tooling that matches the running verifier/tenant version, then register it with:
 
 ```text

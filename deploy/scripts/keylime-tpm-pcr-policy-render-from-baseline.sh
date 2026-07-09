@@ -88,6 +88,15 @@ def upsert_policy(store, policy):
     policies.sort(key=lambda item: str(item.get("id", "")))
     store["policies"] = policies
 
+def set_boot_binding(bindings, host, record):
+    current = bindings.get(host, {})
+    if isinstance(current, dict) and current.get("policy_id") and not current.get("boot"):
+        current = {"boot": current}
+    if not isinstance(current, dict):
+        current = {}
+    current["boot"] = record
+    bindings[host] = current
+
 store = load_store(store_file)
 profile = {
     "name": profile_name,
@@ -157,14 +166,14 @@ for node in baseline.get("nodes", []):
 
     if bind_mode in ("pcr7", "pcr0-7"):
         bind_policy = pcr7_policy if bind_mode == "pcr7" else pcr0_7_policy
-        store.setdefault("bindings", {})[host] = {
+        set_boot_binding(store.setdefault("bindings", {}), host, {
             "host": host,
             "policy_id": bind_policy["id"],
             "policy_name": bind_policy["name"],
             "binding_mode": bind_mode,
             "bound_at_utc": datetime.now(timezone.utc).isoformat(),
             "source": "render-from-baseline",
-        }
+        })
 
     profile["hosts"][host] = {
         "ip": ip,

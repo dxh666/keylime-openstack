@@ -59,7 +59,13 @@ import json
 import sys
 store, host = sys.argv[1], sys.argv[2]
 d = json.load(open(store, encoding="utf-8"))
-print(d.get("bindings", {}).get(host, {}).get("policy_id", ""))
+binding = d.get("bindings", {}).get(host, {})
+if isinstance(binding, dict) and isinstance(binding.get("boot"), dict):
+    print(binding["boot"].get("policy_id", ""))
+elif isinstance(binding, dict):
+    print(binding.get("policy_id", ""))
+else:
+    print("")
 PY
     )"
   fi

@@ -8,6 +8,7 @@ deploy\examples\verification-commands.md
 deploy\frontend\index.html
 deploy\frontend\README.md
 deploy\frontend\trust_monitor_server.py
+deploy\scripts\keylime-agent-container-restart.sh
 deploy\scripts\keylime-agent-inventory-refresh.sh
 deploy\scripts\keylime-ima-runtime-evidence-audit.sh
 deploy\scripts\keylime-ima-runtime-policy-apply.sh
