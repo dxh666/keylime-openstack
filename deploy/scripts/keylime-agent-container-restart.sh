@@ -36,8 +36,10 @@ if [ "$KEYLIME_AGENT_RELAX_TPM_PERMISSIONS" = "true" ]; then
 fi
 
 install -d -m 0755 "$KEYLIME_AGENT_BASE_DIR/config"
+install -d -m 0777 "$KEYLIME_AGENT_BASE_DIR/varlib"
 install -d -m 0777 "$KEYLIME_AGENT_BASE_DIR/varlib/actions"
 install -d -m 0777 "$KEYLIME_AGENT_BASE_DIR/logs"
+chmod a+rwX "$KEYLIME_AGENT_BASE_DIR/varlib" "$KEYLIME_AGENT_BASE_DIR/varlib/actions" "$KEYLIME_AGENT_BASE_DIR/logs"
 
 if [ ! -r "$KEYLIME_AGENT_BASE_DIR/config/cacert.crt" ]; then
   echo "ERROR: missing tenant CA: $KEYLIME_AGENT_BASE_DIR/config/cacert.crt"
