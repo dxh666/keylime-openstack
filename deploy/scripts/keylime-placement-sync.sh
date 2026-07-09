@@ -195,7 +195,10 @@ def mask_has_pcr(value, pcr):
 has_runtime_policy = parse_optional_bool(has_runtime_policy_raw)
 boot_pcr7_enforced = mask_has_pcr(tpm_policy_mask, 7)
 runtime_pcr10_enforced = mask_has_pcr(tpm_policy_mask, 10)
-if has_runtime_policy is True and runtime_pcr10_enforced is None:
+# Keylime runtime policy enforcement is reported separately from the TPM
+# policy mask. A runtime policy can be active while the TPM mask remains PCR7
+# only (0x80), so do not treat a missing PCR10 mask bit as "not enforced".
+if has_runtime_policy is True:
     runtime_pcr10_enforced = True
 
 def parse_timestamp(value):

@@ -718,6 +718,11 @@ def build_trust_layers(
         boot_pcr7 = mask_has_pcr(mask, 7)
     if runtime_pcr10 is None:
         runtime_pcr10 = mask_has_pcr(mask, 10)
+    # Runtime policies are reported by Keylime separately from the TPM PCR
+    # mask. The TPM policy may remain PCR7-only while IMA/PCR10 enforcement is
+    # active through the runtime policy.
+    if has_runtime_policy is True:
+        runtime_pcr10 = True
 
     if not agent_configured:
         keylime = {

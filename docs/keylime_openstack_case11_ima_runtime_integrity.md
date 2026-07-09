@@ -180,6 +180,10 @@ CUSTOM_KEYLIME_ATTESTED 保留
 trusted flavor 可继续调度到 csri8/csri9
 ```
 
+Note: `tpm_policy_mask` may remain `0x80` after runtime policy apply. Keylime
+reports IMA runtime policy state separately with `has_runtime_policy=true`;
+PCR10 / IMA enforcement should not be inferred only from the TPM PCR mask.
+
 反向验证应只在受控窗口中做，并使用专用 guard 文件，例如：
 
 ```text
