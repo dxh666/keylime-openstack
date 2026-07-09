@@ -23,6 +23,7 @@ REGISTRAR_IP="${KEYLIME_REGISTRAR_IP:-172.31.100.10}"
 REGISTRAR_PORT="${KEYLIME_REGISTRAR_PORT:-8891}"
 RUN_SYNC="${KEYLIME_POLICY_APPLY_SYNC_NOW:-true}"
 SYNC_MODE="${KEYLIME_POLICY_APPLY_SYNC_MODE:-control-loop}"
+ADD_IF_MISSING="${KEYLIME_POLICY_APPLY_ADD_IF_MISSING:-true}"
 
 test -d "$KEYLIME_DIR"
 test -r "$STORE_FILE"
@@ -101,6 +102,7 @@ PY
   echo "=== Apply TPM PCR policy to $host ==="
   echo "ip=$ip uuid=$uuid policy_id=$selected_policy_id"
 
+  add_rc=0
   set +e
   (
     cd "$KEYLIME_DIR"
@@ -118,6 +120,28 @@ PY
   )
   update_rc=$?
 
+  if [ "$update_rc" -ne 0 ] && [ "$ADD_IF_MISSING" = "true" ]; then
+    echo "WARN: update failed for $host rc=$update_rc; try tenant add for first-time verifier enrollment."
+    (
+      cd "$KEYLIME_DIR"
+      docker compose run --rm keylime-tenant \
+        -c add \
+        -t "$ip" \
+        -tp "$AGENT_PORT" \
+        -u "$uuid" \
+        -v "$VERIFIER_IP" \
+        -vp "$VERIFIER_PORT" \
+        -r "$REGISTRAR_IP" \
+        -rp "$REGISTRAR_PORT" \
+        --agent-api-version "$AGENT_API_VERSION" \
+        --tpm_policy "$policy_json"
+    )
+    add_rc=$?
+    if [ "$add_rc" -eq 0 ]; then
+      update_rc=0
+    fi
+  fi
+
   (
     cd "$KEYLIME_DIR"
     docker compose run --rm keylime-tenant \
@@ -131,10 +155,10 @@ PY
   reactivate_rc=$?
   set -e
 
-  python3 - "$tmp" "$host" "$ip" "$uuid" "$selected_policy_id" "$update_rc" "$reactivate_rc" <<'PY'
+  python3 - "$tmp" "$host" "$ip" "$uuid" "$selected_policy_id" "$update_rc" "$add_rc" "$reactivate_rc" <<'PY'
 import json
 import sys
-p, host, ip, uuid, policy_id, update_rc, reactivate_rc = sys.argv[1:]
+p, host, ip, uuid, policy_id, update_rc, add_rc, reactivate_rc = sys.argv[1:]
 d = json.load(open(p))
 item = {
     "host": host,
@@ -142,6 +166,7 @@ item = {
     "uuid": uuid,
     "policy_id": policy_id,
     "update_rc": int(update_rc),
+    "add_rc": int(add_rc),
     "reactivate_rc": int(reactivate_rc),
 }
 if int(update_rc) == 0 and int(reactivate_rc) == 0:
