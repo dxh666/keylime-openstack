@@ -55,6 +55,9 @@ while IFS=$'\t' read -r host ip state; do
 
   raw="$RAW_DIR/ima-${host}.txt"
   rc_file="$RAW_DIR/ima-${host}.ssh_rc"
+  full_ima="$RAW_DIR/ima-${host}.ascii_runtime_measurements"
+  full_ima_rc_file="$RAW_DIR/ima-${host}.ascii_runtime_measurements.ssh_rc"
+  full_ima_err="$RAW_DIR/ima-${host}.ascii_runtime_measurements.err"
 
   echo "--- $host / $ip / state=$state ---"
 
@@ -140,7 +143,19 @@ REMOTE
   set -e
 
   echo "$ssh_rc" > "$rc_file"
+
+  set +e
+  ssh \
+    -o BatchMode=yes \
+    -o ConnectTimeout=8 \
+    -o StrictHostKeyChecking=no \
+    "root@$ip" 'cat /sys/kernel/security/ima/ascii_runtime_measurements' > "$full_ima" 2> "$full_ima_err"
+  full_ima_rc=$?
+  set -e
+  echo "$full_ima_rc" > "$full_ima_rc_file"
+
   echo "ssh_rc=$ssh_rc raw=$raw"
+  echo "ima_full_rc=$full_ima_rc ima_full=$full_ima"
 done < "$RAW_DIR/openstack-compute-nodes.tsv"
 
 echo "=== Build JSON audit file ==="
@@ -188,8 +203,15 @@ if os.path.exists(tsv):
         host, ip, state = (line.split("\t") + ["", "", ""])[:3]
         raw_file = os.path.join(raw_dir, f"ima-{host}.txt")
         rc_file = os.path.join(raw_dir, f"ima-{host}.ssh_rc")
+        full_ima_file = os.path.join(raw_dir, f"ima-{host}.ascii_runtime_measurements")
+        full_ima_rc_file = os.path.join(raw_dir, f"ima-{host}.ascii_runtime_measurements.ssh_rc")
         raw = read_text(raw_file)
         ssh_rc = read_text(rc_file).strip()
+        full_ima_rc = read_text(full_ima_rc_file).strip()
+        full_ima_count = None
+        if os.path.exists(full_ima_file):
+            with open(full_ima_file, encoding="utf-8", errors="replace") as f:
+                full_ima_count = sum(1 for _ in f)
         count_match = re.search(r"ima_ascii_count=(\d+)", raw)
         guard_match = re.search(r"runtime_guard_sha256=([0-9A-Fa-f]{64})\s+", raw)
 
@@ -209,6 +231,10 @@ if os.path.exists(tsv):
             "runtime_guard_exists": "RUNTIME_GUARD_PRESENT" in raw,
             "runtime_guard_sha256": guard_match.group(1).upper() if guard_match else "",
             "raw_file": raw_file,
+            "ima_ascii_full_file": full_ima_file,
+            "ima_ascii_full_ssh_rc": int(full_ima_rc) if full_ima_rc.isdigit() else None,
+            "ima_ascii_full_count": full_ima_count,
+            "has_ima_ascii_full_log": bool(full_ima_count),
         })
 
 data = {
@@ -247,6 +273,7 @@ for n in d["nodes"]:
         "ssh_rc=", n["ssh_rc"],
         "ima_ascii=", n["has_ima_ascii_log"],
         "ima_count=", n["ima_ascii_count"],
+        "ima_full_count=", n.get("ima_ascii_full_count"),
         "pcr10_sha256=", bool(n["pcr10_sha256"]),
         "guard=", n["runtime_guard_exists"],
     )

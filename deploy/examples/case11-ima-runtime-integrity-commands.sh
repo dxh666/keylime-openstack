@@ -57,6 +57,17 @@ case "${1:-}" in
     KEYLIME_VM_RISK_MARKER_FORCE=true /opt/keylime-openstack-sync/keylime-vm-risk-marker.sh || true
     show_status
     ;;
+  generate)
+    target="${2:-}"
+    policy_id="${3:-}"
+    display_name="${4:-}"
+    if [ -z "$target" ]; then
+      echo "Usage: $0 generate <host> [policy_id] [display_name]" >&2
+      exit 1
+    fi
+    /opt/keylime-openstack-sync/keylime-ima-runtime-policy-generate.sh \
+      "$target" "$policy_id" "$display_name"
+    ;;
   apply)
     target="${2:-}"
     policy_id="${3:-bound}"
@@ -83,6 +94,7 @@ case "${1:-}" in
     cat <<'EOF'
 Usage:
   case11-ima-runtime-integrity-commands.sh audit
+  case11-ima-runtime-integrity-commands.sh generate <host> [policy_id] [display_name]
   case11-ima-runtime-integrity-commands.sh register <host|all|host1,host2> <runtime_policy_json> [policy_id] [display_name]
   case11-ima-runtime-integrity-commands.sh apply-bound
   case11-ima-runtime-integrity-commands.sh apply <host|all> [policy_id|bound]

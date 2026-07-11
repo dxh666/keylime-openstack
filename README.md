@@ -222,7 +222,18 @@ The repository intentionally does not synthesize Keylime runtime policy JSON by 
 ```text
 deploy/scripts/keylime-ima-runtime-policy-register.sh
 deploy/scripts/keylime-ima-runtime-policy-apply.sh
+deploy/scripts/keylime-ima-runtime-policy-generate.sh
 ```
+
+`keylime-ima-runtime-policy-generate.sh` captures the live
+`/sys/kernel/security/ima/ascii_runtime_measurements` from one compute host,
+generates a Keylime runtime policy with the deployed tenant image, applies
+default Docker transient-file excludes, and registers the generated policy for
+the target host.
+
+The 2026-07-11 hygon22 recovery validated the full PCR7 + PCR10/IMA path for
+csri8, csri9, and hygon22. See
+`docs/keylime_openstack_case11_hygon22_runtime_policy_lessons_2026-07-11.md`.
 
 ## Integrated Runtime
 
@@ -292,4 +303,5 @@ add alerting, dampening, and human approval for host quarantine
 14. `docs/keylime_openstack_case9_vm_risk_marker.md`
 15. `docs/keylime_openstack_case10b_pcr_policy_management.md`
 16. `docs/keylime_openstack_case11_ima_runtime_integrity.md`
-17. `docs/keylime_openstack_integrated_capability_audit.md`
+17. `docs/keylime_openstack_case11_hygon22_runtime_policy_lessons_2026-07-11.md`
+18. `docs/keylime_openstack_integrated_capability_audit.md`
