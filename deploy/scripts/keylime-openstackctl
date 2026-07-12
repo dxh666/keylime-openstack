@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+IMAGE="${KEYLIME_OPENSTACK_IMAGE:-keylime-openstack-trust-plane:latest}"
+ENV_FILE="${KEYLIME_OPENSTACK_ENV_FILE:-/etc/keylime-openstack/keylime-openstack.env}"
+
+docker run --rm \
+  --env-file "$ENV_FILE" \
+  -v /etc/kolla:/etc/kolla:ro \
+  -v /opt/keylime-docker:/opt/keylime-docker:rw \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /tmp/keylime-openstack:/tmp/keylime-openstack:rw \
+  "$IMAGE" \
+  keylime-openstackctl "$@"

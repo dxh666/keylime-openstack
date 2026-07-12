@@ -1,0 +1,16 @@
+[Unit]
+Description=Keylime OpenStack Trust Plane containers
+Requires=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/keylime-openstack
+EnvironmentFile=/etc/keylime-openstack/keylime-openstack.env
+ExecStart=/usr/bin/docker compose -f /opt/keylime-openstack/deploy/compose/keylime-openstack-control-plane.yml up -d
+ExecStop=/usr/bin/docker compose -f /opt/keylime-openstack/deploy/compose/keylime-openstack-control-plane.yml down
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

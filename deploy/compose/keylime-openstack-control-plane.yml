@@ -1,0 +1,56 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: keylime_openstack_postgres
+    restart: unless-stopped
+    env_file:
+      - /etc/keylime-openstack/keylime-openstack.env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-keylime_openstack}
+      POSTGRES_USER: ${POSTGRES_USER:-keylime_openstack}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-keylime_openstack}
+    volumes:
+      - /var/lib/keylime-openstack/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-keylime_openstack} -d ${POSTGRES_DB:-keylime_openstack}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    image: keylime-openstack-trust-plane:latest
+    container_name: keylime_openstack_api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - /etc/keylime-openstack/keylime-openstack.env
+    ports:
+      - "8088:8088"
+    volumes:
+      - /etc/kolla:/etc/kolla:ro
+      - /opt/keylime-docker:/opt/keylime-docker:rw
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp/keylime-openstack:/tmp/keylime-openstack:rw
+
+  worker:
+    image: keylime-openstack-trust-plane:latest
+    container_name: keylime_openstack_worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_started
+    env_file:
+      - /etc/keylime-openstack/keylime-openstack.env
+    command: ["keylime-openstack-worker"]
+    volumes:
+      - /etc/kolla:/etc/kolla:ro
+      - /opt/keylime-docker:/opt/keylime-docker:rw
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp/keylime-openstack:/tmp/keylime-openstack:rw

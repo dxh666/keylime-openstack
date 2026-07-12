@@ -2,6 +2,47 @@
 
 This repository records a staged lab that integrates Keylime remote attestation with OpenStack scheduling and project authorization.
 
+## Production Trust Plane Branch
+
+This branch is being refactored from shell-heavy lab automation into a
+production-oriented trust control plane:
+
+```text
+FastAPI API + static Vue management UI
+Python worker for sync / quarantine / VM risk marking / policy apply
+PostgreSQL for policy, evidence, decision, task, and audit state
+OpenStack SDK / Placement API first, CLI fallback only where needed
+Keylime verifier / registrar API first, tenant-policy tooling as fallback
+```
+
+The current Kolla/OpenStack environment is:
+
+```text
+controller: csri10
+compute:    csri8 / csri9 / hygon22
+```
+
+The simplified scheduling traits for the landing architecture are:
+
+```text
+CUSTOM_KEYLIME_BOOT_TRUSTED
+CUSTOM_KEYLIME_RUNTIME_TRUSTED
+CUSTOM_KEYLIME_TRUSTED
+CUSTOM_KEYLIME_ATTESTED
+```
+
+Read the production design first:
+
+```text
+docs/keylime_openstack_production_trust_plane_design.md
+```
+
+Deployment for the new FastAPI/PostgreSQL control plane:
+
+```text
+docs/keylime_openstack_production_deployment.md
+```
+
 The main idea is:
 
 ```text

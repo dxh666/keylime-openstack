@@ -1,0 +1,202 @@
+# Production FastAPI/PostgreSQL deployment
+
+Date: 2026-07-11
+
+This deployment path is for the new FastAPI + worker + PostgreSQL trust plane.
+It is separate from the older shell/systemd timer based lab control plane.
+
+## Target host
+
+Install this control plane on the OpenStack controller that can access:
+
+```text
+/etc/kolla/clouds.yaml
+/etc/kolla/admin-openrc.sh
+/opt/keylime-docker
+/var/run/docker.sock
+```
+
+For the current lab, that host is:
+
+```text
+csri10
+```
+
+The compute-node inventory seeded by default is:
+
+```text
+csri8
+csri9
+hygon22
+```
+
+## Install source
+
+Install the repository under `/opt/keylime-openstack`:
+
+```bash
+git clone -b codex/production-fastapi-postgres-trust-plane \
+  https://github.com/dxh666/keylime-openstack.git \
+  /opt/keylime-openstack
+```
+
+If the branch has not been pushed yet, copy the staged repository contents to
+`/opt/keylime-openstack` by the site's normal release process.
+
+## Prepare configuration
+
+```bash
+install -d -m 0755 /etc/keylime-openstack
+install -d -m 0755 /var/lib/keylime-openstack/postgres
+install -d -m 0755 /tmp/keylime-openstack
+
+cp /opt/keylime-openstack/deploy/env/keylime-openstack.env.example \
+  /etc/keylime-openstack/keylime-openstack.env
+chmod 0600 /etc/keylime-openstack/keylime-openstack.env
+```
+
+Edit `/etc/keylime-openstack/keylime-openstack.env` before starting services.
+At minimum, set:
+
+```text
+POSTGRES_PASSWORD
+DATABASE_URL
+ADMIN_TOKEN
+KEYLIME_VERIFIER_URL
+KEYLIME_REGISTRAR_URL
+KEYLIME_DOCKER_DIR
+KEYLIME_TENANT_SERVICE
+OPENSTACK_CLOUDS_YAML
+OPENSTACK_OPENRC
+```
+
+Keep these defaults for the first dry run:
+
+```text
+OPENSTACK_ENFORCEMENT_ENABLED=false
+DEFAULT_CONTROLLER_HOST=csri10
+DEFAULT_COMPUTE_HOSTS=csri8,csri9,hygon22
+```
+
+Only set `OPENSTACK_ENFORCEMENT_ENABLED=true` after API access, Keylime
+evidence collection, and Placement trait changes have been verified.
+
+## Build and initialize
+
+```bash
+cd /opt/keylime-openstack
+
+docker compose \
+  --env-file /etc/keylime-openstack/keylime-openstack.env \
+  -f deploy/compose/keylime-openstack-control-plane.yml \
+  build
+
+docker compose \
+  --env-file /etc/keylime-openstack/keylime-openstack.env \
+  -f deploy/compose/keylime-openstack-control-plane.yml \
+  up -d postgres
+
+docker compose \
+  --env-file /etc/keylime-openstack/keylime-openstack.env \
+  -f deploy/compose/keylime-openstack-control-plane.yml \
+  run --rm api alembic upgrade head
+
+docker compose \
+  --env-file /etc/keylime-openstack/keylime-openstack.env \
+  -f deploy/compose/keylime-openstack-control-plane.yml \
+  run --rm api keylime-openstackctl bootstrap
+```
+
+## Start API and worker
+
+```bash
+docker compose \
+  --env-file /etc/keylime-openstack/keylime-openstack.env \
+  -f deploy/compose/keylime-openstack-control-plane.yml \
+  up -d api worker
+```
+
+The management UI is served by the API process:
+
+```text
+http://<controller-ip>:8088/
+```
+
+For the current lab controller:
+
+```text
+http://172.31.100.10:8088/
+```
+
+## Health checks
+
+```bash
+curl -fsS http://127.0.0.1:8088/api/health
+curl -fsS http://127.0.0.1:8088/api/overview
+```
+
+Run one manual sync:
+
+```bash
+curl -fsS \
+  -H "X-Admin-Token: <ADMIN_TOKEN>" \
+  -X POST \
+  http://127.0.0.1:8088/api/tasks/sync
+```
+
+Or use the helper container:
+
+```bash
+/opt/keylime-openstack/deploy/scripts/keylime-openstackctl sync
+```
+
+## Optional systemd management
+
+After the first migration and bootstrap succeed, install the systemd wrapper:
+
+```bash
+cp /opt/keylime-openstack/deploy/systemd/keylime-openstack-control-plane.service \
+  /etc/systemd/system/keylime-openstack-control-plane.service
+
+systemctl daemon-reload
+systemctl enable --now keylime-openstack-control-plane.service
+```
+
+Operational commands:
+
+```bash
+systemctl status keylime-openstack-control-plane.service
+journalctl -u keylime-openstack-control-plane.service -n 100 --no-pager
+
+docker logs --tail=100 keylime_openstack_api
+docker logs --tail=100 keylime_openstack_worker
+docker logs --tail=100 keylime_openstack_postgres
+```
+
+## First production gate
+
+Before enabling OpenStack enforcement, verify:
+
+```text
+1. /api/nodes shows csri8, csri9, and hygon22.
+2. /api/tasks shows successful sync task execution.
+3. /api/audit records Keylime and OpenStack adapter activity.
+4. Placement trait changes are correct in dry-run logs.
+5. Keylime evidence for TPM boot trust, IMA runtime trust, and EVM/keyring trust
+   is present in PostgreSQL.
+```
+
+Then switch:
+
+```text
+OPENSTACK_ENFORCEMENT_ENABLED=true
+```
+
+Restart:
+
+```bash
+docker compose \
+  --env-file /etc/keylime-openstack/keylime-openstack.env \
+  -f /opt/keylime-openstack/deploy/compose/keylime-openstack-control-plane.yml \
+  up -d api worker
+```
