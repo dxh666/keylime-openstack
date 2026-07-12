@@ -6,10 +6,13 @@ ARG INSTALL_OS_TOOLS=false
 ARG PIP_INDEX_URL=
 ARG PIP_TRUSTED_HOST=
 
+USER root
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app/backend \
     PYTHON_BIN=${PYTHON_BIN} \
+    PIP_ROOT_USER_ACTION=ignore \
     PATH="/opt/ansible/bin:/usr/local/bin:${PATH}"
 
 WORKDIR /app
@@ -30,7 +33,7 @@ RUN if [ -n "$PIP_INDEX_URL" ]; then \
     && if [ -n "$PIP_TRUSTED_HOST" ]; then \
       "$PYTHON_BIN" -m pip config set global.trusted-host "$PIP_TRUSTED_HOST"; \
     fi \
-    && "$PYTHON_BIN" -m pip install --no-cache-dir -e /app
+    && "$PYTHON_BIN" -m pip install --no-cache-dir /app
 
 EXPOSE 8088
 

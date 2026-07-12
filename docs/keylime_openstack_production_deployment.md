@@ -140,6 +140,9 @@ does not provide FastAPI, SQLAlchemy, or Pydantic. The build still needs access
 to a Python package source for those dependencies unless an offline wheelhouse
 is added later.
 
+Some Kolla images default to a non-root user. The project image switches back
+to root during build so Python package metadata can be written under `/app`.
+
 The image no longer installs operating-system packages by default. If later
 operations require in-container shell tools, set:
 
