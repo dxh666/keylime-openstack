@@ -83,6 +83,7 @@ def ensure_default_environment(session: Session) -> None:
             "management_ip": "hygon22",
             "role": "compute",
             "keylime_agent_ip": "hygon22",
+            "keylime_agent_uuid": "33333333-3333-4333-8333-000000000022",
             "hardware_profile": hygon,
             "facts": {
                 "kernel": "6.6.102-5.3.3.an23.x86_64",
@@ -93,7 +94,25 @@ def ensure_default_environment(session: Session) -> None:
         },
     ]
     for payload in defaults:
-        if payload["hostname"] in nodes:
+        existing = nodes.get(payload["hostname"])
+        if existing:
+            _fill_missing_node_defaults(existing, payload)
             continue
         node = ComputeNode(**payload)
         session.add(node)
+
+
+def _fill_missing_node_defaults(node: ComputeNode, payload: dict[str, object]) -> None:
+    for field in (
+        "hypervisor_name",
+        "management_ip",
+        "keylime_agent_ip",
+        "keylime_agent_uuid",
+    ):
+        value = payload.get(field)
+        if value and not getattr(node, field):
+            setattr(node, field, value)
+    if node.hardware_profile_id is None and payload.get("hardware_profile"):
+        node.hardware_profile = payload["hardware_profile"]  # type: ignore[assignment]
+    if not node.facts and isinstance(payload.get("facts"), dict):
+        node.facts = payload["facts"]  # type: ignore[assignment]
