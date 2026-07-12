@@ -250,6 +250,13 @@ Keylime verifier status does not expose enough EVM/keyring detail in the
 current deployment. Run the host-side probe on each compute node and report the
 result back to the control-plane API:
 
+If the node still reports `evm_status=missing` or `evm_status=fail`, complete
+the staged node-side enablement first:
+
+```text
+docs/keylime_openstack_node_evm_appraisal_enablement.md
+```
+
 ```bash
 TOKEN=$(grep '^ADMIN_TOKEN=' /etc/keylime-openstack/keylime-openstack.env | cut -d= -f2-)
 

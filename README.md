@@ -43,6 +43,12 @@ Deployment for the new FastAPI/PostgreSQL control plane:
 docs/keylime_openstack_production_deployment.md
 ```
 
+Node-side IMA appraisal and EVM enablement:
+
+```text
+docs/keylime_openstack_node_evm_appraisal_enablement.md
+```
+
 The main idea is:
 
 ```text
