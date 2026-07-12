@@ -293,7 +293,8 @@ load_keyring_cert() {
   listing="$(keyctl list "$ring" 2>&1 || true)"
   echo "$listing"
   echo "The kernel rejected this certificate for $ring." >&2
-  echo "Usually this means the certificate is not anchored in the kernel builtin, secondary, machine, or platform trust keyrings." >&2
+  echo "Usually this means the certificate is not accepted by the kernel integrity keyring restriction." >&2
+  echo "On Ubuntu stock kernels, a MOK certificate may appear in .platform but still be rejected by .ima/.evm." >&2
   echo "Run: keylime-node-evm-appraisal trust-diagnostics" >&2
   return 1
 }
