@@ -52,6 +52,9 @@ Commands:
   load-keys
       Load the public certificate into the .ima and .evm keyrings.
 
+  trust-diagnostics
+      Print integrity keyring restrictions and machine trust-ring state.
+
   install-key-loader
       Install this helper and a systemd oneshot that loads the public certificate early at boot.
 
@@ -94,6 +97,9 @@ main() {
       ;;
     load-keys)
       cmd_load_keys
+      ;;
+    trust-diagnostics)
+      cmd_trust_diagnostics
       ;;
     install-key-loader)
       cmd_install_key_loader
@@ -276,11 +282,72 @@ load_keyring_cert() {
   local listing
   listing="$(keyctl list "$ring" 2>&1 || true)"
   echo "$listing"
-  if echo "$listing" | grep -q 'asymmetric:'; then
-    echo "$ring already contains at least one asymmetric key; continuing"
+  echo "The kernel rejected this certificate for $ring." >&2
+  echo "Usually this means the certificate is not anchored in the kernel builtin, secondary, machine, or platform trust keyrings." >&2
+  echo "Run: keylime-node-evm-appraisal trust-diagnostics" >&2
+  return 1
+}
+
+cmd_trust_diagnostics() {
+  need_root
+  echo "== kernel =="
+  uname -a || true
+  echo
+
+  echo "== cmdline =="
+  cat /proc/cmdline || true
+  echo
+
+  echo "== integrity kernel config =="
+  print_kernel_config
+  echo
+
+  echo "== public cert =="
+  if [ -f "$PUBLIC_DER" ]; then
+    openssl x509 -inform DER -in "$PUBLIC_DER" -noout -subject -issuer -fingerprint -sha256 2>&1 || true
+  else
+    echo "public cert not found: $PUBLIC_DER"
+  fi
+  echo
+
+  echo "== mokutil =="
+  if command -v mokutil >/dev/null 2>&1; then
+    mokutil --sb-state 2>&1 || true
+    if [ -f "$PUBLIC_DER" ]; then
+      mokutil --test-key "$PUBLIC_DER" 2>&1 || true
+    fi
+  else
+    echo "mokutil is not installed"
+  fi
+  echo
+
+  echo "== kernel trust keyrings =="
+  if command -v keyctl >/dev/null 2>&1; then
+    for ring in %:.builtin_trusted_keys %:.secondary_trusted_keys %:.machine %:.platform %:.ima %:.evm; do
+      echo "-- $ring --"
+      keyctl list "$ring" 2>&1 || true
+    done
+  else
+    echo "keyctl is not installed"
+  fi
+  echo
+
+  echo "== recent integrity key errors =="
+  dmesg 2>/dev/null | grep -Ei 'integrity|ima|evm|asymmetric|x509|keyring|mok|certificate' | tail -120 || true
+}
+
+print_kernel_config() {
+  local config="/boot/config-$(uname -r)"
+  local patterns='CONFIG_(INTEGRITY|IMA|EVM|SYSTEM_TRUSTED|SECONDARY_TRUSTED|INTEGRITY_MACHINE|LOAD_UEFI|KEYS|ASYMMETRIC)'
+  if [ -r "$config" ]; then
+    grep -E "$patterns" "$config" || true
     return 0
   fi
-  return 1
+  if [ -r /proc/config.gz ] && command -v zgrep >/dev/null 2>&1; then
+    zgrep -E "$patterns" /proc/config.gz || true
+    return 0
+  fi
+  echo "kernel config not readable from $config or /proc/config.gz"
 }
 
 cmd_install_key_loader() {
