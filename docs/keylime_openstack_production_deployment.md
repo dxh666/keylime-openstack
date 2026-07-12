@@ -251,15 +251,22 @@ current deployment. Run the host-side probe on each compute node and report the
 result back to the control-plane API:
 
 ```bash
-scp /opt/keylime-openstack/deploy/scripts/keylime-host-integrity-probe.py \
-  root@<compute-host>:/usr/local/sbin/keylime-host-integrity-probe
+TOKEN=$(grep '^ADMIN_TOKEN=' /etc/keylime-openstack/keylime-openstack.env | cut -d= -f2-)
 
-ssh root@<compute-host> chmod 0755 /usr/local/sbin/keylime-host-integrity-probe
+for entry in csri8=172.31.100.8 csri9=172.31.100.9 hygon22=172.31.100.22; do
+  host="${entry%%=*}"
+  ip="${entry#*=}"
 
-ssh root@<compute-host> \
-  KEYLIME_OPENSTACK_API_URL=http://172.31.100.10:8088 \
-  KEYLIME_OPENSTACK_ADMIN_TOKEN=<ADMIN_TOKEN> \
-  /usr/local/sbin/keylime-host-integrity-probe --hostname <compute-host>
+  scp /opt/keylime-openstack/deploy/scripts/keylime-host-integrity-probe.py \
+    root@"$ip":/usr/local/sbin/keylime-host-integrity-probe
+
+  ssh root@"$ip" chmod 0755 /usr/local/sbin/keylime-host-integrity-probe
+
+  ssh root@"$ip" \
+    KEYLIME_OPENSTACK_API_URL=http://172.31.100.10:8088 \
+    KEYLIME_OPENSTACK_ADMIN_TOKEN="$TOKEN" \
+    /usr/local/sbin/keylime-host-integrity-probe --hostname "$host"
+done
 ```
 
 The API endpoint is:

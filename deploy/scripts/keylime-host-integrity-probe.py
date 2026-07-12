@@ -130,12 +130,28 @@ def keyring_report(name: str) -> dict[str, Any]:
     combined = "\n".join([result["stdout"], result["stderr"]])
     lines = [line for line in combined.splitlines() if line.strip()]
     key_lines = [line for line in lines if "keyring is empty" not in line.lower()]
+    fallback = {}
+    if result["rc"] == 127:
+        fallback = proc_keys_report(name)
     return {
         "name": name,
         "rc": result["rc"],
         "key_count": len(key_lines) if result["rc"] == 0 else 0,
         "lines": lines,
         "stderr": result["stderr"],
+        "fallback": fallback,
+    }
+
+
+def proc_keys_report(name: str) -> dict[str, Any]:
+    proc_keys, error = read_lines("/proc/keys")
+    keyring_name = name.removeprefix("%:")
+    matches = [line for line in proc_keys if keyring_name in line]
+    return {
+        "source": "/proc/keys",
+        "error": error,
+        "matches": matches,
+        "note": "/proc/keys is diagnostic only; install keyutils for keyring contents",
     }
 
 
