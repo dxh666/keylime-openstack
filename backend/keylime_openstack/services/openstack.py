@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shlex
 import subprocess
@@ -30,9 +31,14 @@ class OpenStackClient:
                 os.environ["OS_CLIENT_CONFIG_FILE"] = old_clouds
 
     def list_compute_services(self) -> list[dict[str, Any]]:
-        conn = self.connect()
-        services = conn.compute.services(binary="nova-compute")
-        return [service.to_dict() for service in services]
+        try:
+            conn = self.connect()
+            services = conn.compute.services(binary="nova-compute")
+            return [service.to_dict() for service in services]
+        except Exception:
+            if self.settings.openstack_cli_fallback:
+                return self._cli_list_compute_services()
+            raise
 
     def set_compute_service_enabled(self, host: str, enabled: bool, reason: str = "") -> dict[str, Any]:
         conn = self.connect()
@@ -59,6 +65,28 @@ class OpenStackClient:
         if self.settings.openstack_cli_fallback:
             return self._cli_set_provider_traits(provider_name, traits)
         return {"ok": False, "error": "Placement trait update adapter not configured"}
+
+    def _cli_list_compute_services(self) -> list[dict[str, Any]]:
+        script = [
+            "set -euo pipefail",
+            f"source {shlex.quote(self.settings.openstack_openrc)}",
+            "openstack compute service list -f json",
+        ]
+        completed = subprocess.run(
+            ["/usr/bin/env", "bash", "-lc", "\n".join(script)],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=90,
+        )
+        if completed.returncode != 0:
+            raise RuntimeError(completed.stderr.strip() or completed.stdout.strip())
+        rows = json.loads(completed.stdout or "[]")
+        return [
+            row
+            for row in rows
+            if str(row.get("Binary") or row.get("binary") or "") == "nova-compute"
+        ]
 
     def _cli_set_provider_traits(self, provider_name: str, traits: list[str]) -> dict[str, Any]:
         keylime_trait_case = "|".join(DEFAULT_TRUST_TRAITS)
