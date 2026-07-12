@@ -90,12 +90,7 @@ class TrustSyncService:
 
     def sync_node(self, node: ComputeNode) -> dict[str, object]:
         keylime_result = self.collect_keylime_evidence(node)
-        evidence = self.session.scalars(
-            select(EvidenceRecord)
-            .where(EvidenceRecord.node_id == node.id)
-            .order_by(EvidenceRecord.collected_at.desc())
-            .limit(20)
-        ).all()
+        evidence = latest_evidence_for_decision(self.session, node)
         openstack_state = self.session.scalars(
             select(OpenStackState)
             .where(OpenStackState.node_id == node.id)
@@ -181,6 +176,29 @@ class TrustSyncService:
             "source": str(status.get("_source") or "unknown"),
             "evidence": {record.evidence_type: record.status for record in records},
         }
+
+
+def latest_evidence_for_decision(session: Session, node: ComputeNode) -> list[EvidenceRecord]:
+    """Return the latest evidence per type for a node.
+
+    Keylime writes boot/runtime evidence frequently, while host-integrity EVM
+    evidence arrives on a separate cadence. Querying a fixed number of newest
+    rows can hide the latest EVM record, so each evidence type is fetched
+    independently.
+    """
+
+    records = []
+    for evidence_type in ("boot", "runtime", "evm"):
+        record = session.scalars(
+            select(EvidenceRecord)
+            .where(EvidenceRecord.node_id == node.id)
+            .where(EvidenceRecord.evidence_type == evidence_type)
+            .order_by(EvidenceRecord.collected_at.desc(), EvidenceRecord.id.desc())
+            .limit(1)
+        ).first()
+        if record:
+            records.append(record)
+    return records
 
 
 def _json_safe(value: Any) -> Any:
