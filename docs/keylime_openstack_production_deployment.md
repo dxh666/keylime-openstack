@@ -80,10 +80,17 @@ For the current csri10 Docker Keylime deployment, tenant output reports
 KEYLIME_VERIFIER_URL=https://172.31.100.10:8881
 KEYLIME_REGISTRAR_URL=https://172.31.100.10:8891
 KEYLIME_TLS_VERIFY=true
+KEYLIME_TLS_VERIFY_HOSTNAME=false
 KEYLIME_TLS_CA_CERT=/opt/keylime-docker/varlib/cv_ca/cacert.crt
 KEYLIME_TLS_CLIENT_CERT=/opt/keylime-docker/varlib/cv_ca/client-cert.crt
 KEYLIME_TLS_CLIENT_KEY=/opt/keylime-docker/varlib/cv_ca/client-private.pem
 ```
+
+`KEYLIME_TLS_VERIFY_HOSTNAME=false` is used because the current generated
+Keylime verifier certificate does not contain `172.31.100.10` in its SAN. This
+still validates the CA chain. In a hardened production deployment, reissue the
+verifier certificate with the management IP or DNS name in SAN and set
+`KEYLIME_TLS_VERIFY_HOSTNAME=true`.
 
 Keep these defaults for the first dry run:
 

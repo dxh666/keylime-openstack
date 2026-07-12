@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     keylime_registrar_url: str = "https://172.31.100.10:8891"
     keylime_api_timeout_seconds: int = 15
     keylime_tls_verify: bool = True
+    keylime_tls_verify_hostname: bool = False
     keylime_tls_ca_cert: str = "/opt/keylime-docker/varlib/cv_ca/cacert.crt"
     keylime_tls_client_cert: str = "/opt/keylime-docker/varlib/cv_ca/client-cert.crt"
     keylime_tls_client_key: str = "/opt/keylime-docker/varlib/cv_ca/client-private.pem"

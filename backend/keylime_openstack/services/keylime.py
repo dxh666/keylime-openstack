@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import ssl
 import subprocess
 import tempfile
 from pathlib import Path
@@ -146,8 +147,8 @@ class KeylimeClient:
             return kwargs
 
         kwargs["verify"] = self.settings.keylime_tls_verify
-        if self.settings.keylime_tls_verify and self.settings.keylime_tls_ca_cert:
-            kwargs["verify"] = self.settings.keylime_tls_ca_cert
+        if self.settings.keylime_tls_verify:
+            kwargs["verify"] = self._tls_verify_config()
 
         if self.settings.keylime_tls_client_cert and self.settings.keylime_tls_client_key:
             kwargs["cert"] = (
@@ -157,6 +158,16 @@ class KeylimeClient:
         elif self.settings.keylime_tls_client_cert:
             kwargs["cert"] = self.settings.keylime_tls_client_cert
         return kwargs
+
+    def _tls_verify_config(self) -> str | ssl.SSLContext | bool:
+        if self.settings.keylime_tls_verify_hostname:
+            return self.settings.keylime_tls_ca_cert or True
+
+        context = ssl.create_default_context(
+            cafile=self.settings.keylime_tls_ca_cert or None,
+        )
+        context.check_hostname = False
+        return context
 
     def _run_tenant_tool(self, command: list[str]) -> dict[str, Any]:
         if not self.settings.keylime_tenant_tool_enabled:
