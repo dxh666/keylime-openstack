@@ -1,13 +1,16 @@
 ARG PYTHON_BASE_IMAGE=python:3.12-slim
 FROM ${PYTHON_BASE_IMAGE}
 
+ARG PYTHON_BIN=python3
 ARG INSTALL_OS_TOOLS=false
 ARG PIP_INDEX_URL=
 ARG PIP_TRUSTED_HOST=
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app/backend
+    PYTHONPATH=/app/backend \
+    PYTHON_BIN=${PYTHON_BIN} \
+    PATH="/opt/ansible/bin:/usr/local/bin:${PATH}"
 
 WORKDIR /app
 
@@ -22,13 +25,13 @@ COPY backend /app/backend
 COPY deploy/frontend /app/deploy/frontend
 
 RUN if [ -n "$PIP_INDEX_URL" ]; then \
-      python -m pip config set global.index-url "$PIP_INDEX_URL"; \
+      "$PYTHON_BIN" -m pip config set global.index-url "$PIP_INDEX_URL"; \
     fi \
     && if [ -n "$PIP_TRUSTED_HOST" ]; then \
-      python -m pip config set global.trusted-host "$PIP_TRUSTED_HOST"; \
+      "$PYTHON_BIN" -m pip config set global.trusted-host "$PIP_TRUSTED_HOST"; \
     fi \
-    && python -m pip install --no-cache-dir -e /app
+    && "$PYTHON_BIN" -m pip install --no-cache-dir -e /app
 
 EXPOSE 8088
 
-CMD ["uvicorn", "keylime_openstack.main:app", "--host", "0.0.0.0", "--port", "8088"]
+CMD ["sh", "-c", "exec \"$PYTHON_BIN\" -m uvicorn keylime_openstack.main:app --host 0.0.0.0 --port 8088"]

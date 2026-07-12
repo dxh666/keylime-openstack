@@ -126,6 +126,20 @@ PIP_INDEX_URL=https://<site-pypi-mirror>/simple
 PIP_TRUSTED_HOST=<site-pypi-mirror-hostname>
 ```
 
+The current Kolla controller can reuse the local toolbox image as the Python
+base image:
+
+```text
+PYTHON_BASE_IMAGE=172.31.100.10:4000/openstack.kolla/kolla-toolbox:2026.1-ubuntu-noble
+PYTHON_BIN=python3
+DOCKER_BUILD_NETWORK=host
+```
+
+`kolla-toolbox` already provides Python 3.12, pip, and openstacksdk, but it
+does not provide FastAPI, SQLAlchemy, or Pydantic. The build still needs access
+to a Python package source for those dependencies unless an offline wheelhouse
+is added later.
+
 The image no longer installs operating-system packages by default. If later
 operations require in-container shell tools, set:
 

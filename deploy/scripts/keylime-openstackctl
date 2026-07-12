@@ -11,4 +11,5 @@ docker run --rm \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v /tmp/keylime-openstack:/tmp/keylime-openstack:rw \
   "$IMAGE" \
+  sh -c 'exec "${PYTHON_BIN:-python3}" -m keylime_openstack.cli "$@"' \
   keylime-openstackctl "$@"
