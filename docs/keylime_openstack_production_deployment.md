@@ -81,6 +81,56 @@ DEFAULT_COMPUTE_HOSTS=csri8,csri9,hygon22
 Only set `OPENSTACK_ENFORCEMENT_ENABLED=true` after API access, Keylime
 evidence collection, and Placement trait changes have been verified.
 
+## Restricted-network build notes
+
+If the controller cannot reach Docker Hub, the build can fail before project
+code is compiled:
+
+```text
+failed to resolve source metadata for docker.io/library/python:3.12-slim
+```
+
+Use one of these approaches before building:
+
+```bash
+# Preferred when an internal registry exists.
+docker pull <internal-registry>/library/python:3.12-slim
+```
+
+Then set:
+
+```text
+PYTHON_BASE_IMAGE=<internal-registry>/library/python:3.12-slim
+```
+
+Or import the base image from another machine that can access Docker Hub:
+
+```bash
+# On the networked machine:
+docker pull python:3.12-slim
+docker save python:3.12-slim -o python-3.12-slim.tar
+
+# Copy python-3.12-slim.tar to csri10, then on csri10:
+docker load -i python-3.12-slim.tar
+```
+
+If PyPI access is also restricted, set a site-approved Python package mirror:
+
+```text
+PIP_INDEX_URL=https://<site-pypi-mirror>/simple
+PIP_TRUSTED_HOST=<site-pypi-mirror-hostname>
+```
+
+The image no longer installs operating-system packages by default. If later
+operations require in-container shell tools, set:
+
+```text
+INSTALL_OS_TOOLS=true
+```
+
+That option requires the container build environment to reach the Debian apt
+repositories or a configured apt mirror.
+
 ## Build and initialize
 
 ```bash

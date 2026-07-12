@@ -21,6 +21,11 @@ services:
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile
+      args:
+        PYTHON_BASE_IMAGE: ${PYTHON_BASE_IMAGE:-python:3.12-slim}
+        INSTALL_OS_TOOLS: ${INSTALL_OS_TOOLS:-false}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-}
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
     image: keylime-openstack-trust-plane:latest
     container_name: keylime_openstack_api
     restart: unless-stopped
