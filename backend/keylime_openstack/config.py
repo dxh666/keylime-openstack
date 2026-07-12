@@ -53,6 +53,7 @@ class Settings(BaseSettings):
 
     worker_interval_seconds: int = 30
     attestation_fresh_seconds: int = 120
+    host_integrity_fresh_seconds: int = 300
     legacy_trait_enabled: bool = True
 
     temp_dir: str = "/tmp/keylime-openstack"

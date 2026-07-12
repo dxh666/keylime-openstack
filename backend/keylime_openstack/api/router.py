@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from keylime_openstack.api.deps import db_session, require_admin, settings_dep
 from keylime_openstack.config import Settings
@@ -21,12 +21,14 @@ from keylime_openstack.models import (
 from keylime_openstack.schemas import (
     AuditEventOut,
     ComputeNodeOut,
+    HostIntegrityReportIn,
     OverviewOut,
     TaskRunOut,
     TrustDecisionOut,
     TrustPolicyOut,
 )
 from keylime_openstack.seed import ensure_default_environment
+from keylime_openstack.services.host_integrity import host_integrity_report_to_evidence
 from keylime_openstack.services.sync import TrustSyncService
 from keylime_openstack.services.tasks import create_task, mark_failed, mark_running, mark_success
 
@@ -142,6 +144,52 @@ def run_sync_now(
     mark_success(task, result)
     session.commit()
     return {"ok": True, "task_id": task.id, "result": result}
+
+
+@router.post("/nodes/{hostname}/host-integrity", dependencies=[Depends(require_admin)])
+def ingest_host_integrity(
+    hostname: str,
+    report: HostIntegrityReportIn,
+    session: Session = Depends(db_session),
+    settings: Settings = Depends(settings_dep),
+) -> dict[str, object]:
+    ensure_default_environment(session)
+    node = session.scalars(
+        select(ComputeNode).where(
+            (ComputeNode.hostname == hostname) | (ComputeNode.hypervisor_name == hostname)
+        )
+    ).first()
+    if not node:
+        raise HTTPException(status_code=404, detail=f"unknown compute node {hostname}")
+
+    report_data = report.model_dump(mode="json")
+    if report.hostname and report.hostname != hostname:
+        report_data["reported_hostname"] = report.hostname
+
+    evidence = host_integrity_report_to_evidence(node, report_data, settings)
+    session.add(evidence)
+    session.flush()
+    session.add(
+        AuditEvent(
+            event_type="host_integrity_evidence_collect",
+            target=node.hostname,
+            severity="info" if evidence.status == "pass" else "warning",
+            message=evidence.summary,
+            event_details={
+                "evidence_id": evidence.id,
+                "status": evidence.status,
+                "provider": evidence.provider,
+            },
+        )
+    )
+    session.commit()
+    return {
+        "ok": True,
+        "node": node.hostname,
+        "evidence_id": evidence.id,
+        "status": evidence.status,
+        "summary": evidence.summary,
+    }
 
 
 @router.get("/audit", response_model=list[AuditEventOut])

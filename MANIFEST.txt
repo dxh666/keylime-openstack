@@ -18,6 +18,7 @@ backend\keylime_openstack\seed.py
 backend\keylime_openstack\services\__init__.py
 backend\keylime_openstack\services\decision.py
 backend\keylime_openstack\services\dim.py
+backend\keylime_openstack\services\host_integrity.py
 backend\keylime_openstack\services\keylime.py
 backend\keylime_openstack\services\openstack.py
 backend\keylime_openstack\services\policy.py
@@ -41,6 +42,7 @@ deploy\frontend\trust_monitor_server.py
 deploy\frontend\vendor\vue.global.prod.js
 deploy\scripts\keylime-agent-container-restart.sh
 deploy\scripts\keylime-agent-inventory-refresh.sh
+deploy\scripts\keylime-host-integrity-probe.py
 deploy\scripts\keylime-ima-runtime-evidence-audit.sh
 deploy\scripts\keylime-ima-runtime-policy-apply.sh
 deploy\scripts\keylime-ima-runtime-policy-generate.sh

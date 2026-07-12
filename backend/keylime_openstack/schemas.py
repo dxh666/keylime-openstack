@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class HardwareProfileOut(BaseModel):
@@ -89,6 +89,22 @@ class AuditEventOut(BaseModel):
     severity: str
     message: str
     event_details: dict[str, Any]
+
+
+class HostIntegrityReportIn(BaseModel):
+    hostname: str = ""
+    collected_at: datetime | None = None
+    cmdline: str = ""
+    ima_policy: list[str] = Field(default_factory=list)
+    ima_policy_error: str = ""
+    ima_keyring: dict[str, Any] = Field(default_factory=dict)
+    evm_keyring: dict[str, Any] = Field(default_factory=dict)
+    dmesg_integrity_tail: list[str] = Field(default_factory=list)
+    securityfs_mounted: bool = False
+    ima_measurement_templates: dict[str, int] = Field(default_factory=dict)
+    xattrs: dict[str, dict[str, str]] = Field(default_factory=dict)
+    errors: list[str] = Field(default_factory=list)
+    facts: dict[str, Any] = Field(default_factory=dict)
 
 
 class OverviewOut(BaseModel):

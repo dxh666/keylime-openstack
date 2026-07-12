@@ -220,9 +220,7 @@ def keylime_status_to_evidence(
         boot_status = "unknown"
         runtime_status = "unknown" if has_runtime_policy else "missing"
 
-    evm_status, evm_summary = _evm_status_from_keylime(status)
-
-    return [
+    records = [
         EvidenceRecord(
             node_id=node.id,
             provider="keylime",
@@ -253,16 +251,22 @@ def keylime_status_to_evidence(
             ),
             payload=payload,
         ),
-        EvidenceRecord(
-            node_id=node.id,
-            provider="keylime",
-            evidence_type="evm",
-            valid_until=valid_until,
-            status=evm_status,
-            summary=evm_summary,
-            payload=payload,
-        ),
     ]
+    evm = _evm_status_from_keylime(status)
+    if evm:
+        evm_status, evm_summary = evm
+        records.append(
+            EvidenceRecord(
+                node_id=node.id,
+                provider="keylime",
+                evidence_type="evm",
+                valid_until=valid_until,
+                status=evm_status,
+                summary=evm_summary,
+                payload=payload,
+            )
+        )
+    return records
 
 
 def _attestation_valid_until(
@@ -297,7 +301,7 @@ def _truthy(value: Any) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "y", "enabled", "pass"}
 
 
-def _evm_status_from_keylime(status: dict[str, Any]) -> tuple[str, str]:
+def _evm_status_from_keylime(status: dict[str, Any]) -> tuple[str, str] | None:
     for key in (
         "evm_status",
         "evm_validation",
@@ -312,7 +316,7 @@ def _evm_status_from_keylime(status: dict[str, Any]) -> tuple[str, str]:
             return "pass", f"EVM/keyring verification reported pass by Keylime field {key}"
         if value in {"fail", "failed", "invalid", "untrusted", "error"}:
             return "fail", f"EVM/keyring verification reported fail by Keylime field {key}"
-    return "missing", "EVM/keyring verification not reported by current Keylime status payload"
+    return None
 
 
 def _summary(

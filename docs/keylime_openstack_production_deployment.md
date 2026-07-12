@@ -244,6 +244,36 @@ Or use the helper container:
 /opt/keylime-openstack/deploy/scripts/keylime-openstackctl sync
 ```
 
+## Host Integrity Probe
+
+Keylime verifier status does not expose enough EVM/keyring detail in the
+current deployment. Run the host-side probe on each compute node and report the
+result back to the control-plane API:
+
+```bash
+scp /opt/keylime-openstack/deploy/scripts/keylime-host-integrity-probe.py \
+  root@<compute-host>:/usr/local/sbin/keylime-host-integrity-probe
+
+ssh root@<compute-host> chmod 0755 /usr/local/sbin/keylime-host-integrity-probe
+
+ssh root@<compute-host> \
+  KEYLIME_OPENSTACK_API_URL=http://172.31.100.10:8088 \
+  KEYLIME_OPENSTACK_ADMIN_TOKEN=<ADMIN_TOKEN> \
+  /usr/local/sbin/keylime-host-integrity-probe --hostname <compute-host>
+```
+
+The API endpoint is:
+
+```text
+POST /api/nodes/{hostname}/host-integrity
+```
+
+The backend writes this report as `evm` evidence. It returns `pass` only when
+IMA appraisal, `.ima` and `.evm` keyrings, EVM initialization, and signed
+`security.ima` / `security.evm` xattrs are present. Measurement-only hosts stay
+`missing`; hosts with `ima-sig` measurements but empty keyrings are marked
+`fail`.
+
 ## Optional systemd management
 
 After the first migration and bootstrap succeed, install the systemd wrapper:
