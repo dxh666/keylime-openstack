@@ -31,6 +31,48 @@ class KeylimeClient:
             response.raise_for_status()
             return response.json()
 
+    def verifier_agent_status_sync(self, agent_uuid: str) -> dict[str, Any]:
+        url = f"{self.settings.keylime_verifier_url.rstrip('/')}/v2.5/agents/{agent_uuid}"
+        with httpx.Client(timeout=15) as client:
+            response = client.get(url)
+            response.raise_for_status()
+            return response.json()
+
+    def read_agent_status(self, agent_uuid: str) -> dict[str, Any]:
+        """Read and normalize one agent status from Keylime.
+
+        Direct verifier API access is preferred because the long-running worker
+        should not depend on host shell tooling. The tenant container remains a
+        fallback for older or mTLS-only deployments.
+        """
+
+        errors: list[str] = []
+        try:
+            status = normalize_agent_payload(
+                agent_uuid,
+                self.verifier_agent_status_sync(agent_uuid),
+            )
+            status["_source"] = "verifier-api"
+            return status
+        except Exception as exc:  # pragma: no cover - deployment-specific API boundary
+            errors.append(f"verifier-api: {exc}")
+
+        result = self.tenant_tool_status(agent_uuid)
+        if result.get("rc") != 0:
+            stderr = str(result.get("stderr") or "").strip()
+            stdout = str(result.get("stdout") or "").strip()
+            detail = stderr or stdout or "tenant tool returned non-zero status"
+            raise RuntimeError("; ".join([*errors, f"tenant-tool: {detail}"]))
+
+        try:
+            status = parse_tenant_status_stdout(agent_uuid, str(result.get("stdout") or ""))
+        except ValueError as exc:
+            raise RuntimeError("; ".join([*errors, f"tenant-tool: {exc}"])) from exc
+        status["_source"] = "tenant-tool"
+        if errors:
+            status["_adapter_errors"] = errors
+        return status
+
     def tenant_tool_status(self, agent_uuid: str) -> dict[str, Any]:
         command = [
             "docker",
@@ -65,7 +107,10 @@ class KeylimeClient:
             runtime_policy_path = ""
             if runtime_policy is not None:
                 policy_path = Path(tmp) / "runtime-policy.json"
-                policy_path.write_text(json.dumps(runtime_policy, indent=2) + "\n", encoding="utf-8")
+                policy_path.write_text(
+                    json.dumps(runtime_policy, indent=2) + "\n",
+                    encoding="utf-8",
+                )
                 runtime_policy_path = "/keylime-openstack-tmp/runtime-policy.json"
                 args.extend(["-v", f"{tmp}:/keylime-openstack-tmp:ro"])
             args.extend([self.settings.keylime_tenant_service, "-c", "update", "-u", agent_uuid])
@@ -91,3 +136,51 @@ class KeylimeClient:
             "stdout": completed.stdout.strip(),
             "stderr": completed.stderr.strip(),
         }
+
+
+def normalize_agent_payload(agent_uuid: str, payload: Any) -> dict[str, Any]:
+    """Return the verifier-status dict for an agent from common Keylime shapes."""
+
+    if not isinstance(payload, dict):
+        raise ValueError(f"unexpected Keylime payload type: {type(payload).__name__}")
+
+    candidate: Any = payload.get("results", payload)
+    if isinstance(candidate, dict) and agent_uuid in candidate:
+        candidate = candidate[agent_uuid]
+    elif isinstance(candidate, dict) and isinstance(candidate.get("agents"), dict):
+        agents = candidate["agents"]
+        if agent_uuid in agents:
+            candidate = agents[agent_uuid]
+
+    if isinstance(candidate, dict) and "attestation_status" in candidate:
+        return dict(candidate)
+
+    if isinstance(candidate, dict) and "operational_state" in candidate:
+        return dict(candidate)
+
+    raise ValueError(f"agent {agent_uuid} verifier status not found in Keylime payload")
+
+
+def parse_tenant_status_stdout(agent_uuid: str, stdout: str) -> dict[str, Any]:
+    """Extract verifier status JSON from keylime-tenant command output."""
+
+    candidates: list[dict[str, Any]] = []
+    for raw_line in stdout.splitlines():
+        line = raw_line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        try:
+            candidates.append(normalize_agent_payload(agent_uuid, payload))
+        except ValueError:
+            continue
+
+    for candidate in candidates:
+        if "attestation_status" in candidate:
+            return candidate
+    if candidates:
+        return candidates[-1]
+    raise ValueError(f"no JSON status for agent {agent_uuid} in tenant output")
