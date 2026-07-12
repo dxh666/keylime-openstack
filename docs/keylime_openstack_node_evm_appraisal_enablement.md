@@ -149,11 +149,13 @@ Run diagnostics on each node:
 /usr/local/sbin/keylime-node-evm-appraisal trust-diagnostics
 ```
 
-For the current lab, the practical path is to enroll the public certificate as
-a Machine Owner Key. This requires a reboot and interactive MOK confirmation on
-the node console or BMC/iKVM.
+For `csri8` and `csri9`, the practical path is to enroll the public certificate
+as a Machine Owner Key. Both nodes have SecureBoot enabled,
+`CONFIG_INTEGRITY_MACHINE_KEYRING=y`, and an empty `.machine` keyring. This
+requires a reboot and interactive MOK confirmation on the node console or
+BMC/iKVM.
 
-On each node:
+On `csri8` and `csri9`:
 
 ```bash
 command -v mokutil || true
@@ -191,7 +193,35 @@ this project. The loaded key must correspond to
 `keylime-openstack-ima-evm.der`, or appraisal will not validate signatures made
 by the project signing key.
 
-If `mokutil` is unavailable or MOK enrollment is not possible, use a
+For `hygon22`, do not use the Ubuntu MOK path as the primary route. Its current
+kernel has `CONFIG_INTEGRITY_MACHINE_KEYRING` disabled, but has these compiled
+certificate paths:
+
+```text
+CONFIG_IMA_LOAD_X509=y
+CONFIG_IMA_X509_PATH="/etc/keys/x509_ima.der"
+CONFIG_EVM_LOAD_X509=y
+CONFIG_EVM_X509_PATH="/etc/keys/x509_evm.der"
+```
+
+Install the same public certificate into those paths and reboot:
+
+```bash
+/usr/local/sbin/keylime-node-evm-appraisal install-compiled-x509-paths
+reboot
+```
+
+After reboot:
+
+```bash
+/usr/local/sbin/keylime-node-evm-appraisal trust-diagnostics
+/usr/local/sbin/keylime-node-evm-appraisal status
+```
+
+If `hygon22` still has empty `.ima` or `.evm` keyrings after reboot, inspect
+dmesg and the distro's initramfs/key loading behavior before continuing.
+
+If neither MOK enrollment nor compiled X.509 paths are possible, use a
 site-approved certificate that already chains to the kernel builtin/secondary
 trust keyring, or build the public certificate into the kernel/initramfs trust
 path. Do not continue to signing or GRUB appraisal changes until `.ima` and

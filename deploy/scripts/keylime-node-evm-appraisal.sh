@@ -10,6 +10,8 @@ PRIVATE_KEY="${KEYLIME_NODE_EVM_PRIVATE_KEY:-$PRIVATE_DIR/keylime-openstack-ima-
 CERT_PEM="${KEYLIME_NODE_EVM_CERT_PEM:-$INSTALL_ROOT/keylime-openstack-ima-evm.pem}"
 CERT_DER="${KEYLIME_NODE_EVM_CERT_DER:-$INSTALL_ROOT/keylime-openstack-ima-evm.der}"
 PUBLIC_DER="${KEYLIME_NODE_EVM_PUBLIC_DER:-$KEY_DIR/keylime-openstack-ima-evm.der}"
+COMPILED_IMA_X509_PATH="${KEYLIME_NODE_EVM_COMPILED_IMA_X509_PATH:-/etc/keys/x509_ima.der}"
+COMPILED_EVM_X509_PATH="${KEYLIME_NODE_EVM_COMPILED_EVM_X509_PATH:-/etc/keys/x509_evm.der}"
 PATH_LIST="${KEYLIME_NODE_EVM_PATH_LIST:-$INSTALL_ROOT/protected-paths.txt}"
 MAIN_BIN="${KEYLIME_NODE_EVM_MAIN_BIN:-/usr/local/sbin/keylime-node-evm-appraisal}"
 KEYLOAD_BIN="${KEYLIME_NODE_EVM_KEYLOAD_BIN:-/usr/local/sbin/keylime-node-evm-load-keys}"
@@ -54,6 +56,9 @@ Commands:
 
   trust-diagnostics
       Print integrity keyring restrictions and machine trust-ring state.
+
+  install-compiled-x509-paths
+      Copy the public cert to kernel CONFIG_IMA_X509_PATH / CONFIG_EVM_X509_PATH.
 
   install-key-loader
       Install this helper and a systemd oneshot that loads the public certificate early at boot.
@@ -100,6 +105,9 @@ main() {
       ;;
     trust-diagnostics)
       cmd_trust_diagnostics
+      ;;
+    install-compiled-x509-paths)
+      cmd_install_compiled_x509_paths
       ;;
     install-key-loader)
       cmd_install_key_loader
@@ -334,6 +342,24 @@ cmd_trust_diagnostics() {
 
   echo "== recent integrity key errors =="
   dmesg 2>/dev/null | grep -Ei 'integrity|ima|evm|asymmetric|x509|keyring|mok|certificate' | tail -120 || true
+}
+
+cmd_install_compiled_x509_paths() {
+  need_root
+
+  if [ ! -f "$PUBLIC_DER" ]; then
+    echo "public certificate not found: $PUBLIC_DER" >&2
+    return 1
+  fi
+
+  install -d -m 0755 "$(dirname "$COMPILED_IMA_X509_PATH")"
+  install -m 0644 "$PUBLIC_DER" "$COMPILED_IMA_X509_PATH"
+  install -m 0644 "$PUBLIC_DER" "$COMPILED_EVM_X509_PATH"
+  restorecon -Rv "$(dirname "$COMPILED_IMA_X509_PATH")" 2>/dev/null || true
+
+  echo "installed IMA X.509 cert: $COMPILED_IMA_X509_PATH"
+  echo "installed EVM X.509 cert: $COMPILED_EVM_X509_PATH"
+  echo "reboot is required for kernels that load these paths at boot"
 }
 
 print_kernel_config() {
