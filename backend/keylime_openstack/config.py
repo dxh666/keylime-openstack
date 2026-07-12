@@ -39,8 +39,13 @@ class Settings(BaseSettings):
     openstack_cli_fallback: bool = True
     openstack_enforcement_enabled: bool = False
 
-    keylime_verifier_url: str = "http://172.31.100.10:8881"
-    keylime_registrar_url: str = "http://172.31.100.10:8891"
+    keylime_verifier_url: str = "https://172.31.100.10:8881"
+    keylime_registrar_url: str = "https://172.31.100.10:8891"
+    keylime_api_timeout_seconds: int = 15
+    keylime_tls_verify: bool = True
+    keylime_tls_ca_cert: str = "/opt/keylime-docker/varlib/cv_ca/cacert.crt"
+    keylime_tls_client_cert: str = "/opt/keylime-docker/varlib/cv_ca/client-cert.crt"
+    keylime_tls_client_key: str = "/opt/keylime-docker/varlib/cv_ca/client-private.pem"
     keylime_tenant_tool_enabled: bool = True
     keylime_docker_dir: str = "/opt/keylime-docker"
     keylime_tenant_service: str = "keylime-tenant"

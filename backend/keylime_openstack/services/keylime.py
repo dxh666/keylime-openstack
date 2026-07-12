@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
@@ -25,18 +26,28 @@ class KeylimeClient:
         a version-aware adapter without changing the decision engine.
         """
 
-        url = f"{self.settings.keylime_verifier_url.rstrip('/')}/v2.5/agents/{agent_uuid}"
-        async with httpx.AsyncClient(timeout=15) as client:
-            response = await client.get(url)
-            response.raise_for_status()
-            return response.json()
+        errors: list[str] = []
+        for url in self._verifier_agent_urls(agent_uuid):
+            try:
+                async with httpx.AsyncClient(**self._http_client_kwargs(url)) as client:
+                    response = await client.get(url)
+                    response.raise_for_status()
+                    return response.json()
+            except Exception as exc:  # pragma: no cover - deployment-specific API boundary
+                errors.append(f"{url}: {_exception_summary(exc)}")
+        raise RuntimeError("; ".join(errors))
 
     def verifier_agent_status_sync(self, agent_uuid: str) -> dict[str, Any]:
-        url = f"{self.settings.keylime_verifier_url.rstrip('/')}/v2.5/agents/{agent_uuid}"
-        with httpx.Client(timeout=15) as client:
-            response = client.get(url)
-            response.raise_for_status()
-            return response.json()
+        errors: list[str] = []
+        for url in self._verifier_agent_urls(agent_uuid):
+            try:
+                with httpx.Client(**self._http_client_kwargs(url)) as client:
+                    response = client.get(url)
+                    response.raise_for_status()
+                    return response.json()
+            except Exception as exc:  # pragma: no cover - deployment-specific API boundary
+                errors.append(f"{url}: {_exception_summary(exc)}")
+        raise RuntimeError("; ".join(errors))
 
     def read_agent_status(self, agent_uuid: str) -> dict[str, Any]:
         """Read and normalize one agent status from Keylime.
@@ -120,17 +131,49 @@ class KeylimeClient:
                 args.extend(["--runtime-policy", runtime_policy_path])
             return self._run_tenant_tool(args)
 
+    def _verifier_agent_urls(self, agent_uuid: str) -> list[str]:
+        base = self.settings.keylime_verifier_url.rstrip("/")
+        urls = [f"{base}/v2.5/agents/{agent_uuid}"]
+        parts = urlsplit(base)
+        if parts.scheme == "http" and parts.port == 8881:
+            https_base = urlunsplit(("https", parts.netloc, parts.path.rstrip("/"), "", ""))
+            urls.append(f"{https_base}/v2.5/agents/{agent_uuid}")
+        return urls
+
+    def _http_client_kwargs(self, url: str) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {"timeout": self.settings.keylime_api_timeout_seconds}
+        if not url.lower().startswith("https://"):
+            return kwargs
+
+        kwargs["verify"] = self.settings.keylime_tls_verify
+        if self.settings.keylime_tls_verify and self.settings.keylime_tls_ca_cert:
+            kwargs["verify"] = self.settings.keylime_tls_ca_cert
+
+        if self.settings.keylime_tls_client_cert and self.settings.keylime_tls_client_key:
+            kwargs["cert"] = (
+                self.settings.keylime_tls_client_cert,
+                self.settings.keylime_tls_client_key,
+            )
+        elif self.settings.keylime_tls_client_cert:
+            kwargs["cert"] = self.settings.keylime_tls_client_cert
+        return kwargs
+
     def _run_tenant_tool(self, command: list[str]) -> dict[str, Any]:
         if not self.settings.keylime_tenant_tool_enabled:
             return {"rc": 1, "stdout": "", "stderr": "tenant tool fallback disabled"}
-        completed = subprocess.run(
-            command,
-            cwd=self.settings.keylime_docker_dir,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=240,
-        )
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=self.settings.keylime_docker_dir,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=240,
+            )
+        except FileNotFoundError as exc:
+            return {"rc": 127, "stdout": "", "stderr": _exception_summary(exc)}
+        except subprocess.TimeoutExpired as exc:
+            return {"rc": 124, "stdout": exc.stdout or "", "stderr": _exception_summary(exc)}
         return {
             "rc": completed.returncode,
             "stdout": completed.stdout.strip(),
@@ -184,3 +227,10 @@ def parse_tenant_status_stdout(agent_uuid: str, stdout: str) -> dict[str, Any]:
     if candidates:
         return candidates[-1]
     raise ValueError(f"no JSON status for agent {agent_uuid} in tenant output")
+
+
+def _exception_summary(exc: Exception) -> str:
+    message = str(exc).strip()
+    if message:
+        return message
+    return f"{exc.__class__.__module__}.{exc.__class__.__name__}"

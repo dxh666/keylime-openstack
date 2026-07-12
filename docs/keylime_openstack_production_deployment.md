@@ -64,10 +64,25 @@ DATABASE_URL
 ADMIN_TOKEN
 KEYLIME_VERIFIER_URL
 KEYLIME_REGISTRAR_URL
+KEYLIME_TLS_CA_CERT
+KEYLIME_TLS_CLIENT_CERT
+KEYLIME_TLS_CLIENT_KEY
 KEYLIME_DOCKER_DIR
 KEYLIME_TENANT_SERVICE
 OPENSTACK_CLOUDS_YAML
 OPENSTACK_OPENRC
+```
+
+For the current csri10 Docker Keylime deployment, tenant output reports
+`TLS is enabled`; use the TLS ports as HTTPS endpoints:
+
+```text
+KEYLIME_VERIFIER_URL=https://172.31.100.10:8881
+KEYLIME_REGISTRAR_URL=https://172.31.100.10:8891
+KEYLIME_TLS_VERIFY=true
+KEYLIME_TLS_CA_CERT=/opt/keylime-docker/varlib/cv_ca/cacert.crt
+KEYLIME_TLS_CLIENT_CERT=/opt/keylime-docker/varlib/cv_ca/client-cert.crt
+KEYLIME_TLS_CLIENT_KEY=/opt/keylime-docker/varlib/cv_ca/client-private.pem
 ```
 
 Keep these defaults for the first dry run:
