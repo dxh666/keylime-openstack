@@ -204,12 +204,26 @@ CONFIG_EVM_LOAD_X509=y
 CONFIG_EVM_X509_PATH="/etc/keys/x509_evm.der"
 ```
 
-Install the same public certificate into those paths and reboot:
+Install the same public certificate into those paths, include those files in
+the dracut initramfs, and reboot:
 
 ```bash
 /usr/local/sbin/keylime-node-evm-appraisal install-compiled-x509-paths
 reboot
 ```
+
+The helper writes:
+
+```text
+/etc/keys/x509_ima.der
+/etc/keys/x509_evm.der
+/etc/dracut.conf.d/99-keylime-openstack-ima-evm.conf
+```
+
+and rebuilds the current kernel's initramfs with `dracut -f --kver $(uname -r)`.
+This is required because the kernel attempts to open
+`/etc/keys/x509_ima.der` and `/etc/keys/x509_evm.der` before the real root
+filesystem is fully available.
 
 After reboot:
 
@@ -219,7 +233,12 @@ After reboot:
 ```
 
 If `hygon22` still has empty `.ima` or `.evm` keyrings after reboot, inspect
-dmesg and the distro's initramfs/key loading behavior before continuing.
+dmesg. The error below means the certs were not present in initramfs:
+
+```text
+integrity: Unable to open file: /etc/keys/x509_ima.der (-2)
+integrity: Unable to open file: /etc/keys/x509_evm.der (-2)
+```
 
 If neither MOK enrollment nor compiled X.509 paths are possible, use a
 site-approved certificate that already chains to the kernel builtin/secondary

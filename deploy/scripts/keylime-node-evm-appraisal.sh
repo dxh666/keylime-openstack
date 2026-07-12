@@ -12,6 +12,7 @@ CERT_DER="${KEYLIME_NODE_EVM_CERT_DER:-$INSTALL_ROOT/keylime-openstack-ima-evm.d
 PUBLIC_DER="${KEYLIME_NODE_EVM_PUBLIC_DER:-$KEY_DIR/keylime-openstack-ima-evm.der}"
 COMPILED_IMA_X509_PATH="${KEYLIME_NODE_EVM_COMPILED_IMA_X509_PATH:-/etc/keys/x509_ima.der}"
 COMPILED_EVM_X509_PATH="${KEYLIME_NODE_EVM_COMPILED_EVM_X509_PATH:-/etc/keys/x509_evm.der}"
+DRACUT_CONF="${KEYLIME_NODE_EVM_DRACUT_CONF:-/etc/dracut.conf.d/99-keylime-openstack-ima-evm.conf}"
 PATH_LIST="${KEYLIME_NODE_EVM_PATH_LIST:-$INSTALL_ROOT/protected-paths.txt}"
 MAIN_BIN="${KEYLIME_NODE_EVM_MAIN_BIN:-/usr/local/sbin/keylime-node-evm-appraisal}"
 KEYLOAD_BIN="${KEYLIME_NODE_EVM_KEYLOAD_BIN:-/usr/local/sbin/keylime-node-evm-load-keys}"
@@ -58,7 +59,8 @@ Commands:
       Print integrity keyring restrictions and machine trust-ring state.
 
   install-compiled-x509-paths
-      Copy the public cert to kernel CONFIG_IMA_X509_PATH / CONFIG_EVM_X509_PATH.
+      Copy the public cert to kernel CONFIG_IMA_X509_PATH / CONFIG_EVM_X509_PATH
+      and include it in dracut initramfs when dracut is available.
 
   install-key-loader
       Install this helper and a systemd oneshot that loads the public certificate early at boot.
@@ -359,6 +361,24 @@ cmd_install_compiled_x509_paths() {
 
   echo "installed IMA X.509 cert: $COMPILED_IMA_X509_PATH"
   echo "installed EVM X.509 cert: $COMPILED_EVM_X509_PATH"
+
+  if command -v dracut >/dev/null 2>&1; then
+    install -d -m 0755 "$(dirname "$DRACUT_CONF")"
+    cat > "$DRACUT_CONF" <<EOF
+# Added by keylime-node-evm-appraisal.
+install_items+=" ${COMPILED_IMA_X509_PATH} ${COMPILED_EVM_X509_PATH} "
+EOF
+    chmod 0644 "$DRACUT_CONF"
+    echo "installed dracut config: $DRACUT_CONF"
+    dracut -f --kver "$(uname -r)"
+    echo "rebuilt initramfs for kernel: $(uname -r)"
+    if command -v lsinitrd >/dev/null 2>&1; then
+      lsinitrd | grep -E "($(basename "$COMPILED_IMA_X509_PATH")|$(basename "$COMPILED_EVM_X509_PATH"))" || true
+    fi
+  else
+    echo "dracut is not installed; add these files to initramfs manually before rebooting" >&2
+  fi
+
   echo "reboot is required for kernels that load these paths at boot"
 }
 
