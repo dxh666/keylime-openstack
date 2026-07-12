@@ -263,6 +263,15 @@ integrity: Unable to open file: /etc/keys/x509_ima.der (-2)
 integrity: Unable to open file: /etc/keys/x509_evm.der (-2)
 ```
 
+If the files are present in initramfs but the kernel reports
+`Problem loading X.509 certificate -126`, the lab self-signed certificate is
+being rejected by the kernel integrity trust-chain rules. For an experiment-only
+route on `hygon22`, use:
+
+```text
+docs/keylime_openstack_hygon22_experimental_kernel.md
+```
+
 If neither MOK enrollment nor compiled X.509 paths are possible, use a
 site-approved certificate that already chains to the kernel builtin/secondary
 trust keyring, or build the public certificate into the kernel/initramfs trust

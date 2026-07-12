@@ -49,6 +49,12 @@ Node-side IMA appraisal and EVM enablement:
 docs/keylime_openstack_node_evm_appraisal_enablement.md
 ```
 
+Hygon22 experiment-only kernel route:
+
+```text
+docs/keylime_openstack_hygon22_experimental_kernel.md
+```
+
 The main idea is:
 
 ```text
