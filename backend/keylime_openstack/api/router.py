@@ -56,8 +56,17 @@ def overview(
 ) -> OverviewOut:
     ensure_default_environment(session)
     session.commit()
-    nodes_total = session.scalar(select(func.count()).select_from(ComputeNode)) or 0
-    latest_decisions = _latest_decisions(session, limit=20)
+    compute_node_ids = [
+        item[0]
+        for item in session.execute(
+            select(ComputeNode.id)
+            .where(ComputeNode.role == "compute")
+            .where(ComputeNode.enabled.is_(True))
+            .order_by(ComputeNode.hostname)
+        ).all()
+    ]
+    nodes_total = len(compute_node_ids)
+    latest_decisions = _latest_decisions(session, limit=20, node_ids=compute_node_ids)
     trusted_ids = {item.node_id for item in latest_decisions if item.trusted}
     boot_ids = {item.node_id for item in latest_decisions if item.boot_trusted}
     runtime_ids = {item.node_id for item in latest_decisions if item.runtime_trusted}
@@ -146,8 +155,13 @@ def traits() -> dict[str, list[str]]:
     return {"traits": DEFAULT_TRUST_TRAITS}
 
 
-def _latest_decisions(session: Session, limit: int) -> list[TrustDecision]:
-    rows = session.scalars(select(TrustDecision).order_by(TrustDecision.decided_at.desc()).limit(limit)).all()
+def _latest_decisions(session: Session, limit: int, node_ids: list[int] | None = None) -> list[TrustDecision]:
+    if node_ids == []:
+        return []
+    statement = select(TrustDecision).order_by(TrustDecision.decided_at.desc()).limit(limit)
+    if node_ids is not None:
+        statement = statement.where(TrustDecision.node_id.in_(node_ids))
+    rows = session.scalars(statement).all()
     latest: dict[int, TrustDecision] = {}
     for row in rows:
         latest.setdefault(row.node_id, row)

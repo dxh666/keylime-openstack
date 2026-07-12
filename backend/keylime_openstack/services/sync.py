@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -24,11 +26,48 @@ class TrustSyncService:
         nodes = self.session.scalars(
             select(ComputeNode).where(ComputeNode.role == "compute").where(ComputeNode.enabled.is_(True))
         ).all()
+        self.refresh_openstack_states(nodes)
         results = []
         for node in nodes:
             results.append(self.sync_node(node))
         self.session.commit()
         return {"nodes": len(results), "results": results}
+
+    def refresh_openstack_states(self, nodes: list[ComputeNode]) -> None:
+        """Collect nova-compute service state before evaluating trust."""
+
+        try:
+            services = self.openstack.list_compute_services()
+        except Exception as exc:  # pragma: no cover - deployment-specific API boundary
+            self.session.add(
+                AuditEvent(
+                    event_type="openstack_state_refresh",
+                    target="nova-compute",
+                    severity="error",
+                    message=str(exc),
+                    event_details={"adapter": "openstacksdk"},
+                )
+            )
+            return
+
+        services_by_host = {
+            str(item.get("host") or item.get("Host") or ""): item
+            for item in services
+            if item.get("host") or item.get("Host")
+        }
+        for node in nodes:
+            service = services_by_host.get(node.hypervisor_name) or services_by_host.get(node.hostname)
+            if not service:
+                continue
+            self.session.add(
+                OpenStackState(
+                    node_id=node.id,
+                    service_binary=str(service.get("binary") or service.get("Binary") or "nova-compute"),
+                    service_status=str(service.get("status") or service.get("Status") or "unknown").lower(),
+                    service_state=str(service.get("state") or service.get("State") or "unknown").lower(),
+                    raw=_json_safe(service),
+                )
+            )
 
     def sync_node(self, node: ComputeNode) -> dict[str, object]:
         evidence = self.session.scalars(
@@ -82,3 +121,15 @@ class TrustSyncService:
             "reason": decision.reason,
             "desired_traits": decision.desired_traits,
         }
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, tuple):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, str | int | float | bool) or value is None:
+        return value
+    return str(value)
