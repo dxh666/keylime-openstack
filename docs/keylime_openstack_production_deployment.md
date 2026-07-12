@@ -95,12 +95,14 @@ Use one of these approaches before building:
 ```bash
 # Preferred when an internal registry exists.
 docker pull <internal-registry>/library/python:3.12-slim
+docker pull <internal-registry>/library/postgres:16
 ```
 
 Then set:
 
 ```text
 PYTHON_BASE_IMAGE=<internal-registry>/library/python:3.12-slim
+POSTGRES_IMAGE=<internal-registry>/library/postgres:16
 ```
 
 Or import the base image from another machine that can access Docker Hub:
@@ -108,10 +110,13 @@ Or import the base image from another machine that can access Docker Hub:
 ```bash
 # On the networked machine:
 docker pull python:3.12-slim
+docker pull postgres:16
 docker save python:3.12-slim -o python-3.12-slim.tar
+docker save postgres:16 -o postgres-16.tar
 
-# Copy python-3.12-slim.tar to csri10, then on csri10:
+# Copy the tar files to csri10, then on csri10:
 docker load -i python-3.12-slim.tar
+docker load -i postgres-16.tar
 ```
 
 If PyPI access is also restricted, set a site-approved Python package mirror:
