@@ -230,9 +230,9 @@ def keylime_status_to_evidence(
         boot_status = "pass"
         runtime_status = "pass" if has_runtime_policy else "missing"
     elif attestation_status == "FAIL":
-        boot_status = "fail"
-        runtime_status = (
-            "fail" if has_runtime_policy or last_event_id.startswith("ima.") else "unknown"
+        boot_status, runtime_status = _failed_attestation_evidence_status(
+            last_event_id=last_event_id,
+            has_runtime_policy=has_runtime_policy,
         )
     else:
         boot_status = "unknown"
@@ -285,6 +285,28 @@ def keylime_status_to_evidence(
             )
         )
     return records
+
+
+def _failed_attestation_evidence_status(
+    *,
+    last_event_id: str,
+    has_runtime_policy: bool,
+) -> tuple[str, str]:
+    event = last_event_id.lower()
+    runtime_unknown = "unknown" if has_runtime_policy else "missing"
+
+    # Keylime validates the TPM quote before evaluating the IMA runtime log.
+    # An IMA event means boot evidence was reachable, while runtime evidence failed.
+    if event.startswith("ima."):
+        return "pass", "fail"
+
+    if event.startswith("internal.verifier."):
+        return "unknown", runtime_unknown
+
+    if event.startswith(("measured_boot.", "pcr.", "quote.", "tpm.")):
+        return "fail", runtime_unknown
+
+    return "fail", runtime_unknown
 
 
 def _attestation_valid_until(
