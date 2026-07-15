@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -36,6 +37,23 @@ def main() -> None:
         action="store_true",
         help="Exit non-zero when any selected node is not boot/runtime trusted.",
     )
+    keylime_check.add_argument(
+        "--count",
+        type=int,
+        default=1,
+        help="Run the check this many times. Use with --interval for stability gates.",
+    )
+    keylime_check.add_argument(
+        "--interval",
+        type=int,
+        default=30,
+        help="Seconds to wait between checks when --count is greater than 1.",
+    )
+    keylime_check.add_argument(
+        "--failures-only",
+        action="store_true",
+        help="Only include untrusted nodes in the per-node output.",
+    )
     args = parser.parse_args()
 
     if args.command == "bootstrap":
@@ -51,14 +69,57 @@ def main() -> None:
         return
 
     if args.command == "keylime-check":
-        result = keylime_only_check(hosts=args.hosts)
+        result = keylime_only_check(
+            hosts=args.hosts,
+            count=args.count,
+            interval_seconds=args.interval,
+            failures_only=args.failures_only,
+        )
         print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
         if args.strict and not result["ok"]:
             raise SystemExit(2)
         return
 
 
-def keylime_only_check(hosts: str = "") -> dict[str, object]:
+def keylime_only_check(
+    hosts: str = "",
+    *,
+    count: int = 1,
+    interval_seconds: int = 30,
+    failures_only: bool = False,
+) -> dict[str, object]:
+    count = max(1, count)
+    interval_seconds = max(0, interval_seconds)
+    runs = []
+    for run_index in range(count):
+        result = _keylime_only_check_once(hosts=hosts, failures_only=failures_only)
+        result["run"] = run_index + 1
+        runs.append(result)
+        if run_index + 1 < count:
+            time.sleep(interval_seconds)
+
+    if count == 1:
+        return runs[0]
+
+    latest = runs[-1]
+    return {
+        "ok": all(bool(run.get("ok")) for run in runs),
+        "mode": "keylime-only-stability",
+        "count": count,
+        "interval_seconds": interval_seconds,
+        "trust_policy_mode": latest["trust_policy_mode"],
+        "openstack_enforcement_enabled": latest["openstack_enforcement_enabled"],
+        "latest_nodes_total": latest["nodes_total"],
+        "latest_nodes_trusted": latest["nodes_trusted"],
+        "runs": runs,
+    }
+
+
+def _keylime_only_check_once(
+    *,
+    hosts: str = "",
+    failures_only: bool = False,
+) -> dict[str, object]:
     settings = get_settings()
     wanted = {item.strip() for item in hosts.split(",") if item.strip()}
     with SessionLocal() as session:
@@ -77,19 +138,25 @@ def keylime_only_check(hosts: str = "") -> dict[str, object]:
         client = KeylimeClient(settings)
         results = []
         all_ok = bool(nodes)
+        trusted_count = 0
         for node in nodes:
             item = _keylime_node_check(client, node, settings)
-            results.append(item)
             all_ok = all_ok and bool(item.get("trusted"))
+            if item.get("trusted"):
+                trusted_count += 1
+            if not failures_only or not item.get("trusted"):
+                results.append(item)
         session.commit()
 
     return {
         "ok": all_ok,
         "mode": "keylime-only",
+        "checked_at_utc": datetime.now(timezone.utc).isoformat(),
         "trust_policy_mode": settings.normalized_trust_policy_mode,
         "openstack_enforcement_enabled": settings.openstack_enforcement_enabled,
-        "nodes_total": len(results),
-        "nodes_trusted": sum(1 for item in results if item.get("trusted")),
+        "nodes_total": len(nodes),
+        "nodes_trusted": trusted_count,
+        "nodes_returned": len(results),
         "nodes": results,
     }
 
@@ -99,17 +166,19 @@ def _keylime_node_check(
     node: ComputeNode,
     settings,
 ) -> dict[str, object]:
-    base: dict[str, object] = {
-        "host": node.hostname,
-        "agent_uuid": node.keylime_agent_uuid,
-        "agent_ip": node.keylime_agent_ip,
-    }
+    base: dict[str, object] = {"host": node.hostname, "agent_uuid": node.keylime_agent_uuid}
     if not node.keylime_agent_uuid:
         return {
             **base,
+            "agent_ip": node.keylime_agent_ip,
             "trusted": False,
             "status": "skipped",
             "reason": "missing-agent-uuid",
+            "remediation": _remediation(
+                event_id="missing-agent-uuid",
+                trusted=False,
+                host=node.hostname,
+            ),
         }
 
     try:
@@ -117,11 +186,20 @@ def _keylime_node_check(
     except Exception as exc:
         return {
             **base,
+            "agent_ip": node.keylime_agent_ip,
             "trusted": False,
             "status": "error",
             "reason": str(exc),
+            "remediation": _remediation(
+                event_id="keylime-api-error",
+                trusted=False,
+                host=node.hostname,
+            ),
         }
 
+    reported_ip = str(status.get("ip") or node.keylime_agent_ip or "")
+    if reported_ip and node.keylime_agent_ip != reported_ip:
+        node.keylime_agent_ip = reported_ip
     records = keylime_status_to_evidence(node, status, settings)
     evidence = {record.evidence_type: record.status for record in records}
     evidence_fresh = {
@@ -137,15 +215,18 @@ def _keylime_node_check(
     boot_fresh = evidence_fresh.get("boot", False)
     runtime_fresh = evidence_fresh.get("runtime", False)
     trusted = boot_ok and runtime_ok and boot_fresh and runtime_fresh
+    active_event_id = _active_last_event_id(status)
+    reason = "TRUSTED" if trusted else _keylime_only_reason(evidence, evidence_fresh)
     return {
         **base,
+        "agent_ip": reported_ip,
         "trusted": trusted,
-        "reason": "TRUSTED" if trusted else _keylime_only_reason(evidence, evidence_fresh),
+        "reason": reason,
         "status": "collected",
         "source": status.get("_source") or "unknown",
         "attestation_status": status.get("attestation_status"),
         "operational_state": status.get("operational_state"),
-        "last_event_id": _active_last_event_id(status),
+        "last_event_id": active_event_id,
         "has_runtime_policy": _truthy(status.get("has_runtime_policy")),
         "last_received_quote": status.get("last_received_quote"),
         "last_successful_attestation": status.get("last_successful_attestation"),
@@ -154,6 +235,11 @@ def _keylime_node_check(
         "evidence": evidence,
         "evidence_fresh": evidence_fresh,
         "evidence_valid_until": evidence_valid_until,
+        "remediation": _remediation(
+            event_id=str(active_event_id or reason),
+            trusted=trusted,
+            host=node.hostname,
+        ),
     }
 
 
@@ -218,6 +304,73 @@ def _keylime_only_reason(
     if not missing:
         return "NOT_TRUSTED"
     return "WAITING_FOR_" + "_".join(missing)
+
+
+def _remediation(*, event_id: str, trusted: bool, host: str) -> dict[str, object]:
+    if trusted:
+        return {"category": "none", "summary": "No action required."}
+
+    event = event_id.lower()
+    if event == "missing-agent-uuid":
+        return {
+            "category": "inventory",
+            "summary": "Node has no Keylime agent UUID in the trust-plane inventory.",
+            "next_commands": [
+                "deploy/scripts/keylime-agent-inventory-refresh.sh",
+            ],
+        }
+    if event == "keylime-api-error":
+        return {
+            "category": "keylime-api",
+            "summary": "Trust plane could not read Keylime verifier status.",
+            "next_commands": [
+                "docker ps | grep -E 'keylime-verifier|keylime-registrar'",
+                "docker compose logs --tail=120 keylime-verifier",
+            ],
+        }
+    if event.startswith("internal.verifier.not_reachable"):
+        return {
+            "category": "agent-reachability",
+            "summary": "Verifier cannot reach the Keylime agent; check agent container/network, then reactivate.",
+            "next_commands": [
+                f"ssh root@<agent-ip> 'docker ps | grep keylime-agent || true'",
+                f"deploy/scripts/keylime-only-attestation-check.sh --strict --hosts {host}",
+            ],
+        }
+    if event.startswith("ima.validation.ima-ng.runtime_policy_hash") or event.startswith(
+        "ima.validation.ima-ng.not_in_allowlist"
+    ):
+        return {
+            "category": "ima-runtime-policy",
+            "summary": "IMA runtime policy does not match the live measurement list.",
+            "next_commands": [
+                f"deploy/scripts/keylime-ima-runtime-policy-diff.sh {host} bound",
+                f"deploy/scripts/keylime-ima-runtime-policy-refresh.sh {host}",
+            ],
+        }
+    if event.startswith(("pcr.", "measured_boot.", "quote.", "tpm.")):
+        return {
+            "category": "boot-tpm-policy",
+            "summary": "TPM/PCR boot evidence failed; do not refresh IMA runtime baseline first.",
+            "next_commands": [
+                "deploy/scripts/keylime-tpm-evidence-audit.sh",
+            ],
+        }
+    if "stale" in event:
+        return {
+            "category": "freshness",
+            "summary": "Attestation is no longer fresh; wait for verifier or check agent/verifier loop.",
+            "next_commands": [
+                f"deploy/scripts/keylime-only-attestation-check.sh --strict --hosts {host}",
+            ],
+        }
+    return {
+        "category": "unknown",
+        "summary": "Inspect Keylime verifier logs and node-specific evidence.",
+        "next_commands": [
+            "docker compose logs --since=20m keylime-verifier",
+        ],
+    }
 
 
 if __name__ == "__main__":

@@ -64,6 +64,23 @@ Use a host filter during debugging:
 deploy/scripts/keylime-only-attestation-check.sh --strict --hosts hygon22
 ```
 
+Run a stability gate without a shell loop:
+
+```bash
+deploy/scripts/keylime-only-attestation-check.sh --strict --count 10 --interval 30
+```
+
+When debugging a failed gate, limit output to untrusted nodes:
+
+```bash
+deploy/scripts/keylime-only-attestation-check.sh --strict --failures-only
+```
+
+Each failed node includes a `remediation` block. Treat it as the first
+operator hint before refreshing policies. For example, `agent-reachability`
+points to agent/network/reactivation checks, while `ima-runtime-policy` points
+to the runtime policy diff helper.
+
 ## Diagnose IMA runtime failures
 
 If a node reports:
