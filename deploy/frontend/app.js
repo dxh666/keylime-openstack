@@ -21,12 +21,19 @@ createApp({
         { key: "nodes", label: "节点状态" },
         { key: "policies", label: "策略管理" }
       ],
-      adminToken: "",
       busy: false,
       notice: { kind: "", text: "" },
       keylime: {},
       policies: [],
       policyForm: emptyPolicyForm(),
+      tokenDialog: {
+        open: false,
+        title: "",
+        message: "",
+        confirmText: "确认",
+        token: "",
+        action: null
+      },
       timer: null
     };
   },
@@ -39,7 +46,6 @@ createApp({
     }
   },
   mounted() {
-    this.bootstrap();
     this.refreshAll();
     this.timer = setInterval(() => this.refreshAll(false), 10000);
   },
@@ -83,15 +89,15 @@ createApp({
       };
       return names[value] || value || "-";
     },
-    headers() {
+    headers(token = "") {
       const headers = { "Content-Type": "application/json" };
-      if (this.adminToken) headers["X-Admin-Token"] = this.adminToken;
+      if (token) headers["X-Admin-Token"] = token;
       return headers;
     },
-    async requestJson(path, options = {}) {
+    async requestJson(path, options = {}, token = "") {
       const response = await fetch(path, {
         ...options,
-        headers: { ...this.headers(), ...(options.headers || {}) }
+        headers: { ...this.headers(token), ...(options.headers || {}) }
       });
       const data = await response.json();
       if (!response.ok) {
@@ -107,13 +113,6 @@ createApp({
         }, 6000);
       }
     },
-    async bootstrap() {
-      try {
-        await this.requestJson("/api/bootstrap", { method: "POST", body: "{}" });
-      } catch (_error) {
-        // 生产环境通常需要管理令牌，首次加载失败不影响只读查看。
-      }
-    },
     async refreshAll(showBusy = true) {
       if (showBusy) this.busy = true;
       try {
@@ -127,18 +126,6 @@ createApp({
         this.showNotice("bad", error.message);
       } finally {
         if (showBusy) this.busy = false;
-      }
-    },
-    async runSync() {
-      this.busy = true;
-      try {
-        const data = await this.requestJson("/api/tasks/sync", { method: "POST", body: "{}" });
-        this.showNotice("ok", `同步完成，任务编号：#${data.task_id}`);
-        await this.refreshAll(false);
-      } catch (error) {
-        this.showNotice("bad", error.message);
-      } finally {
-        this.busy = false;
       }
     },
     selectPolicy(policy) {
@@ -185,46 +172,82 @@ createApp({
         source: {}
       };
     },
-    async savePolicy() {
-      if (!this.adminToken) {
-        this.showNotice("bad", "请先填写管理令牌");
+    requireToken({ title, message, confirmText, action }) {
+      this.tokenDialog = {
+        open: true,
+        title,
+        message,
+        confirmText,
+        token: "",
+        action
+      };
+      this.$nextTick(() => {
+        const input = document.querySelector(".token-dialog input");
+        if (input) input.focus();
+      });
+    },
+    closeTokenDialog() {
+      if (this.busy) return;
+      this.tokenDialog.open = false;
+      this.tokenDialog.token = "";
+      this.tokenDialog.action = null;
+    },
+    async confirmTokenDialog() {
+      const token = this.tokenDialog.token.trim();
+      if (!token) {
+        this.showNotice("bad", "请输入管理令牌");
         return;
       }
+      const action = this.tokenDialog.action;
+      if (!action) return;
       this.busy = true;
       try {
-        const payload = this.policyPayload();
-        const path = this.policyForm.id ? `/api/policies/${this.policyForm.id}` : "/api/policies";
-        const method = this.policyForm.id ? "PUT" : "POST";
-        const saved = await this.requestJson(path, {
-          method,
-          body: JSON.stringify(payload)
-        });
-        this.showNotice("ok", this.policyForm.id ? "策略已更新" : "策略已创建");
-        await this.refreshAll(false);
-        this.selectPolicy(saved);
+        await action(token);
+        this.closeTokenDialog();
       } catch (error) {
         this.showNotice("bad", error.message);
       } finally {
         this.busy = false;
       }
     },
-    async deletePolicy(policy) {
-      if (!this.adminToken) {
-        this.showNotice("bad", "请先填写管理令牌");
-        return;
-      }
-      if (!confirm(`确认删除策略「${policy.name}」？`)) return;
-      this.busy = true;
+    async savePolicy() {
       try {
-        await this.requestJson(`/api/policies/${policy.id}`, { method: "DELETE" });
-        this.showNotice("ok", "策略已删除");
-        if (this.policyForm.id === policy.id) this.newPolicy();
-        await this.refreshAll(false);
+        const payload = this.policyPayload();
+        const editing = Boolean(this.policyForm.id);
+        this.requireToken({
+          title: editing ? "确认编辑策略" : "确认新增策略",
+          message: editing
+            ? `将保存对策略「${payload.name}」的修改。`
+            : `将创建新策略「${payload.name}」。`,
+          confirmText: editing ? "确认保存" : "确认新增",
+          action: async (token) => {
+            const path = editing ? `/api/policies/${this.policyForm.id}` : "/api/policies";
+            const method = editing ? "PUT" : "POST";
+            const saved = await this.requestJson(path, {
+              method,
+              body: JSON.stringify(payload)
+            }, token);
+            this.showNotice("ok", editing ? "策略已更新" : "策略已创建");
+            await this.refreshAll(false);
+            this.selectPolicy(saved);
+          }
+        });
       } catch (error) {
         this.showNotice("bad", error.message);
-      } finally {
-        this.busy = false;
       }
+    },
+    async deletePolicy(policy) {
+      this.requireToken({
+        title: "确认删除策略",
+        message: `将删除策略「${policy.name}」。如果策略已经绑定到节点，后端会拒绝删除。`,
+        confirmText: "确认删除",
+        action: async (token) => {
+          await this.requestJson(`/api/policies/${policy.id}`, { method: "DELETE" }, token);
+          this.showNotice("ok", "策略已删除");
+          if (this.policyForm.id === policy.id) this.newPolicy();
+          await this.refreshAll(false);
+        }
+      });
     }
   }
 }).mount("#app");

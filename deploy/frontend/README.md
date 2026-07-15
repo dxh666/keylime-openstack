@@ -31,7 +31,8 @@ PUT    /api/policies/{policy_id}
 DELETE /api/policies/{policy_id}
 ```
 
-策略新增、编辑、删除需要填写 `ADMIN_TOKEN` 对应的管理令牌。
+策略新增、编辑、删除会弹出确认框。操作者需要在确认框里输入
+`ADMIN_TOKEN` 对应的管理令牌，令牌不会常驻显示在页面顶部。
 
 部署后验证：
 

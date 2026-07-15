@@ -30,14 +30,6 @@
           <p class="eyebrow">TPM / IMA / Keylime</p>
           <h1>{{ currentTitle }}</h1>
         </div>
-        <div class="top-actions">
-          <label class="token-field">
-            <span>管理令牌</span>
-            <input v-model="adminToken" type="password" autocomplete="off" placeholder="用于保存和删除">
-          </label>
-          <button :disabled="busy" @click="refreshAll">刷新</button>
-          <button class="primary" :disabled="busy" @click="runSync">同步状态</button>
-        </div>
       </header>
 
       <section v-if="notice.text" :class="['notice', notice.kind]">{{ notice.text }}</section>
@@ -181,6 +173,29 @@
           </form>
         </section>
       </section>
+
+      <div v-if="tokenDialog.open" class="modal-backdrop" @click.self="closeTokenDialog">
+        <section class="modal token-dialog" role="dialog" aria-modal="true">
+          <h2>{{ tokenDialog.title }}</h2>
+          <p>{{ tokenDialog.message }}</p>
+          <label>
+            <span>管理令牌</span>
+            <input
+              v-model="tokenDialog.token"
+              type="password"
+              autocomplete="off"
+              placeholder="请输入 ADMIN_TOKEN"
+              @keyup.enter="confirmTokenDialog"
+            >
+          </label>
+          <div class="modal-actions">
+            <button type="button" :disabled="busy" @click="closeTokenDialog">取消</button>
+            <button class="primary" type="button" :disabled="busy" @click="confirmTokenDialog">
+              {{ tokenDialog.confirmText }}
+            </button>
+          </div>
+        </section>
+      </div>
     </main>
   </div>
 
