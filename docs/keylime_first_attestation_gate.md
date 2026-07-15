@@ -64,6 +64,36 @@ Use a host filter during debugging:
 deploy/scripts/keylime-only-attestation-check.sh --strict --hosts hygon22
 ```
 
+## Diagnose IMA runtime failures
+
+If a node reports:
+
+```text
+last_event_id=ima.validation.ima-ng.runtime_policy_hash
+last_event_id=ima.validation.ima-ng.not_in_allowlist
+```
+
+compare the live IMA measurement list with the bound runtime policy before
+refreshing the baseline:
+
+```bash
+deploy/scripts/keylime-ima-runtime-policy-diff.sh hygon22 bound
+```
+
+The helper is read-only. It writes a JSON report under the runtime policy state
+directory and prints counts for:
+
+```text
+path_missing
+hash_missing
+excluded
+malformed
+```
+
+Only refresh the runtime baseline after confirming the differences are expected
+runtime drift, such as known transient paths that should be excluded or
+legitimate package/container updates.
+
 ## Refresh IMA baseline
 
 When a node has a legitimate runtime baseline change:
