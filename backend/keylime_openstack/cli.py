@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 
@@ -123,12 +124,23 @@ def _keylime_node_check(
 
     records = keylime_status_to_evidence(node, status, settings)
     evidence = {record.evidence_type: record.status for record in records}
+    evidence_fresh = {
+        record.evidence_type: _record_fresh(record.valid_until)
+        for record in records
+    }
+    evidence_valid_until = {
+        record.evidence_type: record.valid_until.isoformat() if record.valid_until else None
+        for record in records
+    }
     boot_ok = evidence.get("boot") == "pass"
     runtime_ok = evidence.get("runtime") == "pass"
-    trusted = boot_ok and runtime_ok
+    boot_fresh = evidence_fresh.get("boot", False)
+    runtime_fresh = evidence_fresh.get("runtime", False)
+    trusted = boot_ok and runtime_ok and boot_fresh and runtime_fresh
     return {
         **base,
         "trusted": trusted,
+        "reason": "TRUSTED" if trusted else _keylime_only_reason(evidence, evidence_fresh),
         "status": "collected",
         "source": status.get("_source") or "unknown",
         "attestation_status": status.get("attestation_status"),
@@ -137,8 +149,11 @@ def _keylime_node_check(
         "has_runtime_policy": _truthy(status.get("has_runtime_policy")),
         "last_received_quote": status.get("last_received_quote"),
         "last_successful_attestation": status.get("last_successful_attestation"),
+        "attestation_age_seconds": _attestation_age_seconds(status),
         "tpm_policy": _json_or_value(status.get("tpm_policy")),
         "evidence": evidence,
+        "evidence_fresh": evidence_fresh,
+        "evidence_valid_until": evidence_valid_until,
     }
 
 
@@ -157,6 +172,46 @@ def _json_or_value(value: object) -> object:
         return json.loads(value)
     except json.JSONDecodeError:
         return value
+
+
+def _record_fresh(valid_until: datetime | None) -> bool:
+    if valid_until is None:
+        return True
+    return valid_until >= datetime.now(timezone.utc)
+
+
+def _attestation_age_seconds(status: dict[str, object]) -> int | None:
+    timestamp = _coerce_epoch(status.get("last_successful_attestation"))
+    if timestamp is None:
+        timestamp = _coerce_epoch(status.get("last_received_quote"))
+    if timestamp is None:
+        return None
+    return max(0, int(datetime.now(timezone.utc).timestamp()) - timestamp)
+
+
+def _coerce_epoch(value: object) -> int | None:
+    try:
+        timestamp = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return timestamp if timestamp > 0 else None
+
+
+def _keylime_only_reason(
+    evidence: dict[str, str],
+    evidence_fresh: dict[str, bool],
+) -> str:
+    missing = []
+    for label, evidence_type in (("BOOT", "boot"), ("IMA", "runtime")):
+        status = evidence.get(evidence_type, "missing")
+        fresh = evidence_fresh.get(evidence_type, False)
+        if status == "pass" and not fresh:
+            missing.append(f"{label}_STALE")
+        elif status != "pass":
+            missing.append(f"{label}_{status.upper()}")
+    if not missing:
+        return "NOT_TRUSTED"
+    return "WAITING_FOR_" + "_".join(missing)
 
 
 if __name__ == "__main__":

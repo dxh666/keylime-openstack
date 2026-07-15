@@ -54,6 +54,8 @@ attestation_status=PASS
 has_runtime_policy=true
 evidence.boot=pass
 evidence.runtime=pass
+evidence_fresh.boot=true
+evidence_fresh.runtime=true
 ```
 
 Use a host filter during debugging:
@@ -84,6 +86,7 @@ Do not enable OpenStack enforcement until all of these are true:
 keylime-only-attestation-check.sh --strict passes repeatedly
 refreshing one node's IMA policy returns to trusted without manual repair
 Keylime verifier API shows PASS after reactivation
+last_successful_attestation remains fresh for every trusted node
 runtime policy names do not collide in verifier allowlists
 dynamic runtime paths are excluded instead of learned as trusted
 ```
