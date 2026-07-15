@@ -29,6 +29,7 @@ from keylime_openstack.schemas import (
 )
 from keylime_openstack.seed import ensure_default_environment
 from keylime_openstack.services.host_integrity import host_integrity_report_to_evidence
+from keylime_openstack.services.keylime_gate import keylime_only_check
 from keylime_openstack.services.sync import TrustSyncService
 from keylime_openstack.services.tasks import create_task, mark_failed, mark_running, mark_success
 
@@ -98,6 +99,14 @@ def nodes(session: Session = Depends(db_session)) -> list[ComputeNodeOut]:
         select(ComputeNode).options(joinedload(ComputeNode.hardware_profile)).order_by(ComputeNode.hostname)
     ).all()
     return [ComputeNodeOut.model_validate(item) for item in rows]
+
+
+@router.get("/keylime/check")
+def keylime_check(
+    hosts: str = "",
+    failures_only: bool = False,
+) -> dict[str, object]:
+    return keylime_only_check(hosts=hosts, failures_only=failures_only)
 
 
 @router.get("/hardware-profiles")

@@ -177,7 +177,8 @@ h2 {
 
 .metric,
 .panel,
-.node-card {
+.node-card,
+.keylime-card {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -197,6 +198,7 @@ h2 {
   display: block;
   margin-top: 8px;
   font-size: 30px;
+  overflow-wrap: anywhere;
 }
 
 .metric.ok strong {
@@ -327,8 +329,15 @@ h2 {
   gap: 16px;
 }
 
-.node-card {
+.node-card,
+.keylime-card {
   padding: 18px;
+}
+
+.keylime-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 16px;
 }
 
 .node-title {
@@ -365,6 +374,45 @@ h2 {
 .facts strong {
   overflow-wrap: anywhere;
   font-size: 13px;
+}
+
+.remediation {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid #f2d08a;
+  border-radius: 6px;
+  background: #fffaf0;
+}
+
+.remediation strong {
+  display: block;
+  color: var(--amber);
+  margin-bottom: 5px;
+}
+
+.remediation p {
+  margin-bottom: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.remediation ul {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.remediation code {
+  display: block;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  font-size: 12px;
 }
 
 .notice {
@@ -412,6 +460,10 @@ h2 {
   }
 
   .summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .keylime-grid {
     grid-template-columns: 1fr;
   }
 

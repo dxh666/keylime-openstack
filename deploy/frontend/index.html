@@ -3,24 +3,24 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Keylime OpenStack 可信控制平面</title>
+  <title>Keylime OpenStack Trust Plane</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <div id="app" v-cloak>
     <aside class="sidebar">
       <div class="brand">
-        <strong>可信控制平面</strong>
+        <strong>Trust Plane</strong>
         <span>Keylime + OpenStack</span>
       </div>
-      <nav class="nav" aria-label="主导航">
+      <nav class="nav" aria-label="Main navigation">
         <button v-for="item in views" :key="item.key" :class="{ active: view === item.key }" @click="view = item.key">
           {{ item.label }}
         </button>
       </nav>
       <div class="sidebar-footer">
         <span :class="['status-dot', overview.nodes_untrusted ? 'bad' : 'ok']"></span>
-        <span>{{ overview.nodes_trusted || 0 }}/{{ overview.nodes_total || 0 }} 可信</span>
+        <span>{{ overview.nodes_trusted || 0 }}/{{ overview.nodes_total || 0 }} trusted</span>
       </div>
     </aside>
 
@@ -32,11 +32,11 @@
         </div>
         <div class="top-actions">
           <label class="token-field">
-            <span>管理令牌</span>
-            <input v-model="adminToken" type="password" autocomplete="off" placeholder="未设置">
+            <span>Admin token</span>
+            <input v-model="adminToken" type="password" autocomplete="off" placeholder="not set">
           </label>
-          <button :disabled="busy" @click="refreshAll">刷新</button>
-          <button class="primary" :disabled="busy" @click="runSync">同步</button>
+          <button :disabled="busy" @click="refreshAll">Refresh</button>
+          <button class="primary" :disabled="busy" @click="runSync">Sync</button>
         </div>
       </header>
 
@@ -45,19 +45,19 @@
       <section v-if="view === 'overview'" class="screen">
         <div class="summary-grid">
           <article class="metric">
-            <span>节点总数</span>
+            <span>Compute nodes</span>
             <strong>{{ overview.nodes_total || 0 }}</strong>
           </article>
           <article class="metric ok">
-            <span>整体可信</span>
+            <span>Trusted</span>
             <strong>{{ overview.nodes_trusted || 0 }}</strong>
           </article>
           <article class="metric warn">
-            <span>Boot 可信</span>
+            <span>Boot trusted</span>
             <strong>{{ overview.nodes_boot_trusted || 0 }}</strong>
           </article>
           <article class="metric bad">
-            <span>待处理</span>
+            <span>Needs attention</span>
             <strong>{{ overview.nodes_untrusted || 0 }}</strong>
           </article>
         </div>
@@ -65,8 +65,8 @@
         <section class="panel">
           <div class="panel-head">
             <div>
-              <h2>调度 Trait</h2>
-              <p>Keylime 决策最终写入 OpenStack Placement。</p>
+              <h2>Placement Traits</h2>
+              <p>Current trait names reserved for OpenStack scheduling decisions.</p>
             </div>
           </div>
           <div class="trait-list">
@@ -81,13 +81,13 @@
         <section class="panel">
           <div class="panel-head">
             <div>
-              <h2>最近决策</h2>
-              <p>Worker 会周期性生成可信决策并记录审计。</p>
+              <h2>Latest Decisions</h2>
+              <p>Worker decisions derived from Keylime and local policy state.</p>
             </div>
           </div>
           <div class="table">
             <div class="row header">
-              <span>Node ID</span><span>Boot</span><span>Runtime</span><span>Trusted</span><span>原因</span>
+              <span>Node ID</span><span>Boot</span><span>Runtime</span><span>Trusted</span><span>Reason</span>
             </div>
             <div v-for="item in overview.latest_decisions || []" :key="item.id" class="row">
               <span>{{ item.node_id }}</span>
@@ -96,6 +96,62 @@
               <span><em :class="['pill', item.trusted ? 'ok' : 'bad']">{{ yesNo(item.trusted) }}</em></span>
               <span>{{ item.reason }}</span>
             </div>
+          </div>
+        </section>
+      </section>
+
+      <section v-if="view === 'keylime'" class="screen">
+        <div class="summary-grid">
+          <article class="metric" :class="keylime.ok === true ? 'ok' : keylime.ok === false ? 'bad' : 'warn'">
+            <span>Keylime gate</span>
+            <strong>{{ gateText(keylime.ok) }}</strong>
+          </article>
+          <article class="metric ok">
+            <span>Trusted agents</span>
+            <strong>{{ keylime.nodes_trusted || 0 }}</strong>
+          </article>
+          <article class="metric">
+            <span>Total agents</span>
+            <strong>{{ keylime.nodes_total || 0 }}</strong>
+          </article>
+          <article class="metric warn">
+            <span>Policy mode</span>
+            <strong>{{ keylime.trust_policy_mode || '-' }}</strong>
+          </article>
+        </div>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Attestation State</h2>
+              <p>TPM PCR policy and IMA runtime policy from the Keylime verifier.</p>
+            </div>
+          </div>
+          <div class="keylime-grid">
+            <article v-for="node in keylime.nodes || []" :key="node.agent_uuid" class="keylime-card">
+              <div class="node-title">
+                <div>
+                  <h2>{{ node.host }}</h2>
+                  <p>{{ node.agent_ip || '-' }}</p>
+                </div>
+                <span :class="['pill', node.trusted ? 'ok' : 'bad']">{{ node.reason }}</span>
+              </div>
+              <div class="facts">
+                <div><span>Attestation</span><strong>{{ node.attestation_status || '-' }}</strong></div>
+                <div><span>Boot</span><strong>{{ node.evidence?.boot || '-' }}</strong></div>
+                <div><span>IMA runtime</span><strong>{{ node.evidence?.runtime || '-' }}</strong></div>
+                <div><span>Fresh age</span><strong>{{ ageText(node.attestation_age_seconds) }}</strong></div>
+                <div><span>Last event</span><strong>{{ node.last_event_id || '-' }}</strong></div>
+                <div><span>Runtime policy</span><strong>{{ yesNo(node.has_runtime_policy) }}</strong></div>
+              </div>
+              <div class="remediation" v-if="node.remediation">
+                <strong>{{ node.remediation.category }}</strong>
+                <p>{{ node.remediation.summary }}</p>
+                <ul v-if="node.remediation.next_commands && node.remediation.next_commands.length">
+                  <li v-for="command in node.remediation.next_commands" :key="command"><code>{{ command }}</code></li>
+                </ul>
+              </div>
+            </article>
           </div>
         </section>
       </section>
@@ -111,10 +167,10 @@
               <span class="chip">{{ node.role }}</span>
             </div>
             <div class="facts">
-              <div><span>硬件族</span><strong>{{ node.hardware_profile?.name || '-' }}</strong></div>
+              <div><span>Hardware</span><strong>{{ node.hardware_profile?.name || '-' }}</strong></div>
               <div><span>CPU</span><strong>{{ node.facts?.cpu_vendor || '-' }}</strong></div>
               <div><span>Kernel</span><strong>{{ node.facts?.kernel || '-' }}</strong></div>
-              <div><span>Agent UUID</span><strong>{{ node.keylime_agent_uuid || '未配置' }}</strong></div>
+              <div><span>Agent UUID</span><strong>{{ node.keylime_agent_uuid || '-' }}</strong></div>
             </div>
           </article>
         </section>
@@ -124,13 +180,13 @@
         <section class="panel">
           <div class="panel-head">
             <div>
-              <h2>策略库</h2>
-              <p>Boot PCR、IMA runtime、EVM/keyring 策略长期保存在 PostgreSQL。</p>
+              <h2>Policy Store</h2>
+              <p>Boot PCR, IMA runtime, and later EVM/keyring policy records.</p>
             </div>
           </div>
           <div class="table">
             <div class="row header">
-              <span>名称</span><span>类型</span><span>版本</span><span>状态</span><span>说明</span>
+              <span>Name</span><span>Type</span><span>Version</span><span>Status</span><span>Description</span>
             </div>
             <div v-for="policy in policies" :key="policy.id" class="row">
               <span>{{ policy.name }}</span>
@@ -140,7 +196,7 @@
               <span>{{ policy.description || '-' }}</span>
             </div>
           </div>
-          <p v-if="!policies.length" class="empty">暂无策略。后续导入 TPM/IMA/EVM 基线后会写入数据库。</p>
+          <p v-if="!policies.length" class="empty">No policies recorded yet.</p>
         </section>
       </section>
 
@@ -148,13 +204,13 @@
         <section class="panel">
           <div class="panel-head">
             <div>
-              <h2>任务记录</h2>
-              <p>同步、策略下发、隔离和 VM marker 操作都应进入任务记录。</p>
+              <h2>Task Runs</h2>
+              <p>Operational jobs and their latest result.</p>
             </div>
           </div>
           <div class="table">
             <div class="row header">
-              <span>ID</span><span>类型</span><span>状态</span><span>目标</span><span>结束时间</span>
+              <span>ID</span><span>Type</span><span>Status</span><span>Target</span><span>Finished</span>
             </div>
             <div v-for="task in tasks" :key="task.id" class="row">
               <span>{{ task.id }}</span>
@@ -171,13 +227,13 @@
         <section class="panel">
           <div class="panel-head">
             <div>
-              <h2>审计事件</h2>
-              <p>可信决策、trait 变更、隔离、策略应用都要形成可追溯记录。</p>
+              <h2>Audit Events</h2>
+              <p>Trust decisions, evidence collection, and operational actions.</p>
             </div>
           </div>
           <div class="table audit-table">
             <div class="row header">
-              <span>时间</span><span>类型</span><span>目标</span><span>级别</span><span>消息</span>
+              <span>Time</span><span>Type</span><span>Target</span><span>Severity</span><span>Message</span>
             </div>
             <div v-for="event in audit" :key="event.id" class="row">
               <span>{{ event.created_at }}</span>

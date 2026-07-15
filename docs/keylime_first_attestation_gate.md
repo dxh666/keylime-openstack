@@ -64,6 +64,19 @@ Use a host filter during debugging:
 deploy/scripts/keylime-only-attestation-check.sh --strict --hosts hygon22
 ```
 
+The same one-shot check is also exposed through the FastAPI control plane:
+
+```bash
+curl -fsS http://127.0.0.1:8088/api/keylime/check
+curl -fsS 'http://127.0.0.1:8088/api/keylime/check?hosts=hygon22'
+curl -fsS 'http://127.0.0.1:8088/api/keylime/check?failures_only=true'
+```
+
+The management UI has a dedicated `Keylime` page. It shows the verifier gate,
+per-agent TPM/IMA state, freshness, the active Keylime event, and the first
+remediation hint. This is the preferred daily operator view while OpenStack
+enforcement remains disabled.
+
 Run a stability gate without a shell loop:
 
 ```bash
