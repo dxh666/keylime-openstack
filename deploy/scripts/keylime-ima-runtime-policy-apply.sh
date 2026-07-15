@@ -43,6 +43,7 @@ API_URL="${KEYLIME_OPENSTACK_API_URL:-http://127.0.0.1:8088}"
 API_ENV_FILE="${KEYLIME_OPENSTACK_API_ENV_FILE:-/etc/keylime-openstack/keylime-openstack.env}"
 INCLUDE_BOUND_BOOT="${KEYLIME_RUNTIME_POLICY_INCLUDE_BOUND_BOOT:-true}"
 ADD_IF_MISSING="${KEYLIME_RUNTIME_POLICY_APPLY_ADD_IF_MISSING:-true}"
+REPLACE_ON_CONFLICT="${KEYLIME_RUNTIME_POLICY_APPLY_REPLACE_ON_CONFLICT:-false}"
 
 test -d "$KEYLIME_DIR"
 test -r "$STORE_FILE"
@@ -208,6 +209,7 @@ PY
   )
   update_rc=$?
   add_rc=0
+  delete_rc=0
 
   include_add_if_missing=false
   case "${ADD_IF_MISSING,,}" in
@@ -229,6 +231,39 @@ PY
     fi
   fi
 
+  include_replace_on_conflict=false
+  case "${REPLACE_ON_CONFLICT,,}" in
+    1|true|yes|y|on) include_replace_on_conflict=true ;;
+  esac
+  if [ "$update_rc" -ne 0 ] && [ "$add_rc" -ne 0 ] && [ "$include_replace_on_conflict" = "true" ]; then
+    echo "WARN: runtime update/add failed for $host; replace verifier enrollment with delete + add."
+    (
+      cd "$KEYLIME_DIR"
+      docker compose run --rm keylime-tenant \
+        -c delete \
+        -u "$uuid" \
+        -v "$VERIFIER_IP" \
+        -vp "$VERIFIER_PORT" \
+        -r "$REGISTRAR_IP" \
+        -rp "$REGISTRAR_PORT"
+    )
+    delete_rc=$?
+    if [ "$delete_rc" -eq 0 ]; then
+      (
+        cd "$KEYLIME_DIR"
+        docker compose run --rm \
+          -v "$runtime_policy_dir:/keylime-runtime-policy:ro" \
+          keylime-tenant \
+          -c add \
+          "${tenant_policy_args[@]}"
+      )
+      add_rc=$?
+      if [ "$add_rc" -eq 0 ]; then
+        update_rc=0
+      fi
+    fi
+  fi
+
   reactivate_rc=0
   if [ "$update_rc" -eq 0 ]; then
     (
@@ -245,10 +280,10 @@ PY
   fi
   set -e
 
-  python3 - "$tmp" "$host" "$ip" "$uuid" "$selected_policy_id" "$policy_name" "$runtime_policy_name" "$runtime_policy_path" "$boot_policy_id" "$boot_policy_name" "$bound_boot_policy_included" "$update_rc" "$add_rc" "$reactivate_rc" <<'PY'
+  python3 - "$tmp" "$host" "$ip" "$uuid" "$selected_policy_id" "$policy_name" "$runtime_policy_name" "$runtime_policy_path" "$boot_policy_id" "$boot_policy_name" "$bound_boot_policy_included" "$update_rc" "$add_rc" "$delete_rc" "$reactivate_rc" <<'PY'
 import json
 import sys
-p, host, ip, uuid, policy_id, policy_name, runtime_policy_name, runtime_policy_path, boot_policy_id, boot_policy_name, bound_boot_policy_included, update_rc, add_rc, reactivate_rc = sys.argv[1:]
+p, host, ip, uuid, policy_id, policy_name, runtime_policy_name, runtime_policy_path, boot_policy_id, boot_policy_name, bound_boot_policy_included, update_rc, add_rc, delete_rc, reactivate_rc = sys.argv[1:]
 d = json.load(open(p))
 item = {
     "host": host,
@@ -263,6 +298,7 @@ item = {
     "bound_boot_policy_included": bound_boot_policy_included == "true",
     "update_rc": int(update_rc),
     "add_rc": int(add_rc),
+    "delete_rc": int(delete_rc),
     "reactivate_rc": int(reactivate_rc),
 }
 if int(update_rc) == 0 and int(reactivate_rc) == 0:
