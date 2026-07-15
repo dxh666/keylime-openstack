@@ -9,6 +9,12 @@ Usage:
 Examples:
   keylime-ima-runtime-policy-apply.sh all bound
   keylime-ima-runtime-policy-apply.sh csri8 csri8-runtime-guard
+
+Environment:
+  KEYLIME_RUNTIME_POLICY_APPLY_NAME_MODE=unique|content-hash|stable
+      unique is the default. It avoids Keylime verifier allowlists.name
+      conflicts by giving each verifier apply attempt a unique runtime policy
+      name while keeping the control-plane policy_id stable.
 EOF
 }
 
@@ -44,6 +50,8 @@ API_ENV_FILE="${KEYLIME_OPENSTACK_API_ENV_FILE:-/etc/keylime-openstack/keylime-o
 INCLUDE_BOUND_BOOT="${KEYLIME_RUNTIME_POLICY_INCLUDE_BOUND_BOOT:-true}"
 ADD_IF_MISSING="${KEYLIME_RUNTIME_POLICY_APPLY_ADD_IF_MISSING:-true}"
 REPLACE_ON_CONFLICT="${KEYLIME_RUNTIME_POLICY_APPLY_REPLACE_ON_CONFLICT:-false}"
+APPLY_NAME_MODE="${KEYLIME_RUNTIME_POLICY_APPLY_NAME_MODE:-unique}"
+APPLY_NAME_OVERRIDE="${KEYLIME_RUNTIME_POLICY_APPLY_NAME:-}"
 
 test -d "$KEYLIME_DIR"
 test -r "$STORE_FILE"
@@ -168,9 +176,39 @@ PY
   runtime_policy_dir="$(dirname "$runtime_policy_path")"
   runtime_policy_file="$(basename "$runtime_policy_path")"
   runtime_container_path="/keylime-runtime-policy/$runtime_policy_file"
+  runtime_policy_sha="$(
+    python3 - "$runtime_policy_path" <<'PY'
+import hashlib
+import sys
+print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())
+PY
+  )"
+  runtime_policy_sha_short="${runtime_policy_sha:0:12}"
+  apply_suffix="$(date -u +%Y%m%d%H%M%S)-$$"
+  keylime_runtime_policy_name="$runtime_policy_name"
+  if [ -n "$APPLY_NAME_OVERRIDE" ]; then
+    keylime_runtime_policy_name="$APPLY_NAME_OVERRIDE"
+  else
+    case "${APPLY_NAME_MODE,,}" in
+      unique)
+        keylime_runtime_policy_name="${runtime_policy_name}-${runtime_policy_sha_short}-${apply_suffix}"
+        ;;
+      content-hash)
+        keylime_runtime_policy_name="${runtime_policy_name}-${runtime_policy_sha_short}"
+        ;;
+      stable)
+        keylime_runtime_policy_name="$runtime_policy_name"
+        ;;
+      *)
+        echo "WARN: unknown KEYLIME_RUNTIME_POLICY_APPLY_NAME_MODE=$APPLY_NAME_MODE; using unique" >&2
+        keylime_runtime_policy_name="${runtime_policy_name}-${runtime_policy_sha_short}-${apply_suffix}"
+        ;;
+    esac
+  fi
 
   echo "=== Apply IMA runtime policy to $host ==="
   echo "ip=$ip uuid=$uuid policy_id=$selected_policy_id runtime_policy=$runtime_policy_path"
+  echo "keylime_runtime_policy_name=$keylime_runtime_policy_name"
   boot_tpm_policy_args=()
   bound_boot_policy_included=false
   include_bound_boot=false
@@ -193,7 +231,7 @@ PY
     -r "$REGISTRAR_IP"
     -rp "$REGISTRAR_PORT"
     --agent-api-version "$AGENT_API_VERSION"
-    --runtime-policy-name "$runtime_policy_name"
+    --runtime-policy-name "$keylime_runtime_policy_name"
     --runtime-policy "$runtime_container_path"
     "${boot_tpm_policy_args[@]}"
   )
@@ -280,10 +318,10 @@ PY
   fi
   set -e
 
-  python3 - "$tmp" "$host" "$ip" "$uuid" "$selected_policy_id" "$policy_name" "$runtime_policy_name" "$runtime_policy_path" "$boot_policy_id" "$boot_policy_name" "$bound_boot_policy_included" "$update_rc" "$add_rc" "$delete_rc" "$reactivate_rc" <<'PY'
+  python3 - "$tmp" "$host" "$ip" "$uuid" "$selected_policy_id" "$policy_name" "$runtime_policy_name" "$keylime_runtime_policy_name" "$runtime_policy_path" "$runtime_policy_sha" "$boot_policy_id" "$boot_policy_name" "$bound_boot_policy_included" "$update_rc" "$add_rc" "$delete_rc" "$reactivate_rc" <<'PY'
 import json
 import sys
-p, host, ip, uuid, policy_id, policy_name, runtime_policy_name, runtime_policy_path, boot_policy_id, boot_policy_name, bound_boot_policy_included, update_rc, add_rc, delete_rc, reactivate_rc = sys.argv[1:]
+p, host, ip, uuid, policy_id, policy_name, runtime_policy_name, keylime_runtime_policy_name, runtime_policy_path, runtime_policy_sha, boot_policy_id, boot_policy_name, bound_boot_policy_included, update_rc, add_rc, delete_rc, reactivate_rc = sys.argv[1:]
 d = json.load(open(p))
 item = {
     "host": host,
@@ -292,7 +330,9 @@ item = {
     "policy_id": policy_id,
     "policy_name": policy_name,
     "runtime_policy_name": runtime_policy_name,
+    "keylime_runtime_policy_name": keylime_runtime_policy_name,
     "runtime_policy_path": runtime_policy_path,
+    "runtime_policy_sha256": runtime_policy_sha,
     "bound_boot_policy_id": boot_policy_id,
     "bound_boot_policy_name": boot_policy_name,
     "bound_boot_policy_included": bound_boot_policy_included == "true",

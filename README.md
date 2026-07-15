@@ -289,6 +289,14 @@ deploy/scripts/keylime-ima-runtime-policy-apply.sh
 deploy/scripts/keylime-ima-runtime-policy-generate.sh
 ```
 
+Runtime policy IDs in this project remain stable control-plane identifiers.
+When a policy is applied to Keylime, the actual verifier `allowlists.name` is
+unique by default (`KEYLIME_RUNTIME_POLICY_APPLY_NAME_MODE=unique`) and includes
+the policy content hash plus an apply suffix. This avoids repeated Keylime
+`allowlists.name` conflicts when re-baselining or re-enrolling a node. Use
+`KEYLIME_RUNTIME_POLICY_APPLY_NAME_MODE=content-hash` for deterministic names,
+or `stable` only when intentionally reusing the old verifier name behavior.
+
 `keylime-ima-runtime-policy-generate.sh` captures the live
 `/sys/kernel/security/ima/ascii_runtime_measurements` from one compute host,
 generates a Keylime runtime policy with the deployed tenant image, applies

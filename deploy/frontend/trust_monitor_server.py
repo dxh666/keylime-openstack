@@ -7,6 +7,7 @@ import argparse
 import concurrent.futures
 import copy
 import datetime as dt
+import hashlib
 import json
 import os
 import re
@@ -64,6 +65,8 @@ DEFAULTS = {
     "KEYLIME_RUNTIME_POLICY_REGISTER_AUDIT_FILE": "/var/log/keylime-openstack-runtime-policy-register.json",
     "KEYLIME_RUNTIME_POLICY_APPLY_AUDIT_FILE": "/var/log/keylime-openstack-runtime-policy-apply.json",
     "KEYLIME_RUNTIME_POLICY_INCLUDE_BOUND_BOOT": "true",
+    "KEYLIME_RUNTIME_POLICY_APPLY_NAME": "",
+    "KEYLIME_RUNTIME_POLICY_APPLY_NAME_MODE": "unique",
     "KEYLIME_MEASURED_BOOT_MODE": "alert-only",
     "KEYLIME_RUNTIME_GUARD_PATH": "/opt/keylime-cloud-integrity/cloud-runtime-guard.sh",
 }
@@ -221,6 +224,27 @@ def parse_count(value: Any) -> int | None:
 
 def is_truthy(value: Any) -> bool:
     return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
+def runtime_policy_apply_name(
+    config: dict[str, Any],
+    policy: dict[str, Any],
+    runtime_policy_path: Path,
+) -> tuple[str, str]:
+    base_name = str(policy.get("runtime_policy_name") or policy["id"]).strip()
+    digest = hashlib.sha256(runtime_policy_path.read_bytes()).hexdigest()
+    override = str(config.get("KEYLIME_RUNTIME_POLICY_APPLY_NAME", "")).strip()
+    if override:
+        return override, digest
+
+    mode = str(config.get("KEYLIME_RUNTIME_POLICY_APPLY_NAME_MODE", "unique")).strip().lower()
+    if mode == "stable":
+        return base_name, digest
+    if mode == "content-hash":
+        return f"{base_name}-{digest[:12]}", digest
+
+    suffix = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d%H%M%S%f")
+    return f"{base_name}-{digest[:12]}-{suffix}-{os.getpid()}", digest
 
 
 def pick_running_vms(row: dict[str, Any]) -> int | None:
@@ -1735,6 +1759,8 @@ def apply_policy(config: dict[str, Any], payload: dict[str, Any]) -> dict[str, A
     tpm_policy_json = ""
     runtime_policy_path: Path | None = None
     runtime_container_path = ""
+    runtime_policy_sha256 = ""
+    keylime_runtime_policy_name = ""
     runtime_volumes: list[tuple[str, str, str]] = []
     if module_key == "runtime":
         runtime_policy_path = Path(str(policy.get("runtime_policy_path", "")))
@@ -1742,6 +1768,11 @@ def apply_policy(config: dict[str, Any], payload: dict[str, Any]) -> dict[str, A
             raise ApiError(HTTPStatus.BAD_REQUEST, f"runtime policy 文件不可读: {runtime_policy_path}")
         runtime_container_path = f"/keylime-runtime-policy/{runtime_policy_path.name}"
         runtime_volumes = [(str(runtime_policy_path.parent), "/keylime-runtime-policy", "ro")]
+        keylime_runtime_policy_name, runtime_policy_sha256 = runtime_policy_apply_name(
+            config,
+            policy,
+            runtime_policy_path,
+        )
     else:
         tpm_policy = build_tpm_policy(policy.get("pcrs", {}))
         # Keylime tenant accepts PCR numbers as policy keys; mask is kept for local display only.
@@ -1811,7 +1842,7 @@ def apply_policy(config: dict[str, Any], payload: dict[str, Any]) -> dict[str, A
                         bound_boot_policy_included = True
             policy_args.extend(
                 [
-                    "--runtime-policy-name", str(policy.get("runtime_policy_name") or policy["id"]),
+                    "--runtime-policy-name", keylime_runtime_policy_name,
                     "--runtime-policy", runtime_container_path,
                 ]
             )
@@ -1865,7 +1896,9 @@ def apply_policy(config: dict[str, Any], payload: dict[str, Any]) -> dict[str, A
             "bound_boot_policy_included": bound_boot_policy_included,
             "bound_boot_tpm_policy": bound_boot_tpm_policy,
             "runtime_policy_name": policy.get("runtime_policy_name", ""),
+            "keylime_runtime_policy_name": keylime_runtime_policy_name,
             "runtime_policy_path": str(runtime_policy_path or ""),
+            "runtime_policy_sha256": runtime_policy_sha256,
             "status": "success" if success else "failed",
             "applied_at_utc": utc_now(),
             "update_rc": update_result["rc"],
