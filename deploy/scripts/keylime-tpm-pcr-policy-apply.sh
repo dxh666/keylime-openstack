@@ -22,7 +22,9 @@ VERIFIER_PORT="${KEYLIME_VERIFIER_PORT:-8881}"
 REGISTRAR_IP="${KEYLIME_REGISTRAR_IP:-172.31.100.10}"
 REGISTRAR_PORT="${KEYLIME_REGISTRAR_PORT:-8891}"
 RUN_SYNC="${KEYLIME_POLICY_APPLY_SYNC_NOW:-true}"
-SYNC_MODE="${KEYLIME_POLICY_APPLY_SYNC_MODE:-control-loop}"
+SYNC_MODE="${KEYLIME_POLICY_APPLY_SYNC_MODE:-api}"
+API_URL="${KEYLIME_OPENSTACK_API_URL:-http://127.0.0.1:8088}"
+API_ENV_FILE="${KEYLIME_OPENSTACK_API_ENV_FILE:-/etc/keylime-openstack/keylime-openstack.env}"
 ADD_IF_MISSING="${KEYLIME_POLICY_APPLY_ADD_IF_MISSING:-true}"
 
 test -d "$KEYLIME_DIR"
@@ -120,7 +122,11 @@ PY
   )
   update_rc=$?
 
-  if [ "$update_rc" -ne 0 ] && [ "$ADD_IF_MISSING" = "true" ]; then
+  include_add_if_missing=false
+  case "${ADD_IF_MISSING,,}" in
+    1|true|yes|y|on) include_add_if_missing=true ;;
+  esac
+  if [ "$update_rc" -ne 0 ] && [ "$include_add_if_missing" = "true" ]; then
     echo "WARN: update failed for $host rc=$update_rc; try tenant add for first-time verifier enrollment."
     (
       cd "$KEYLIME_DIR"
@@ -195,11 +201,31 @@ python3 -m json.tool "$AUDIT_FILE"
 
 if [ "$RUN_SYNC" = "true" ]; then
   echo "=== Force trust sync after policy apply ==="
-  if [ "$SYNC_MODE" = "control-loop" ]; then
-    systemctl start keylime-openstack-sync.service || true
-  else
-    "${KEYLIME_OPENSTACK_SYNC_DIR:-/opt/keylime-openstack-sync}/keylime-placement-sync.sh" || true
-  fi
+  case "$SYNC_MODE" in
+    api|fastapi)
+      admin_token="${ADMIN_TOKEN:-}"
+      if [ -z "$admin_token" ] && [ -r "$API_ENV_FILE" ]; then
+        admin_token="$(grep '^ADMIN_TOKEN=' "$API_ENV_FILE" | cut -d= -f2- || true)"
+      fi
+      if [ -n "$admin_token" ] && command -v curl >/dev/null 2>&1; then
+        curl -fsS -X POST -H "X-Admin-Token: $admin_token" "$API_URL/api/tasks/sync" || true
+      else
+        echo "WARN: cannot call FastAPI sync; set ADMIN_TOKEN or KEYLIME_OPENSTACK_API_ENV_FILE." >&2
+      fi
+      ;;
+    control-loop)
+      systemctl start keylime-openstack-sync.service || true
+      ;;
+    script)
+      "${KEYLIME_OPENSTACK_SYNC_DIR:-/opt/keylime-openstack-sync}/keylime-placement-sync.sh" || true
+      ;;
+    none|false|off|0)
+      echo "sync_skipped=true"
+      ;;
+    *)
+      echo "WARN: unknown KEYLIME_POLICY_APPLY_SYNC_MODE=$SYNC_MODE" >&2
+      ;;
+  esac
 fi
 
 failed_count="$(python3 - "$AUDIT_FILE" <<'PY'
