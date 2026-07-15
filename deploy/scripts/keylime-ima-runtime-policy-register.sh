@@ -15,7 +15,16 @@ the Keylime runtime policy tooling for your version, then register and bind it h
 EOF
 }
 
-ENV_FILE="${KEYLIME_OPENSTACK_ENV_FILE:-/etc/keylime-openstack-sync/openstack-keylime-lab.env}"
+DEFAULT_ENV_FILE="/etc/keylime-openstack/keylime-openstack.env"
+LEGACY_ENV_FILE="/etc/keylime-openstack-sync/openstack-keylime-lab.env"
+ENV_FILE="${KEYLIME_OPENSTACK_ENV_FILE:-}"
+if [ -z "$ENV_FILE" ]; then
+  if [ -r "$DEFAULT_ENV_FILE" ]; then
+    ENV_FILE="$DEFAULT_ENV_FILE"
+  else
+    ENV_FILE="$LEGACY_ENV_FILE"
+  fi
+fi
 [ -r "$ENV_FILE" ] && source "$ENV_FILE"
 
 TARGET="${1:-}"

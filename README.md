@@ -287,6 +287,7 @@ The repository intentionally does not synthesize Keylime runtime policy JSON by 
 deploy/scripts/keylime-ima-runtime-policy-register.sh
 deploy/scripts/keylime-ima-runtime-policy-apply.sh
 deploy/scripts/keylime-ima-runtime-policy-generate.sh
+deploy/scripts/keylime-ima-runtime-policy-refresh.sh
 ```
 
 Runtime policy IDs in this project remain stable control-plane identifiers.
@@ -302,6 +303,10 @@ or `stable` only when intentionally reusing the old verifier name behavior.
 generates a Keylime runtime policy with the deployed tenant image, applies
 default Docker transient-file excludes, and registers the generated policy for
 the target host.
+
+For normal operations, use `keylime-ima-runtime-policy-refresh.sh <host>`; it
+wraps generate, register, apply, bound PCR policy inclusion, and the configured
+post-apply sync path.
 
 The 2026-07-11 hygon22 recovery validated the full PCR7 + PCR10/IMA path for
 csri8, csri9, and hygon22. See
@@ -332,9 +337,15 @@ deploy/scripts/keylime-openstack-trusted-flavor-setup.sh
 Control-plane installation and health checking:
 
 ```text
+deploy/scripts/keylime-openstack-compose-deploy.sh
 deploy/scripts/keylime-openstack-control-plane-install.sh
 deploy/scripts/keylime-openstack-capability-check.sh
 ```
+
+Use `keylime-openstack-compose-deploy.sh deploy` for the new
+FastAPI/PostgreSQL trust plane. The older
+`keylime-openstack-control-plane-install.sh` remains for the shell/systemd lab
+control plane and should not be used as the primary production-path installer.
 
 ## Important Security Notes
 

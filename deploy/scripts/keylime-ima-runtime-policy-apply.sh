@@ -18,7 +18,16 @@ Environment:
 EOF
 }
 
-ENV_FILE="${KEYLIME_OPENSTACK_ENV_FILE:-/etc/keylime-openstack-sync/openstack-keylime-lab.env}"
+DEFAULT_ENV_FILE="/etc/keylime-openstack/keylime-openstack.env"
+LEGACY_ENV_FILE="/etc/keylime-openstack-sync/openstack-keylime-lab.env"
+ENV_FILE="${KEYLIME_OPENSTACK_ENV_FILE:-}"
+if [ -z "$ENV_FILE" ]; then
+  if [ -r "$DEFAULT_ENV_FILE" ]; then
+    ENV_FILE="$DEFAULT_ENV_FILE"
+  else
+    ENV_FILE="$LEGACY_ENV_FILE"
+  fi
+fi
 OPENRC="${OPENRC:-/etc/kolla/admin-openrc.sh}"
 
 [ -r "$ENV_FILE" ] && source "$ENV_FILE"
@@ -32,7 +41,7 @@ if [ "$TARGET" = "-h" ] || [ "$TARGET" = "--help" ]; then
   exit 0
 fi
 
-KEYLIME_DIR="${KEYLIME_DIR:-/opt/keylime-docker}"
+KEYLIME_DIR="${KEYLIME_DIR:-${KEYLIME_DOCKER_DIR:-/opt/keylime-docker}}"
 STATE_DIR="${KEYLIME_OPENSTACK_STATE_DIR:-/var/lib/keylime-openstack-sync}"
 STORE_FILE="${KEYLIME_PCR_POLICY_FILE:-$STATE_DIR/tpm-pcr-policies.json}"
 AUDIT_FILE="${KEYLIME_RUNTIME_POLICY_APPLY_AUDIT_FILE:-/var/log/keylime-openstack-runtime-policy-apply.json}"

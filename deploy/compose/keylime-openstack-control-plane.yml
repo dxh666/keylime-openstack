@@ -4,7 +4,7 @@ services:
     container_name: keylime_openstack_postgres
     restart: unless-stopped
     env_file:
-      - /etc/keylime-openstack/keylime-openstack.env
+      - ${KEYLIME_OPENSTACK_ENV_FILE:-/etc/keylime-openstack/keylime-openstack.env}
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-keylime_openstack}
       POSTGRES_USER: ${POSTGRES_USER:-keylime_openstack}
@@ -35,7 +35,7 @@ services:
       postgres:
         condition: service_healthy
     env_file:
-      - /etc/keylime-openstack/keylime-openstack.env
+      - ${KEYLIME_OPENSTACK_ENV_FILE:-/etc/keylime-openstack/keylime-openstack.env}
     ports:
       - "8088:8088"
     volumes:
@@ -54,7 +54,7 @@ services:
       api:
         condition: service_started
     env_file:
-      - /etc/keylime-openstack/keylime-openstack.env
+      - ${KEYLIME_OPENSTACK_ENV_FILE:-/etc/keylime-openstack/keylime-openstack.env}
     command: ["sh", "-c", "exec \"$PYTHON_BIN\" -m keylime_openstack.worker"]
     volumes:
       - /etc/kolla:/etc/kolla:ro

@@ -22,7 +22,16 @@ paths:
 EOF
 }
 
-ENV_FILE="${KEYLIME_OPENSTACK_ENV_FILE:-/etc/keylime-openstack-sync/openstack-keylime-lab.env}"
+DEFAULT_ENV_FILE="/etc/keylime-openstack/keylime-openstack.env"
+LEGACY_ENV_FILE="/etc/keylime-openstack-sync/openstack-keylime-lab.env"
+ENV_FILE="${KEYLIME_OPENSTACK_ENV_FILE:-}"
+if [ -z "$ENV_FILE" ]; then
+  if [ -r "$DEFAULT_ENV_FILE" ]; then
+    ENV_FILE="$DEFAULT_ENV_FILE"
+  else
+    ENV_FILE="$LEGACY_ENV_FILE"
+  fi
+fi
 [ -r "$ENV_FILE" ] && source "$ENV_FILE"
 
 HOST="${1:-}"
@@ -37,7 +46,7 @@ if [ "$HOST" = "-h" ] || [ "$HOST" = "--help" ] || [ -z "$HOST" ]; then
   exit 0
 fi
 
-KEYLIME_DIR="${KEYLIME_DIR:-/opt/keylime-docker}"
+KEYLIME_DIR="${KEYLIME_DIR:-${KEYLIME_DOCKER_DIR:-/opt/keylime-docker}}"
 STATE_DIR="${KEYLIME_OPENSTACK_STATE_DIR:-/var/lib/keylime-openstack-sync}"
 POLICY_BASE="${KEYLIME_POLICY_BASE_DIR:-$STATE_DIR/policies}"
 RUNTIME_DIR="$POLICY_BASE/runtime"

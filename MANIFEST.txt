@@ -46,10 +46,12 @@ deploy\scripts\keylime-host-integrity-probe.py
 deploy\scripts\keylime-ima-runtime-evidence-audit.sh
 deploy\scripts\keylime-ima-runtime-policy-apply.sh
 deploy\scripts\keylime-ima-runtime-policy-generate.sh
+deploy\scripts\keylime-ima-runtime-policy-refresh.sh
 deploy\scripts\keylime-ima-runtime-policy-register.sh
 deploy\scripts\keylime-nova-compute-quarantine.sh
 deploy\scripts\keylime-node-evm-appraisal.sh
 deploy\scripts\keylime-openstack-capability-check.sh
+deploy\scripts\keylime-openstack-compose-deploy.sh
 deploy\scripts\keylime-openstack-control-plane-install.sh
 deploy\scripts\keylime-openstackctl
 deploy\scripts\keylime-openstack-trusted-flavor-setup.sh

@@ -181,7 +181,34 @@ INSTALL_OS_TOOLS=true
 That option requires the container build environment to reach the Debian apt
 repositories or a configured apt mirror.
 
-## Build and initialize
+## Deploy the control plane
+
+Use the deployment helper for normal installs and redeploys:
+
+```bash
+cd /opt/keylime-openstack
+
+deploy/scripts/keylime-openstack-compose-deploy.sh deploy
+```
+
+The helper prepares required directories, creates
+`/etc/keylime-openstack/keylime-openstack.env` when missing, fills placeholder
+`POSTGRES_PASSWORD` and `ADMIN_TOKEN` values, builds the API image, starts
+PostgreSQL, runs Alembic migrations, bootstraps the default inventory, starts
+API/worker, and runs health checks.
+
+Common subcommands:
+
+```bash
+deploy/scripts/keylime-openstack-compose-deploy.sh build
+deploy/scripts/keylime-openstack-compose-deploy.sh migrate
+deploy/scripts/keylime-openstack-compose-deploy.sh bootstrap
+deploy/scripts/keylime-openstack-compose-deploy.sh up
+deploy/scripts/keylime-openstack-compose-deploy.sh health
+deploy/scripts/keylime-openstack-compose-deploy.sh down
+```
+
+The expanded manual form is:
 
 ```bash
 cd /opt/keylime-openstack
@@ -248,6 +275,30 @@ Or use the helper container:
 
 ```bash
 /opt/keylime-openstack/deploy/scripts/keylime-openstackctl sync
+```
+
+## Refresh IMA Runtime Policy
+
+When a compute node has a legitimate baseline change, use the refresh helper
+instead of manually exporting agent maps and running generate/register/apply
+one by one:
+
+```bash
+cd /opt/keylime-openstack
+
+deploy/scripts/keylime-ima-runtime-policy-refresh.sh hygon22
+```
+
+The helper reads `/etc/keylime-openstack/keylime-openstack.env` by default,
+generates a policy from the live IMA measurement list, registers it in the
+policy store, applies it to Keylime with the node's bound PCR policy, and runs
+the configured post-apply sync path. The lower-level scripts remain available
+for debugging:
+
+```text
+deploy/scripts/keylime-ima-runtime-policy-generate.sh
+deploy/scripts/keylime-ima-runtime-policy-register.sh
+deploy/scripts/keylime-ima-runtime-policy-apply.sh
 ```
 
 ## Optional Host Integrity Probe
