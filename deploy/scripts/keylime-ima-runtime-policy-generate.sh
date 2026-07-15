@@ -67,12 +67,15 @@ fi
 
 mkdir -p "$RUNTIME_DIR" "$EVIDENCE_DIR"
 
-if [ ! -e "$EXCLUDE_FILE" ]; then
-  cat > "$EXCLUDE_FILE" <<'EOF'
-^/var/lib/docker/containers/[0-9a-f]+/\.tmp-config\.v2\.json.*$
-^/var/lib/docker/containers/[0-9a-f]+/\.tmp-hostconfig\.json.*$
-EOF
-fi
+touch "$EXCLUDE_FILE"
+ensure_exclude_rule() {
+  local rule="$1"
+  grep -Fxq "$rule" "$EXCLUDE_FILE" || printf '%s\n' "$rule" >> "$EXCLUDE_FILE"
+}
+ensure_exclude_rule '^/var/lib/docker/containers/[0-9a-f]+/\.tmp-config\.v2\.json.*$'
+ensure_exclude_rule '^/var/lib/docker/containers/[0-9a-f]+/\.tmp-hostconfig\.json.*$'
+ensure_exclude_rule '^/tmp/tmp[A-Za-z0-9._-]+$'
+ensure_exclude_rule '^/var/log/journal/[0-9a-f]+/.*\.journal$'
 if [ -n "$EXTRA_EXCLUDES" ]; then
   printf '%s\n' "$EXTRA_EXCLUDES" >> "$EXCLUDE_FILE"
 fi
