@@ -86,6 +86,7 @@ def overview(
             "openstack_enforcement_enabled": settings.openstack_enforcement_enabled,
         },
         traits=DEFAULT_TRUST_TRAITS,
+        trust_policy_mode=settings.normalized_trust_policy_mode,
     )
 
 

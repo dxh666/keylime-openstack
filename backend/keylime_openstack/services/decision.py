@@ -51,7 +51,9 @@ def evaluate_trust(
     boot_trusted = bool(boot and boot.status == "pass" and _fresh(boot))
     runtime_keylime = bool(runtime and runtime.status == "pass" and _fresh(runtime))
     evm_trusted = bool(evm and evm.status == "pass" and _fresh(evm))
-    runtime_trusted = runtime_keylime and evm_trusted
+    trust_policy_mode = settings.normalized_trust_policy_mode
+    evm_required = trust_policy_mode == "evm-required"
+    runtime_trusted = runtime_keylime and (evm_trusted if evm_required else True)
 
     service_ok = bool(
         openstack_state
@@ -75,7 +77,7 @@ def evaluate_trust(
         missing.append("boot")
     if not runtime_keylime:
         missing.append("ima")
-    if not evm_trusted:
+    if evm_required and not evm_trusted:
         missing.append("evm")
     if not service_ok:
         missing.append("openstack-service")
@@ -96,6 +98,8 @@ def evaluate_trust(
             "boot_status": boot.status if boot else "missing",
             "runtime_status": runtime.status if runtime else "missing",
             "evm_status": evm.status if evm else "missing",
+            "evm_required": evm_required,
+            "trust_policy_mode": trust_policy_mode,
             "service_status": openstack_state.service_status if openstack_state else "missing",
             "service_state": openstack_state.service_state if openstack_state else "missing",
         },

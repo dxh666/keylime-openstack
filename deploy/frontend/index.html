@@ -72,6 +72,10 @@
           <div class="trait-list">
             <span v-for="trait in overview.traits || []" :key="trait" class="chip">{{ trait }}</span>
           </div>
+          <div class="mode-line">
+            <span>Trust policy mode</span>
+            <strong>{{ overview.trust_policy_mode || '-' }}</strong>
+          </div>
         </section>
 
         <section class="panel">

@@ -116,3 +116,4 @@ class OverviewOut(BaseModel):
     latest_decisions: list[TrustDecisionOut]
     worker: dict[str, Any]
     traits: list[str]
+    trust_policy_mode: str

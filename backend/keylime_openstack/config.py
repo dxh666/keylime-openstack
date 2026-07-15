@@ -55,6 +55,7 @@ class Settings(BaseSettings):
     attestation_fresh_seconds: int = 120
     host_integrity_fresh_seconds: int = 300
     legacy_trait_enabled: bool = True
+    trust_policy_mode: str = "ima-only"
 
     temp_dir: str = "/tmp/keylime-openstack"
 
@@ -74,6 +75,27 @@ class Settings(BaseSettings):
     @property
     def compute_host_list(self) -> list[str]:
         return [item.strip() for item in self.default_compute_hosts.split(",") if item.strip()]
+
+    @property
+    def normalized_trust_policy_mode(self) -> str:
+        """Return the canonical runtime trust mode.
+
+        Unknown values fall back to the stricter EVM-required mode so a typo
+        does not accidentally weaken scheduling decisions.
+        """
+
+        mode = self.trust_policy_mode.strip().lower().replace("_", "-")
+        aliases = {
+            "ima-only": "ima-only",
+            "ima-measurement": "ima-only",
+            "measurement-only": "ima-only",
+            "evm-disabled": "ima-only",
+            "evm-optional": "ima-only",
+            "evm-required": "evm-required",
+            "ima-evm": "evm-required",
+            "strict": "evm-required",
+        }
+        return aliases.get(mode, "evm-required")
 
 
 @lru_cache

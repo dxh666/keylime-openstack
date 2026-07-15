@@ -96,9 +96,15 @@ Keep these defaults for the first dry run:
 
 ```text
 OPENSTACK_ENFORCEMENT_ENABLED=false
+TRUST_POLICY_MODE=ima-only
 DEFAULT_CONTROLLER_HOST=csri10
 DEFAULT_COMPUTE_HOSTS=csri8,csri9,hygon22
 ```
+
+`TRUST_POLICY_MODE=ima-only` means Keylime IMA runtime measurement can mark
+runtime trust without waiting for EVM/appraisal evidence. Use
+`TRUST_POLICY_MODE=evm-required` only after `.ima` / `.evm` keyrings,
+appraisal policy, and signed xattrs are stable on all target compute nodes.
 
 Only set `OPENSTACK_ENFORCEMENT_ENABLED=true` after API access, Keylime
 evidence collection, and Placement trait changes have been verified.
@@ -244,11 +250,15 @@ Or use the helper container:
 /opt/keylime-openstack/deploy/scripts/keylime-openstackctl sync
 ```
 
-## Host Integrity Probe
+## Optional Host Integrity Probe
+
+The current recommended experiment is IMA measurement only. The host-side probe
+below is optional and is intended for the later `evm-required` phase, where the
+control plane must inspect IMA appraisal and EVM signature readiness.
 
 Keylime verifier status does not expose enough EVM/keyring detail in the
 current deployment. Run the host-side probe on each compute node and report the
-result back to the control-plane API:
+result back to the control-plane API when preparing the EVM/appraisal phase:
 
 If the node still reports `evm_status=missing` or `evm_status=fail`, complete
 the staged node-side enablement first:
@@ -320,8 +330,10 @@ Before enabling OpenStack enforcement, verify:
 2. /api/tasks shows successful sync task execution.
 3. /api/audit records Keylime and OpenStack adapter activity.
 4. Placement trait changes are correct in dry-run logs.
-5. Keylime evidence for TPM boot trust, IMA runtime trust, and EVM/keyring trust
-   is present in PostgreSQL.
+5. /api/overview reports the intended trust_policy_mode.
+6. Keylime evidence for TPM boot trust and IMA runtime trust is present in
+   PostgreSQL. EVM/keyring evidence is required only when
+   TRUST_POLICY_MODE=evm-required.
 ```
 
 Then switch:

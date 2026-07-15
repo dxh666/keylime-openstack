@@ -70,7 +70,8 @@ CUSTOM_KEYLIME_BOOT_TRUSTED
   TPM quote, PCR boot policy, and freshness are accepted.
 
 CUSTOM_KEYLIME_RUNTIME_TRUSTED
-  Linux IMA runtime appraisal and EVM/keyring verification are accepted.
+  Linux IMA runtime measurement is accepted by Keylime. When the trust policy
+  mode is `evm-required`, EVM/keyring evidence must also pass.
 
 CUSTOM_KEYLIME_TRUSTED
   boot trusted, runtime trusted, and nova-compute is enabled/up.
@@ -78,6 +79,11 @@ CUSTOM_KEYLIME_TRUSTED
 CUSTOM_KEYLIME_ATTESTED
   legacy compatibility trait for existing flavors and lab workflows.
 ```
+
+The default landing mode is `ima-only`: EVM/appraisal evidence is collected and
+shown when present, but `evm_status=missing` does not block runtime trust. Use
+`TRUST_POLICY_MODE=evm-required` only after IMA appraisal, keyrings, and EVM
+signatures are stable on the compute nodes.
 
 More detailed states such as agent online, quote valid, PCR policy valid, IMA
 valid, and EVM valid are stored in PostgreSQL and shown in the management UI,

@@ -234,6 +234,20 @@ h2 {
   gap: 8px;
 }
 
+.mode-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.mode-line strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
 .chip,
 .pill {
   display: inline-flex;

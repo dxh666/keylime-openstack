@@ -55,6 +55,17 @@ Hygon22 experiment-only kernel route:
 docs/keylime_openstack_hygon22_experimental_kernel.md
 ```
 
+The current recommended experiment mode is IMA measurement first:
+
+```text
+TRUST_POLICY_MODE=ima-only
+```
+
+In this mode, Keylime IMA runtime attestation can drive
+`CUSTOM_KEYLIME_RUNTIME_TRUSTED` without waiting for EVM/appraisal evidence.
+Switch to `TRUST_POLICY_MODE=evm-required` only after node-side keyrings,
+appraisal policy, and EVM signatures are stable.
+
 The main idea is:
 
 ```text
