@@ -44,10 +44,24 @@ class TrustPolicyOut(BaseModel):
     version: int
     status: str
     hash_alg: str
+    content: dict[str, Any]
     protected_paths: list[str]
     excludes: list[str]
     source: dict[str, Any]
     description: str
+
+
+class TrustPolicyIn(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    policy_type: str = Field(default="ima_runtime", max_length=40)
+    version: int = Field(default=1, ge=1)
+    status: str = Field(default="draft", max_length=40)
+    hash_alg: str = Field(default="sha256", max_length=40)
+    content: dict[str, Any] = Field(default_factory=dict)
+    protected_paths: list[str] = Field(default_factory=list)
+    excludes: list[str] = Field(default_factory=list)
+    source: dict[str, Any] = Field(default_factory=dict)
+    description: str = ""
 
 
 class TrustDecisionOut(BaseModel):

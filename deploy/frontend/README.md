@@ -1,49 +1,42 @@
-# Management UI
+# 管理界面
 
-This directory contains the static Vue management UI served by the FastAPI
-container. It does not require a local Node.js build step.
+本目录是 FastAPI 容器直接提供的 Vue 静态页面，不需要 Node.js 构建步骤。
 
-Current views:
-
-```text
-Overview   Trust-plane summary, traits, and latest decisions
-Keylime    Keylime-only attestation gate, TPM boot state, IMA runtime state, freshness, remediation hints
-Nodes      Compute inventory and Keylime agent mapping
-Policies   Database-backed trust policies
-Tasks      Worker and API task runs
-Audit      Trust-plane audit events
-```
-
-The UI calls these backend endpoints:
+当前阶段只保留两个基础页面：
 
 ```text
-GET  /api/overview
-GET  /api/keylime/check
-GET  /api/nodes
-GET  /api/policies
-GET  /api/tasks
-GET  /api/audit
-POST /api/tasks/sync
+节点状态   查看 Keylime 对计算节点的 TPM 启动度量、IMA 运行时度量和证明新鲜度
+策略管理   对数据库中的可信策略记录做新增、查看、编辑、删除
 ```
 
-For the Keylime-first phase keep OpenStack enforcement disabled and use the
-Keylime page as the operator view. It should match:
+当前不在前端暴露复杂功能：
+
+```text
+OpenStack 调度联动
+nova-compute 隔离
+VM 风险标记
+策略下发和绑定
+任务与审计详情
+```
+
+这些能力后续在 Keylime 基本能力稳定后再逐步加入。
+
+主要接口：
+
+```text
+GET    /api/keylime/check
+GET    /api/policies
+POST   /api/policies
+PUT    /api/policies/{policy_id}
+DELETE /api/policies/{policy_id}
+```
+
+策略新增、编辑、删除需要填写 `ADMIN_TOKEN` 对应的管理令牌。
+
+部署后验证：
 
 ```bash
-deploy/scripts/keylime-only-attestation-check.sh --strict
+curl -fsS http://127.0.0.1:8088/api/health
 curl -fsS http://127.0.0.1:8088/api/keylime/check
-```
-
-After changing frontend files, rebuild and restart the API container:
-
-```bash
-docker compose \
-  --env-file /etc/keylime-openstack/keylime-openstack.env \
-  -f deploy/compose/keylime-openstack-control-plane.yml \
-  build api
-
-docker compose \
-  --env-file /etc/keylime-openstack/keylime-openstack.env \
-  -f deploy/compose/keylime-openstack-control-plane.yml \
-  up -d api
+curl -fsS http://127.0.0.1:8088/api/policies
 ```

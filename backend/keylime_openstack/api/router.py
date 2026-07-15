@@ -14,6 +14,7 @@ from keylime_openstack.models import (
     AuditEvent,
     ComputeNode,
     HardwareProfile,
+    PolicyBinding,
     TaskRun,
     TrustDecision,
     TrustPolicy,
@@ -25,6 +26,7 @@ from keylime_openstack.schemas import (
     OverviewOut,
     TaskRunOut,
     TrustDecisionOut,
+    TrustPolicyIn,
     TrustPolicyOut,
 )
 from keylime_openstack.seed import ensure_default_environment
@@ -132,6 +134,80 @@ def policies(session: Session = Depends(db_session)) -> list[TrustPolicyOut]:
     return [TrustPolicyOut.model_validate(item) for item in rows]
 
 
+@router.get("/policies/{policy_id}", response_model=TrustPolicyOut)
+def get_policy(policy_id: int, session: Session = Depends(db_session)) -> TrustPolicyOut:
+    policy = session.get(TrustPolicy, policy_id)
+    if not policy:
+        raise HTTPException(status_code=404, detail=f"unknown policy {policy_id}")
+    return TrustPolicyOut.model_validate(policy)
+
+
+@router.post("/policies", response_model=TrustPolicyOut, dependencies=[Depends(require_admin)])
+def create_policy(policy_in: TrustPolicyIn, session: Session = Depends(db_session)) -> TrustPolicyOut:
+    existing = session.scalars(select(TrustPolicy).where(TrustPolicy.name == policy_in.name)).first()
+    if existing:
+        raise HTTPException(status_code=409, detail=f"policy name already exists: {policy_in.name}")
+    policy = TrustPolicy(**policy_in.model_dump())
+    session.add(policy)
+    session.flush()
+    _record_policy_audit(session, "policy_create", policy, "created trust policy")
+    session.commit()
+    session.refresh(policy)
+    return TrustPolicyOut.model_validate(policy)
+
+
+@router.put("/policies/{policy_id}", response_model=TrustPolicyOut, dependencies=[Depends(require_admin)])
+def update_policy(
+    policy_id: int,
+    policy_in: TrustPolicyIn,
+    session: Session = Depends(db_session),
+) -> TrustPolicyOut:
+    policy = session.get(TrustPolicy, policy_id)
+    if not policy:
+        raise HTTPException(status_code=404, detail=f"unknown policy {policy_id}")
+    duplicate = session.scalars(
+        select(TrustPolicy).where(TrustPolicy.name == policy_in.name, TrustPolicy.id != policy_id)
+    ).first()
+    if duplicate:
+        raise HTTPException(status_code=409, detail=f"policy name already exists: {policy_in.name}")
+    for key, value in policy_in.model_dump().items():
+        setattr(policy, key, value)
+    session.flush()
+    _record_policy_audit(session, "policy_update", policy, "updated trust policy")
+    session.commit()
+    session.refresh(policy)
+    return TrustPolicyOut.model_validate(policy)
+
+
+@router.delete("/policies/{policy_id}", dependencies=[Depends(require_admin)])
+def delete_policy(policy_id: int, session: Session = Depends(db_session)) -> dict[str, object]:
+    policy = session.get(TrustPolicy, policy_id)
+    if not policy:
+        raise HTTPException(status_code=404, detail=f"unknown policy {policy_id}")
+    binding_count = session.scalar(
+        select(func.count()).select_from(PolicyBinding).where(PolicyBinding.policy_id == policy_id)
+    )
+    if binding_count:
+        raise HTTPException(
+            status_code=409,
+            detail="policy has bindings; remove bindings before deleting it",
+        )
+    policy_name = policy.name
+    policy_type = policy.policy_type
+    session.delete(policy)
+    session.add(
+        AuditEvent(
+            event_type="policy_delete",
+            target=policy_name,
+            severity="info",
+            message="deleted trust policy",
+            event_details={"policy_id": policy_id, "policy_type": policy_type},
+        )
+    )
+    session.commit()
+    return {"ok": True, "policy_id": policy_id, "deleted": policy_name}
+
+
 @router.get("/tasks", response_model=list[TaskRunOut])
 def tasks(session: Session = Depends(db_session), limit: int = 50) -> list[TaskRunOut]:
     rows = session.scalars(select(TaskRun).order_by(TaskRun.created_at.desc()).limit(limit)).all()
@@ -211,6 +287,27 @@ def audit(session: Session = Depends(db_session), limit: int = 100) -> list[Audi
 @router.get("/traits")
 def traits() -> dict[str, list[str]]:
     return {"traits": DEFAULT_TRUST_TRAITS}
+
+
+def _record_policy_audit(
+    session: Session,
+    event_type: str,
+    policy: TrustPolicy,
+    message: str,
+) -> None:
+    session.add(
+        AuditEvent(
+            event_type=event_type,
+            target=policy.name,
+            severity="info",
+            message=message,
+            event_details={
+                "policy_id": policy.id,
+                "policy_type": policy.policy_type,
+                "status": policy.status,
+            },
+        )
+    )
 
 
 def _latest_decisions(session: Session, limit: int, node_ids: list[int] | None = None) -> list[TrustDecision]:
