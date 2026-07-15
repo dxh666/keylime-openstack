@@ -30,18 +30,26 @@ integrity: Loading X.509 certificate: /etc/keys/x509_evm.der
 integrity: Problem loading X.509 certificate -126
 ```
 
-For an experiment, build a temporary kernel with:
+For an experiment, build a temporary kernel that trusts the lab public
+certificate by compiling it into the kernel builtin trusted keyring:
 
 ```text
-CONFIG_INTEGRITY_TRUSTED_KEYRING=n
+CONFIG_INTEGRITY_TRUSTED_KEYRING=y
+CONFIG_SYSTEM_TRUSTED_KEYS="certs/keylime-openstack-ima-evm.pem"
 CONFIG_IMA_LOAD_X509=y
 CONFIG_EVM_LOAD_X509=y
 CONFIG_IMA_X509_PATH="/etc/keys/x509_ima.der"
 CONFIG_EVM_X509_PATH="/etc/keys/x509_evm.der"
 ```
 
-This allows the lab self-signed certificate to load for IMA/EVM verification.
-It weakens the kernel integrity trust model and is not the production answer.
+Do not disable `CONFIG_INTEGRITY_TRUSTED_KEYRING`: `CONFIG_IMA_LOAD_X509` and
+`CONFIG_EVM_LOAD_X509` depend on it, so `make olddefconfig` will silently drop
+the boot-time X.509 loading options if the trusted keyring is disabled.
+
+This allows the lab self-signed certificate to load for IMA/EVM verification
+because the same public certificate is already trusted by the kernel. It is
+still an experiment-only shortcut because the lab certificate is self-signed
+and manually compiled into a one-off host kernel.
 
 ## Pre-flight
 
@@ -114,14 +122,28 @@ Inside the kernel source tree:
 ```bash
 cp -a /boot/config-$(uname -r) .config
 
-scripts/config --disable INTEGRITY_TRUSTED_KEYRING
+mkdir -p certs
+openssl x509 \
+  -inform DER \
+  -in /etc/keys/x509_ima.der \
+  -out certs/keylime-openstack-ima-evm.pem
+openssl x509 \
+  -in certs/keylime-openstack-ima-evm.pem \
+  -noout -subject -issuer -fingerprint -sha256
+
+scripts/config --enable INTEGRITY_TRUSTED_KEYRING
+scripts/config --enable INTEGRITY_ASYMMETRIC_KEYS
+scripts/config --enable SYSTEM_TRUSTED_KEYRING
+scripts/config --enable SECONDARY_TRUSTED_KEYRING
+scripts/config --set-str SYSTEM_TRUSTED_KEYS "certs/keylime-openstack-ima-evm.pem"
+scripts/config --set-str SYSTEM_REVOCATION_KEYS ""
 scripts/config --enable IMA_LOAD_X509
 scripts/config --enable EVM_LOAD_X509
 scripts/config --set-str IMA_X509_PATH "/etc/keys/x509_ima.der"
 scripts/config --set-str EVM_X509_PATH "/etc/keys/x509_evm.der"
 
 make olddefconfig
-grep -E 'CONFIG_INTEGRITY_TRUSTED_KEYRING|CONFIG_IMA_LOAD_X509|CONFIG_EVM_LOAD_X509|CONFIG_IMA_X509_PATH|CONFIG_EVM_X509_PATH' .config
+grep -E 'CONFIG_INTEGRITY_TRUSTED_KEYRING|CONFIG_SYSTEM_TRUSTED_KEYS|CONFIG_IMA_LOAD_X509|CONFIG_EVM_LOAD_X509|CONFIG_IMA_X509_PATH|CONFIG_EVM_X509_PATH' .config
 
 make -j"$(nproc)" LOCALVERSION=-keylime-lab
 make modules_install LOCALVERSION=-keylime-lab
@@ -178,8 +200,9 @@ After booting the lab kernel:
 
 ```bash
 uname -r
-grep -E 'CONFIG_INTEGRITY_TRUSTED_KEYRING|CONFIG_IMA_LOAD_X509|CONFIG_EVM_LOAD_X509' /boot/config-$(uname -r)
+grep -E 'CONFIG_INTEGRITY_TRUSTED_KEYRING|CONFIG_SYSTEM_TRUSTED_KEYS|CONFIG_IMA_LOAD_X509|CONFIG_EVM_LOAD_X509' /boot/config-$(uname -r)
 journalctl -k -b --no-pager | grep -Ei 'integrity|ima|evm|x509|/etc/keys' | tail -160
+keyctl list %:.builtin_trusted_keys
 keyctl list %:.ima
 keyctl list %:.evm
 ```
