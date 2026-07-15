@@ -28,7 +28,7 @@ services:
         INSTALL_OS_TOOLS: ${INSTALL_OS_TOOLS:-false}
         PIP_INDEX_URL: ${PIP_INDEX_URL:-}
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
-    image: keylime-openstack-trust-plane:latest
+    image: ${KEYLIME_OPENSTACK_IMAGE:-keylime-openstack-trust-plane:latest}
     container_name: keylime_openstack_api
     restart: unless-stopped
     depends_on:
@@ -45,7 +45,7 @@ services:
       - /tmp/keylime-openstack:/tmp/keylime-openstack:rw
 
   worker:
-    image: keylime-openstack-trust-plane:latest
+    image: ${KEYLIME_OPENSTACK_IMAGE:-keylime-openstack-trust-plane:latest}
     container_name: keylime_openstack_worker
     restart: unless-stopped
     depends_on:
