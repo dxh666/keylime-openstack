@@ -42,6 +42,8 @@ The first hygon22 runtime policy failed for three independent reasons.
    ```text
    /var/lib/docker/containers/<id>/.tmp-config.v2.json<random>
    /var/lib/docker/containers/<id>/.tmp-hostconfig.json<random>
+   /var/lib/docker/containers/<id>/<id>-json.log
+   /var/lib/docker/network/files/local-kv.db
    ```
 
    These files change names and hashes during normal Docker operation. They
@@ -79,6 +81,10 @@ Default entries:
 ```text
 ^/var/lib/docker/containers/[0-9a-f]+/\.tmp-config\.v2\.json.*$
 ^/var/lib/docker/containers/[0-9a-f]+/\.tmp-hostconfig\.json.*$
+^/var/lib/docker/containers/[0-9a-f]+/[0-9a-f]+-json\.log.*$
+^/var/lib/docker/network/files/local-kv\.db$
+^/tmp/tmp[A-Za-z0-9._-]+$
+^/var/log/journal/[0-9a-f]+/.*\.journal$
 ```
 
 Add more host-specific transient path patterns only after confirming the

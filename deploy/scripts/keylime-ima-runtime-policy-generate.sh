@@ -14,9 +14,10 @@ Collects the live IMA ascii_runtime_measurements file from a compute host,
 generates a Keylime runtime policy with the deployed keylime-policy tool, and
 registers/binds the generated policy in the local policy store.
 
-Default dynamic excludes cover Docker transient container config files. Extend
-the exclude file before running if a host has additional expected transient
-paths:
+Default dynamic excludes cover Docker transient container config, Docker local
+network state, container JSON logs, temporary files, and systemd journal files.
+Extend the exclude file before running if a host has additional expected
+transient paths:
 
   /var/lib/keylime-openstack-sync/policies/runtime/<host>-runtime-exclude.txt
 EOF
@@ -83,6 +84,8 @@ ensure_exclude_rule() {
 }
 ensure_exclude_rule '^/var/lib/docker/containers/[0-9a-f]+/\.tmp-config\.v2\.json.*$'
 ensure_exclude_rule '^/var/lib/docker/containers/[0-9a-f]+/\.tmp-hostconfig\.json.*$'
+ensure_exclude_rule '^/var/lib/docker/containers/[0-9a-f]+/[0-9a-f]+-json\.log.*$'
+ensure_exclude_rule '^/var/lib/docker/network/files/local-kv\.db$'
 ensure_exclude_rule '^/tmp/tmp[A-Za-z0-9._-]+$'
 ensure_exclude_rule '^/var/log/journal/[0-9a-f]+/.*\.journal$'
 if [ -n "$EXTRA_EXCLUDES" ]; then
