@@ -15,12 +15,7 @@
       </div>
       <nav class="nav" aria-label="主导航">
         <button :class="{ active: view === 'nodes' }" @click="view = 'nodes'">节点状态</button>
-        <div class="nav-group">
-          <button :class="{ active: view === 'policies' }" @click="view = 'policies'">策略管理</button>
-          <select class="nav-select" v-model="activePolicyType" @change="view = 'policies'">
-            <option v-for="item in policyTypes" :key="item.key" :value="item.key">{{ item.label }}</option>
-          </select>
-        </div>
+        <button :class="{ active: view === 'policies' }" @click="view = 'policies'">策略管理</button>
       </nav>
       <div class="sidebar-footer">
         <span :class="['status-dot', keylime.ok ? 'ok' : 'bad']"></span>
@@ -95,43 +90,27 @@
         <section class="panel">
           <div class="panel-head">
             <div>
-              <h2>{{ currentPolicyType.label }}</h2>
-              <p>当前页面只管理这一类策略记录；策略下发和节点绑定后续再单独加入。</p>
+              <h2>策略管理</h2>
             </div>
             <button class="primary" type="button" @click="openCreatePolicy">新增策略</button>
           </div>
+          <div class="policy-tabs" aria-label="策略类型">
+            <button
+              v-for="item in policyTypes"
+              :key="item.key"
+              type="button"
+              :class="{ active: activePolicyType === item.key }"
+              @click="activePolicyType = item.key"
+            >
+              {{ item.label }}
+            </button>
+          </div>
         </section>
 
         <section class="panel">
           <div class="panel-head compact">
             <div>
-              <h2>生效策略</h2>
-              <p>状态为“生效”的{{ currentPolicyType.label }}。</p>
-            </div>
-          </div>
-          <div class="table policy-table">
-            <div class="row header">
-              <span>策略名称</span><span>版本</span><span>哈希算法</span><span>状态</span><span>操作</span>
-            </div>
-            <div v-for="policy in activePolicies" :key="policy.id" class="row">
-              <span>{{ policy.name }}</span>
-              <span>v{{ policy.version }}</span>
-              <span>{{ policy.hash_alg }}</span>
-              <span><em :class="['pill', statusClass(policy.status)]">{{ statusText(policy.status) }}</em></span>
-              <span class="row-actions">
-                <button type="button" @click="viewPolicy(policy)">查看</button>
-                <button class="danger" type="button" @click="deletePolicy(policy)">删除</button>
-              </span>
-            </div>
-          </div>
-          <p v-if="!activePolicies.length" class="empty">暂无生效策略。</p>
-        </section>
-
-        <section class="panel">
-          <div class="panel-head compact">
-            <div>
-              <h2>策略列表</h2>
-              <p>该类型下的全部策略记录。</p>
+              <h2>{{ currentPolicyType.label }}</h2>
             </div>
           </div>
           <div class="table policy-table">

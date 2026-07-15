@@ -47,13 +47,10 @@ createApp({
       return this.policyTypes.find((item) => item.key === this.activePolicyType) || this.policyTypes[0];
     },
     currentTitle() {
-      return this.view === "nodes" ? "节点状态" : this.currentPolicyType.label;
+      return this.view === "nodes" ? "节点状态" : "策略管理";
     },
     filteredPolicies() {
       return this.policies.filter((policy) => policy.policy_type === this.activePolicyType);
-    },
-    activePolicies() {
-      return this.filteredPolicies.filter((policy) => policy.status === "active");
     }
   },
   mounted() {
@@ -143,10 +140,6 @@ createApp({
       } finally {
         if (showBusy) this.busy = false;
       }
-    },
-    openPolicyType(policyType) {
-      this.view = "policies";
-      this.activePolicyType = policyType;
     },
     openCreatePolicy() {
       this.createForm = emptyPolicyForm(this.activePolicyType);

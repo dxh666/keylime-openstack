@@ -109,11 +109,6 @@ textarea {
   gap: 8px;
 }
 
-.nav-group {
-  display: grid;
-  gap: 8px;
-}
-
 .nav button {
   text-align: left;
   background: transparent;
@@ -124,12 +119,6 @@ textarea {
 .nav button.active {
   background: #1f2a44;
   color: #fff;
-}
-
-.nav-select {
-  border-color: #334155;
-  background: #0f172a;
-  color: #e5e7eb;
 }
 
 .sidebar-footer {
@@ -245,6 +234,24 @@ h2 {
   margin-bottom: 0;
   color: var(--muted);
   font-size: 13px;
+}
+
+.policy-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.policy-tabs button {
+  background: var(--panel-soft);
+}
+
+.policy-tabs button.active {
+  border-color: var(--blue);
+  background: #eef4ff;
+  color: var(--blue);
 }
 
 .trait-list {
