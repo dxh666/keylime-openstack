@@ -145,7 +145,7 @@ def _keylime_node_check(
         "source": status.get("_source") or "unknown",
         "attestation_status": status.get("attestation_status"),
         "operational_state": status.get("operational_state"),
-        "last_event_id": status.get("last_event_id"),
+        "last_event_id": _active_last_event_id(status),
         "has_runtime_policy": _truthy(status.get("has_runtime_policy")),
         "last_received_quote": status.get("last_received_quote"),
         "last_successful_attestation": status.get("last_successful_attestation"),
@@ -172,6 +172,12 @@ def _json_or_value(value: object) -> object:
         return json.loads(value)
     except json.JSONDecodeError:
         return value
+
+
+def _active_last_event_id(status: dict[str, object]) -> object:
+    if str(status.get("attestation_status") or "").upper() == "PASS":
+        return None
+    return status.get("last_event_id")
 
 
 def _record_fresh(valid_until: datetime | None) -> bool:

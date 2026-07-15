@@ -221,6 +221,7 @@ def keylime_status_to_evidence(
     attestation_status = str(status.get("attestation_status") or "").upper()
     operational_state = str(status.get("operational_state") or "unknown")
     last_event_id = str(status.get("last_event_id") or "")
+    active_last_event_id = _active_last_event_id(attestation_status, last_event_id)
     has_runtime_policy = _truthy(status.get("has_runtime_policy"))
     source = str(status.get("_source") or "keylime")
     valid_until = _attestation_valid_until(status, settings, attestation_status)
@@ -250,7 +251,7 @@ def keylime_status_to_evidence(
                 boot_status,
                 source,
                 operational_state,
-                last_event_id,
+                active_last_event_id,
             ),
             payload=payload,
         ),
@@ -265,7 +266,7 @@ def keylime_status_to_evidence(
                 runtime_status,
                 source,
                 operational_state,
-                last_event_id,
+                active_last_event_id,
             ),
             payload=payload,
         ),
@@ -339,6 +340,12 @@ def _truthy(value: Any) -> bool:
     if isinstance(value, int | float):
         return value != 0
     return str(value).strip().lower() in {"1", "true", "yes", "y", "enabled", "pass"}
+
+
+def _active_last_event_id(attestation_status: str, last_event_id: str) -> str:
+    if attestation_status == "PASS":
+        return ""
+    return last_event_id
 
 
 def _evm_status_from_keylime(status: dict[str, Any]) -> tuple[str, str] | None:
