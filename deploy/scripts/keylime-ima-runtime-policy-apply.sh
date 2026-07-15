@@ -18,6 +18,10 @@ Environment:
   KEYLIME_RUNTIME_POLICY_APPLY_SYNC_DELAY_SECONDS=15
       wait before the post-apply sync so Keylime can finish the next
       attestation after tenant update/reactivate.
+  KEYLIME_RUNTIME_POLICY_APPLY_FORCE_REPLACE=false
+      delete the verifier enrollment before adding the runtime policy. Use this
+      when Keylime keeps failing with stale verifier state such as
+      ima.validation.ima-ng.runtime_policy_hash after a normal update.
 EOF
 }
 
@@ -63,6 +67,7 @@ API_ENV_FILE="${KEYLIME_OPENSTACK_API_ENV_FILE:-/etc/keylime-openstack/keylime-o
 INCLUDE_BOUND_BOOT="${KEYLIME_RUNTIME_POLICY_INCLUDE_BOUND_BOOT:-true}"
 ADD_IF_MISSING="${KEYLIME_RUNTIME_POLICY_APPLY_ADD_IF_MISSING:-true}"
 REPLACE_ON_CONFLICT="${KEYLIME_RUNTIME_POLICY_APPLY_REPLACE_ON_CONFLICT:-false}"
+FORCE_REPLACE="${KEYLIME_RUNTIME_POLICY_APPLY_FORCE_REPLACE:-false}"
 APPLY_NAME_MODE="${KEYLIME_RUNTIME_POLICY_APPLY_NAME_MODE:-unique}"
 APPLY_NAME_OVERRIDE="${KEYLIME_RUNTIME_POLICY_APPLY_NAME:-}"
 
@@ -256,45 +261,23 @@ PY
     "${boot_tpm_policy_args[@]}"
   )
 
-  set +e
-  (
-    cd "$KEYLIME_DIR"
-    docker compose run --rm \
-      -v "$runtime_policy_dir:/keylime-runtime-policy:ro" \
-      keylime-tenant \
-      -c update \
-      "${tenant_policy_args[@]}"
-  )
-  update_rc=$?
   add_rc=0
   delete_rc=0
+  update_rc=0
+
+  include_force_replace=false
+  case "${FORCE_REPLACE,,}" in
+    1|true|yes|y|on) include_force_replace=true ;;
+  esac
 
   include_add_if_missing=false
   case "${ADD_IF_MISSING,,}" in
     1|true|yes|y|on) include_add_if_missing=true ;;
   esac
-  if [ "$update_rc" -ne 0 ] && [ "$include_add_if_missing" = "true" ]; then
-    echo "WARN: runtime update failed for $host rc=$update_rc; try tenant add for verifier enrollment."
-    (
-      cd "$KEYLIME_DIR"
-      docker compose run --rm \
-        -v "$runtime_policy_dir:/keylime-runtime-policy:ro" \
-        keylime-tenant \
-        -c add \
-        "${tenant_policy_args[@]}"
-    )
-    add_rc=$?
-    if [ "$add_rc" -eq 0 ]; then
-      update_rc=0
-    fi
-  fi
 
-  include_replace_on_conflict=false
-  case "${REPLACE_ON_CONFLICT,,}" in
-    1|true|yes|y|on) include_replace_on_conflict=true ;;
-  esac
-  if [ "$update_rc" -ne 0 ] && [ "$add_rc" -ne 0 ] && [ "$include_replace_on_conflict" = "true" ]; then
-    echo "WARN: runtime update/add failed for $host; replace verifier enrollment with delete + add."
+  set +e
+  if [ "$include_force_replace" = "true" ]; then
+    echo "force_replace=true; delete verifier enrollment before add"
     (
       cd "$KEYLIME_DIR"
       docker compose run --rm keylime-tenant \
@@ -306,7 +289,36 @@ PY
         -rp "$REGISTRAR_PORT"
     )
     delete_rc=$?
-    if [ "$delete_rc" -eq 0 ]; then
+    if [ "$delete_rc" -ne 0 ]; then
+      echo "WARN: verifier delete returned rc=$delete_rc; continuing with add."
+    fi
+    (
+      cd "$KEYLIME_DIR"
+      docker compose run --rm \
+        -v "$runtime_policy_dir:/keylime-runtime-policy:ro" \
+        keylime-tenant \
+        -c add \
+        "${tenant_policy_args[@]}"
+    )
+    add_rc=$?
+    if [ "$add_rc" -eq 0 ]; then
+      update_rc=0
+    else
+      update_rc=1
+    fi
+  else
+    (
+      cd "$KEYLIME_DIR"
+      docker compose run --rm \
+        -v "$runtime_policy_dir:/keylime-runtime-policy:ro" \
+        keylime-tenant \
+        -c update \
+        "${tenant_policy_args[@]}"
+    )
+    update_rc=$?
+
+    if [ "$update_rc" -ne 0 ] && [ "$include_add_if_missing" = "true" ]; then
+      echo "WARN: runtime update failed for $host rc=$update_rc; try tenant add for verifier enrollment."
       (
         cd "$KEYLIME_DIR"
         docker compose run --rm \
@@ -318,6 +330,39 @@ PY
       add_rc=$?
       if [ "$add_rc" -eq 0 ]; then
         update_rc=0
+      fi
+    fi
+
+    include_replace_on_conflict=false
+    case "${REPLACE_ON_CONFLICT,,}" in
+      1|true|yes|y|on) include_replace_on_conflict=true ;;
+    esac
+    if [ "$update_rc" -ne 0 ] && [ "$add_rc" -ne 0 ] && [ "$include_replace_on_conflict" = "true" ]; then
+      echo "WARN: runtime update/add failed for $host; replace verifier enrollment with delete + add."
+      (
+        cd "$KEYLIME_DIR"
+        docker compose run --rm keylime-tenant \
+          -c delete \
+          -u "$uuid" \
+          -v "$VERIFIER_IP" \
+          -vp "$VERIFIER_PORT" \
+          -r "$REGISTRAR_IP" \
+          -rp "$REGISTRAR_PORT"
+      )
+      delete_rc=$?
+      if [ "$delete_rc" -eq 0 ]; then
+        (
+          cd "$KEYLIME_DIR"
+          docker compose run --rm \
+            -v "$runtime_policy_dir:/keylime-runtime-policy:ro" \
+            keylime-tenant \
+            -c add \
+            "${tenant_policy_args[@]}"
+        )
+        add_rc=$?
+        if [ "$add_rc" -eq 0 ]; then
+          update_rc=0
+        fi
       fi
     fi
   fi
