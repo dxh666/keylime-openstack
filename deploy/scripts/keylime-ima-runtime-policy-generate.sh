@@ -145,7 +145,7 @@ case "${REGISTER_POLICY,,}" in
   1|true|yes|y|on)
     KEYLIME_RUNTIME_POLICY_COPY=false \
     KEYLIME_RUNTIME_EXCLUDES="$(cat "$EXCLUDE_FILE")" \
-      "$REGISTER_SCRIPT" "$HOST" "$RUNTIME_PATH" "$POLICY_ID" "$DISPLAY_NAME"
+      bash "$REGISTER_SCRIPT" "$HOST" "$RUNTIME_PATH" "$POLICY_ID" "$DISPLAY_NAME"
     ;;
   *)
     echo "register_skipped=true"

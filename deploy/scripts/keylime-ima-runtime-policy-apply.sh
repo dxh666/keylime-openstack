@@ -92,10 +92,15 @@ for host in "${hosts[@]}"; do
   mapfile -t policy_lines < <(
     python3 - "$STORE_FILE" "$host" "$POLICY_ID" <<'PY'
 import json
+import re
 import sys
 
 store_path, host, requested_policy_id = sys.argv[1:4]
 store = json.load(open(store_path, encoding="utf-8"))
+
+def slugify(value):
+    slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", value.strip().lower()).strip("-")
+    return slug or "ima-runtime-policy"
 
 def runtime_binding(bindings, host):
     binding = bindings.get(host, {})
@@ -120,6 +125,8 @@ def find_policy(store, policy_id):
 policy_id = requested_policy_id
 if requested_policy_id == "bound":
     policy_id = str(runtime_binding(store.get("bindings", {}), host).get("policy_id", ""))
+else:
+    policy_id = slugify(policy_id)
 
 policy = find_policy(store, policy_id)
 boot_policy_id = str(boot_binding(store.get("bindings", {}), host).get("policy_id", ""))
