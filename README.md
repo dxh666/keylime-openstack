@@ -66,6 +66,13 @@ In this mode, Keylime IMA runtime attestation can drive
 Switch to `TRUST_POLICY_MODE=evm-required` only after node-side keyrings,
 appraisal policy, and EVM signatures are stable.
 
+Before enabling OpenStack enforcement, run the Keylime-only attestation gate:
+
+```text
+docs/keylime_first_attestation_gate.md
+deploy/scripts/keylime-only-attestation-check.sh --strict
+```
+
 The main idea is:
 
 ```text
@@ -340,6 +347,7 @@ Control-plane installation and health checking:
 
 ```text
 deploy/scripts/keylime-openstack-compose-deploy.sh
+deploy/scripts/keylime-only-attestation-check.sh
 deploy/scripts/keylime-openstack-control-plane-install.sh
 deploy/scripts/keylime-openstack-capability-check.sh
 ```

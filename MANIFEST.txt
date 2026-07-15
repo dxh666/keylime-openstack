@@ -50,6 +50,7 @@ deploy\scripts\keylime-ima-runtime-policy-refresh.sh
 deploy\scripts\keylime-ima-runtime-policy-register.sh
 deploy\scripts\keylime-nova-compute-quarantine.sh
 deploy\scripts\keylime-node-evm-appraisal.sh
+deploy\scripts\keylime-only-attestation-check.sh
 deploy\scripts\keylime-openstack-capability-check.sh
 deploy\scripts\keylime-openstack-compose-deploy.sh
 deploy\scripts\keylime-openstack-control-plane-install.sh
@@ -69,6 +70,7 @@ deploy\systemd\keylime-openstack-monitor.service
 deploy\systemd\keylime-openstack-sync.service
 deploy\systemd\keylime-openstack-sync.timer
 docs\keylime_agent_inventory_auto_discovery.md
+docs\keylime_first_attestation_gate.md
 docs\keylime_docker_missing_logging_conf_fix.md
 docs\keylime_docker_phase1_csri9_openstack.md
 docs\keylime_openstack_case10b_pcr_policy_management.md

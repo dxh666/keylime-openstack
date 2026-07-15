@@ -109,6 +109,21 @@ appraisal policy, and signed xattrs are stable on all target compute nodes.
 Only set `OPENSTACK_ENFORCEMENT_ENABLED=true` after API access, Keylime
 evidence collection, and Placement trait changes have been verified.
 
+For the current stage, validate Keylime first and leave OpenStack enforcement
+off:
+
+```bash
+cd /opt/keylime-openstack
+
+deploy/scripts/keylime-only-attestation-check.sh --strict
+```
+
+The detailed Keylime-first gate is documented in:
+
+```text
+docs/keylime_first_attestation_gate.md
+```
+
 ## Restricted-network build notes
 
 If the controller cannot reach Docker Hub, the build can fail before project
