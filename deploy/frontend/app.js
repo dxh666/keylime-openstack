@@ -1,9 +1,14 @@
 const { createApp } = Vue;
 
-const emptyPolicyForm = () => ({
-  id: null,
+const POLICY_TYPES = [
+  { key: "tpm_pcr", label: "TPM 启动策略" },
+  { key: "ima_runtime", label: "IMA 运行时策略" },
+  { key: "evm", label: "EVM 策略" }
+];
+
+const emptyPolicyForm = (policyType = "tpm_pcr") => ({
   name: "",
-  policy_type: "ima_runtime",
+  policy_type: policyType,
   version: 1,
   status: "draft",
   hash_alg: "sha256",
@@ -17,15 +22,15 @@ createApp({
   data() {
     return {
       view: "nodes",
-      views: [
-        { key: "nodes", label: "节点状态" },
-        { key: "policies", label: "策略管理" }
-      ],
+      policyTypes: POLICY_TYPES,
+      activePolicyType: "tpm_pcr",
       busy: false,
       notice: { kind: "", text: "" },
       keylime: {},
       policies: [],
-      policyForm: emptyPolicyForm(),
+      createDialogOpen: false,
+      createForm: emptyPolicyForm(),
+      detailPolicy: null,
       tokenDialog: {
         open: false,
         title: "",
@@ -38,11 +43,17 @@ createApp({
     };
   },
   computed: {
-    currentTitle() {
-      return (this.views.find((item) => item.key === this.view) || {}).label || "节点状态";
+    currentPolicyType() {
+      return this.policyTypes.find((item) => item.key === this.activePolicyType) || this.policyTypes[0];
     },
-    selectedPolicyId() {
-      return this.policyForm.id ? `#${this.policyForm.id}` : "新增";
+    currentTitle() {
+      return this.view === "nodes" ? "节点状态" : this.currentPolicyType.label;
+    },
+    filteredPolicies() {
+      return this.policies.filter((policy) => policy.policy_type === this.activePolicyType);
+    },
+    activePolicies() {
+      return this.filteredPolicies.filter((policy) => policy.status === "active");
     }
   },
   mounted() {
@@ -77,17 +88,22 @@ createApp({
       };
       return names[normalized] || value || "-";
     },
+    statusText(value) {
+      const names = {
+        active: "生效",
+        draft: "草稿",
+        disabled: "停用"
+      };
+      return names[value] || value || "-";
+    },
+    statusClass(value) {
+      if (value === "active") return "ok";
+      if (value === "disabled") return "bad";
+      return "warn";
+    },
     ageText(value) {
       if (value === null || value === undefined) return "-";
       return `${value} 秒`;
-    },
-    policyTypeText(value) {
-      const names = {
-        tpm_pcr: "TPM 启动策略",
-        ima_runtime: "IMA 运行时策略",
-        evm: "EVM 策略"
-      };
-      return names[value] || value || "-";
     },
     headers(token = "") {
       const headers = { "Content-Type": "application/json" };
@@ -128,23 +144,27 @@ createApp({
         if (showBusy) this.busy = false;
       }
     },
-    selectPolicy(policy) {
-      this.policyForm = {
-        id: policy.id,
-        name: policy.name || "",
-        policy_type: policy.policy_type || "ima_runtime",
-        version: policy.version || 1,
-        status: policy.status || "draft",
-        hash_alg: policy.hash_alg || "sha256",
-        description: policy.description || "",
-        contentText: JSON.stringify(policy.content || {}, null, 2),
-        protectedPathsText: (policy.protected_paths || []).join("\n"),
-        excludesText: (policy.excludes || []).join("\n")
-      };
+    openPolicyType(policyType) {
       this.view = "policies";
+      this.activePolicyType = policyType;
     },
-    newPolicy() {
-      this.policyForm = emptyPolicyForm();
+    openCreatePolicy() {
+      this.createForm = emptyPolicyForm(this.activePolicyType);
+      this.createDialogOpen = true;
+      this.$nextTick(() => {
+        const input = document.querySelector(".policy-create-dialog input");
+        if (input) input.focus();
+      });
+    },
+    closeCreatePolicy() {
+      if (this.busy) return;
+      this.createDialogOpen = false;
+    },
+    viewPolicy(policy) {
+      this.detailPolicy = policy;
+    },
+    closePolicyDetail() {
+      this.detailPolicy = null;
     },
     parseLines(text) {
       return String(text || "")
@@ -155,20 +175,22 @@ createApp({
     policyPayload() {
       let content = {};
       try {
-        content = JSON.parse(this.policyForm.contentText || "{}");
+        content = JSON.parse(this.createForm.contentText || "{}");
       } catch (_error) {
         throw new Error("策略内容必须是合法 JSON");
       }
+      const name = this.createForm.name.trim();
+      if (!name) throw new Error("策略名称不能为空");
       return {
-        name: this.policyForm.name.trim(),
-        policy_type: this.policyForm.policy_type,
-        version: Number(this.policyForm.version || 1),
-        status: this.policyForm.status,
-        hash_alg: this.policyForm.hash_alg,
-        description: this.policyForm.description,
+        name,
+        policy_type: this.activePolicyType,
+        version: Number(this.createForm.version || 1),
+        status: this.createForm.status,
+        hash_alg: this.createForm.hash_alg || "sha256",
+        description: this.createForm.description,
         content,
-        protected_paths: this.parseLines(this.policyForm.protectedPathsText),
-        excludes: this.parseLines(this.policyForm.excludesText),
+        protected_paths: this.parseLines(this.createForm.protectedPathsText),
+        excludes: this.parseLines(this.createForm.excludesText),
         source: {}
       };
     },
@@ -210,33 +232,28 @@ createApp({
         this.busy = false;
       }
     },
-    async savePolicy() {
+    createPolicy() {
       try {
         const payload = this.policyPayload();
-        const editing = Boolean(this.policyForm.id);
         this.requireToken({
-          title: editing ? "确认编辑策略" : "确认新增策略",
-          message: editing
-            ? `将保存对策略「${payload.name}」的修改。`
-            : `将创建新策略「${payload.name}」。`,
-          confirmText: editing ? "确认保存" : "确认新增",
+          title: "确认新增策略",
+          message: `将创建${this.currentPolicyType.label}「${payload.name}」。`,
+          confirmText: "确认新增",
           action: async (token) => {
-            const path = editing ? `/api/policies/${this.policyForm.id}` : "/api/policies";
-            const method = editing ? "PUT" : "POST";
-            const saved = await this.requestJson(path, {
-              method,
+            await this.requestJson("/api/policies", {
+              method: "POST",
               body: JSON.stringify(payload)
             }, token);
-            this.showNotice("ok", editing ? "策略已更新" : "策略已创建");
+            this.showNotice("ok", "策略已创建");
+            this.createDialogOpen = false;
             await this.refreshAll(false);
-            this.selectPolicy(saved);
           }
         });
       } catch (error) {
         this.showNotice("bad", error.message);
       }
     },
-    async deletePolicy(policy) {
+    deletePolicy(policy) {
       this.requireToken({
         title: "确认删除策略",
         message: `将删除策略「${policy.name}」。如果策略已经绑定到节点，后端会拒绝删除。`,
@@ -244,10 +261,16 @@ createApp({
         action: async (token) => {
           await this.requestJson(`/api/policies/${policy.id}`, { method: "DELETE" }, token);
           this.showNotice("ok", "策略已删除");
-          if (this.policyForm.id === policy.id) this.newPolicy();
+          if (this.detailPolicy && this.detailPolicy.id === policy.id) this.closePolicyDetail();
           await this.refreshAll(false);
         }
       });
+    },
+    prettyJson(value) {
+      return JSON.stringify(value || {}, null, 2);
+    },
+    listText(items) {
+      return (items || []).length ? items.join("\n") : "-";
     }
   }
 }).mount("#app");

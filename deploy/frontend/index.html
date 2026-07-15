@@ -14,9 +14,13 @@
         <span>Keylime 基础能力</span>
       </div>
       <nav class="nav" aria-label="主导航">
-        <button v-for="item in views" :key="item.key" :class="{ active: view === item.key }" @click="view = item.key">
-          {{ item.label }}
-        </button>
+        <button :class="{ active: view === 'nodes' }" @click="view = 'nodes'">节点状态</button>
+        <div class="nav-group">
+          <button :class="{ active: view === 'policies' }" @click="view = 'policies'">策略管理</button>
+          <select class="nav-select" v-model="activePolicyType" @change="view = 'policies'">
+            <option v-for="item in policyTypes" :key="item.key" :value="item.key">{{ item.label }}</option>
+          </select>
+        </div>
       </nav>
       <div class="sidebar-footer">
         <span :class="['status-dot', keylime.ok ? 'ok' : 'bad']"></span>
@@ -91,88 +95,140 @@
         <section class="panel">
           <div class="panel-head">
             <div>
-              <h2>策略列表</h2>
-              <p>这里只做策略记录的增删改查；策略下发和调度联动后续再逐步加入。</p>
+              <h2>{{ currentPolicyType.label }}</h2>
+              <p>当前页面只管理这一类策略记录；策略下发和节点绑定后续再单独加入。</p>
             </div>
-            <button @click="newPolicy">新增策略</button>
+            <button class="primary" type="button" @click="openCreatePolicy">新增策略</button>
           </div>
-          <div class="table policy-table">
-            <div class="row header">
-              <span>名称</span><span>类型</span><span>版本</span><span>状态</span><span>操作</span>
-            </div>
-            <div v-for="policy in policies" :key="policy.id" class="row">
-              <span>{{ policy.name }}</span>
-              <span>{{ policyTypeText(policy.policy_type) }}</span>
-              <span>v{{ policy.version }}</span>
-              <span><em class="pill warn">{{ policy.status }}</em></span>
-              <span class="row-actions">
-                <button @click="selectPolicy(policy)">编辑</button>
-                <button class="danger" @click="deletePolicy(policy)">删除</button>
-              </span>
-            </div>
-          </div>
-          <p v-if="!policies.length" class="empty">暂无策略。</p>
         </section>
 
         <section class="panel">
-          <div class="panel-head">
+          <div class="panel-head compact">
             <div>
-              <h2>策略编辑：{{ selectedPolicyId }}</h2>
-              <p>保护路径和排除规则每行一条；策略内容使用 JSON。</p>
+              <h2>生效策略</h2>
+              <p>状态为“生效”的{{ currentPolicyType.label }}。</p>
             </div>
           </div>
-          <form class="policy-form" @submit.prevent="savePolicy">
+          <div class="table policy-table">
+            <div class="row header">
+              <span>策略名称</span><span>版本</span><span>哈希算法</span><span>状态</span><span>操作</span>
+            </div>
+            <div v-for="policy in activePolicies" :key="policy.id" class="row">
+              <span>{{ policy.name }}</span>
+              <span>v{{ policy.version }}</span>
+              <span>{{ policy.hash_alg }}</span>
+              <span><em :class="['pill', statusClass(policy.status)]">{{ statusText(policy.status) }}</em></span>
+              <span class="row-actions">
+                <button type="button" @click="viewPolicy(policy)">查看</button>
+                <button class="danger" type="button" @click="deletePolicy(policy)">删除</button>
+              </span>
+            </div>
+          </div>
+          <p v-if="!activePolicies.length" class="empty">暂无生效策略。</p>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head compact">
+            <div>
+              <h2>策略列表</h2>
+              <p>该类型下的全部策略记录。</p>
+            </div>
+          </div>
+          <div class="table policy-table">
+            <div class="row header">
+              <span>策略名称</span><span>版本</span><span>哈希算法</span><span>状态</span><span>操作</span>
+            </div>
+            <div v-for="policy in filteredPolicies" :key="policy.id" class="row">
+              <span>{{ policy.name }}</span>
+              <span>v{{ policy.version }}</span>
+              <span>{{ policy.hash_alg }}</span>
+              <span><em :class="['pill', statusClass(policy.status)]">{{ statusText(policy.status) }}</em></span>
+              <span class="row-actions">
+                <button type="button" @click="viewPolicy(policy)">查看</button>
+                <button class="danger" type="button" @click="deletePolicy(policy)">删除</button>
+              </span>
+            </div>
+          </div>
+          <p v-if="!filteredPolicies.length" class="empty">暂无策略。</p>
+        </section>
+      </section>
+
+      <div v-if="createDialogOpen" class="modal-backdrop" @click.self="closeCreatePolicy">
+        <section class="modal modal-wide policy-create-dialog" role="dialog" aria-modal="true">
+          <h2>新增{{ currentPolicyType.label }}</h2>
+          <form class="policy-form" @submit.prevent="createPolicy">
             <label>
               <span>策略名称</span>
-              <input v-model="policyForm.name" required placeholder="例如 hygon22-ima-runtime">
-            </label>
-            <label>
-              <span>策略类型</span>
-              <select v-model="policyForm.policy_type">
-                <option value="ima_runtime">IMA 运行时策略</option>
-                <option value="tpm_pcr">TPM 启动策略</option>
-                <option value="evm">EVM 策略</option>
-              </select>
-            </label>
-            <label>
-              <span>版本</span>
-              <input v-model.number="policyForm.version" type="number" min="1">
+              <input v-model="createForm.name" required placeholder="例如 hygon22-ima-runtime">
             </label>
             <label>
               <span>状态</span>
-              <select v-model="policyForm.status">
+              <select v-model="createForm.status">
                 <option value="draft">草稿</option>
-                <option value="active">启用</option>
+                <option value="active">生效</option>
                 <option value="disabled">停用</option>
               </select>
             </label>
             <label>
+              <span>版本</span>
+              <input v-model.number="createForm.version" type="number" min="1">
+            </label>
+            <label>
               <span>哈希算法</span>
-              <input v-model="policyForm.hash_alg" placeholder="sha256">
+              <input v-model="createForm.hash_alg" placeholder="sha256">
             </label>
             <label class="wide">
               <span>描述</span>
-              <input v-model="policyForm.description" placeholder="简要说明策略用途">
+              <input v-model="createForm.description" placeholder="简要说明策略用途">
             </label>
             <label class="wide">
               <span>保护路径</span>
-              <textarea v-model="policyForm.protectedPathsText" rows="4" placeholder="/usr/bin/nova-compute"></textarea>
+              <textarea v-model="createForm.protectedPathsText" rows="4" placeholder="/usr/bin/nova-compute"></textarea>
             </label>
             <label class="wide">
               <span>排除规则</span>
-              <textarea v-model="policyForm.excludesText" rows="4" placeholder="^/var/lib/docker/containers/.*"></textarea>
+              <textarea v-model="createForm.excludesText" rows="4" placeholder="^/var/lib/docker/containers/.*"></textarea>
             </label>
             <label class="wide">
               <span>策略内容 JSON</span>
-              <textarea v-model="policyForm.contentText" rows="8" spellcheck="false"></textarea>
+              <textarea v-model="createForm.contentText" rows="8" spellcheck="false"></textarea>
             </label>
             <div class="form-actions">
-              <button type="button" @click="newPolicy">清空</button>
-              <button class="primary" type="submit" :disabled="busy">保存策略</button>
+              <button type="button" :disabled="busy" @click="closeCreatePolicy">取消</button>
+              <button class="primary" type="submit" :disabled="busy">新增策略</button>
             </div>
           </form>
         </section>
-      </section>
+      </div>
+
+      <div v-if="detailPolicy" class="modal-backdrop" @click.self="closePolicyDetail">
+        <section class="modal modal-wide" role="dialog" aria-modal="true">
+          <h2>策略详情</h2>
+          <div class="detail-grid">
+            <div><span>名称</span><strong>{{ detailPolicy.name }}</strong></div>
+            <div><span>类型</span><strong>{{ currentPolicyType.label }}</strong></div>
+            <div><span>版本</span><strong>v{{ detailPolicy.version }}</strong></div>
+            <div><span>状态</span><strong>{{ statusText(detailPolicy.status) }}</strong></div>
+            <div><span>哈希算法</span><strong>{{ detailPolicy.hash_alg }}</strong></div>
+            <div><span>描述</span><strong>{{ detailPolicy.description || '-' }}</strong></div>
+          </div>
+          <section class="detail-block">
+            <h3>保护路径</h3>
+            <pre>{{ listText(detailPolicy.protected_paths) }}</pre>
+          </section>
+          <section class="detail-block">
+            <h3>排除规则</h3>
+            <pre>{{ listText(detailPolicy.excludes) }}</pre>
+          </section>
+          <section class="detail-block">
+            <h3>策略内容</h3>
+            <pre>{{ prettyJson(detailPolicy.content) }}</pre>
+          </section>
+          <div class="modal-actions">
+            <button type="button" @click="closePolicyDetail">关闭</button>
+          </div>
+        </section>
+      </div>
 
       <div v-if="tokenDialog.open" class="modal-backdrop" @click.self="closeTokenDialog">
         <section class="modal token-dialog" role="dialog" aria-modal="true">

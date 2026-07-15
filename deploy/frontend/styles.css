@@ -109,6 +109,11 @@ textarea {
   gap: 8px;
 }
 
+.nav-group {
+  display: grid;
+  gap: 8px;
+}
+
 .nav button {
   text-align: left;
   background: transparent;
@@ -119,6 +124,12 @@ textarea {
 .nav button.active {
   background: #1f2a44;
   color: #fff;
+}
+
+.nav-select {
+  border-color: #334155;
+  background: #0f172a;
+  color: #e5e7eb;
 }
 
 .sidebar-footer {
@@ -226,6 +237,10 @@ h2 {
   margin-bottom: 14px;
 }
 
+.panel-head.compact {
+  margin-bottom: 10px;
+}
+
 .panel-head p {
   margin-bottom: 0;
   color: var(--muted);
@@ -326,7 +341,7 @@ h2 {
 }
 
 .policy-table .row {
-  grid-template-columns: 1.5fr 150px 80px 100px 150px;
+  grid-template-columns: 1.5fr 80px 120px 100px 150px;
 }
 
 .row-actions {
@@ -492,9 +507,20 @@ h2 {
   padding: 20px;
 }
 
+.modal-wide {
+  width: min(760px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+}
+
 .modal h2 {
   margin-bottom: 8px;
   font-size: 18px;
+}
+
+.modal h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
 }
 
 .modal p {
@@ -515,6 +541,51 @@ h2 {
   justify-content: flex-end;
   gap: 10px;
   margin-top: 18px;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.detail-grid div {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.detail-grid span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.detail-grid strong {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+.detail-block {
+  margin-top: 14px;
+}
+
+.detail-block pre {
+  margin: 0;
+  max-height: 240px;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #0f172a;
+  color: #e5e7eb;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 900px) {
