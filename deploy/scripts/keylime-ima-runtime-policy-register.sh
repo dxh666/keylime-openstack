@@ -146,9 +146,11 @@ runtime_dir = Path(policy_base) / "runtime"
 runtime_dir.mkdir(parents=True, exist_ok=True)
 if str(copy_policy).strip().lower() in ("1", "true", "yes", "on"):
     dst_path = runtime_dir / f"{policy_id}.json"
-    shutil.copyfile(src_path, dst_path)
+    if src_path != dst_path.resolve():
+        shutil.copyfile(src_path, dst_path)
 else:
     dst_path = src_path
+digest = hashlib.sha256(dst_path.read_bytes()).hexdigest()
 
 if target == "all":
     hosts = [item.strip() for item in agent_hosts_csv.split(",") if item.strip()]
