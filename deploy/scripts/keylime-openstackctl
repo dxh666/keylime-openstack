@@ -3,9 +3,13 @@ set -euo pipefail
 
 IMAGE="${KEYLIME_OPENSTACK_IMAGE:-keylime-openstack-trust-plane:latest}"
 ENV_FILE="${KEYLIME_OPENSTACK_ENV_FILE:-/etc/keylime-openstack/keylime-openstack.env}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 docker run --rm \
   --env-file "$ENV_FILE" \
+  -e PYTHONPATH=/app/backend \
+  -v "$REPO_ROOT:/app:ro" \
   -v /etc/kolla:/etc/kolla:ro \
   -v /opt/keylime-docker:/opt/keylime-docker:rw \
   -v /var/run/docker.sock:/var/run/docker.sock \
