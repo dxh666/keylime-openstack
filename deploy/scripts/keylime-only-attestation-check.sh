@@ -18,4 +18,4 @@ if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec "$SCRIPT_DIR/keylime-openstackctl" keylime-check "$@"
+exec bash "$SCRIPT_DIR/keylime-openstackctl" keylime-check "$@"
