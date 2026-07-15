@@ -306,7 +306,9 @@ the target host.
 
 For normal operations, use `keylime-ima-runtime-policy-refresh.sh <host>`; it
 wraps generate, register, apply, bound PCR policy inclusion, and the configured
-post-apply sync path.
+post-apply sync path. The apply step waits briefly before syncing because
+Keylime tenant update/reactivate puts the verifier back into a transient
+`PENDING` state until the next quote succeeds.
 
 The 2026-07-11 hygon22 recovery validated the full PCR7 + PCR10/IMA path for
 csri8, csri9, and hygon22. See

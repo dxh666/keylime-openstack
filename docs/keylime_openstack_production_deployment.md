@@ -292,8 +292,10 @@ deploy/scripts/keylime-ima-runtime-policy-refresh.sh hygon22
 The helper reads `/etc/keylime-openstack/keylime-openstack.env` by default,
 generates a policy from the live IMA measurement list, registers it in the
 policy store, applies it to Keylime with the node's bound PCR policy, and runs
-the configured post-apply sync path. The lower-level scripts remain available
-for debugging:
+the configured post-apply sync path. After tenant update/reactivate, the helper
+waits `KEYLIME_RUNTIME_POLICY_APPLY_SYNC_DELAY_SECONDS` seconds before syncing
+so the Keylime verifier can finish the next attestation. The lower-level
+scripts remain available for debugging:
 
 ```text
 deploy/scripts/keylime-ima-runtime-policy-generate.sh

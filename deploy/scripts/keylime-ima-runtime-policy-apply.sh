@@ -15,6 +15,9 @@ Environment:
       unique is the default. It avoids Keylime verifier allowlists.name
       conflicts by giving each verifier apply attempt a unique runtime policy
       name while keeping the control-plane policy_id stable.
+  KEYLIME_RUNTIME_POLICY_APPLY_SYNC_DELAY_SECONDS=15
+      wait before the post-apply sync so Keylime can finish the next
+      attestation after tenant update/reactivate.
 EOF
 }
 
@@ -54,6 +57,7 @@ REGISTRAR_IP="${KEYLIME_REGISTRAR_IP:-172.31.100.10}"
 REGISTRAR_PORT="${KEYLIME_REGISTRAR_PORT:-8891}"
 RUN_SYNC="${KEYLIME_RUNTIME_POLICY_APPLY_SYNC_NOW:-true}"
 SYNC_MODE="${KEYLIME_RUNTIME_POLICY_APPLY_SYNC_MODE:-api}"
+SYNC_DELAY_SECONDS="${KEYLIME_RUNTIME_POLICY_APPLY_SYNC_DELAY_SECONDS:-15}"
 API_URL="${KEYLIME_OPENSTACK_API_URL:-http://127.0.0.1:8088}"
 API_ENV_FILE="${KEYLIME_OPENSTACK_API_ENV_FILE:-/etc/keylime-openstack/keylime-openstack.env}"
 INCLUDE_BOUND_BOOT="${KEYLIME_RUNTIME_POLICY_INCLUDE_BOUND_BOOT:-true}"
@@ -382,7 +386,29 @@ PY
 
 python3 -m json.tool "$AUDIT_FILE"
 
+failed_count="$(python3 - "$AUDIT_FILE" <<'PY'
+import json
+import sys
+d = json.load(open(sys.argv[1]))
+print(len(d.get("failed", [])))
+PY
+)"
+
+if [ "$failed_count" != "0" ]; then
+  echo "ERROR: one or more runtime policy apply actions failed"
+  exit 1
+fi
+
 if [ "$RUN_SYNC" = "true" ]; then
+  case "$SYNC_DELAY_SECONDS" in
+    ""|0|false|off|none)
+      ;;
+    *)
+      echo "wait_before_sync_seconds=$SYNC_DELAY_SECONDS"
+      sleep "$SYNC_DELAY_SECONDS"
+      ;;
+  esac
+
   echo "=== Force trust sync after runtime policy apply ==="
   case "$SYNC_MODE" in
     api|fastapi)
@@ -409,17 +435,4 @@ if [ "$RUN_SYNC" = "true" ]; then
       echo "WARN: unknown KEYLIME_RUNTIME_POLICY_APPLY_SYNC_MODE=$SYNC_MODE" >&2
       ;;
   esac
-fi
-
-failed_count="$(python3 - "$AUDIT_FILE" <<'PY'
-import json
-import sys
-d = json.load(open(sys.argv[1]))
-print(len(d.get("failed", [])))
-PY
-)"
-
-if [ "$failed_count" != "0" ]; then
-  echo "ERROR: one or more runtime policy apply actions failed"
-  exit 1
 fi
