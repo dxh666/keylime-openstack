@@ -29,7 +29,7 @@
         </div>
       </nav>
       <div class="sidebar-footer">
-        <span :class="['status-dot', keylime.ok ? 'ok' : 'bad']"></span>
+        <span :class="['status-dot', keylimeStatusClass]"></span>
         <span>{{ keylime.nodes_trusted || 0 }}/{{ keylime.nodes_total || 0 }} 节点可信</span>
       </div>
     </aside>
@@ -46,9 +46,9 @@
 
       <section v-if="view === 'nodes'" class="screen">
         <div class="summary-grid">
-          <article class="metric" :class="keylime.ok ? 'ok' : 'bad'">
+          <article class="metric" :class="keylimeStatusClass">
             <span>Keylime 验证</span>
-            <strong>{{ gateText(keylime.ok) }}</strong>
+            <strong>{{ keylimeStatusText }}</strong>
           </article>
           <article class="metric ok">
             <span>可信节点</span>

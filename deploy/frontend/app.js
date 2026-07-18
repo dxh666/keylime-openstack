@@ -45,8 +45,10 @@ createApp({
       policyTypes: POLICY_TYPES,
       activePolicyType: "measured_boot",
       busy: false,
+      loading: true,
+      keylimeError: "",
       notice: { kind: "", text: "" },
-      keylime: {},
+      keylime: { ok: null, nodes: [], nodes_total: 0, nodes_trusted: 0 },
       nodes: [],
       policies: [],
       createDialogOpen: false,
@@ -69,6 +71,17 @@ createApp({
     },
     currentTitle() {
       return this.view === "nodes" ? "节点状态" : this.currentPolicyType.label;
+    },
+    keylimeStatusClass() {
+      if (this.keylimeError) return "bad";
+      if (this.keylime.ok === true) return "ok";
+      if (this.keylime.ok === false) return "bad";
+      return "warn";
+    },
+    keylimeStatusText() {
+      if (this.keylimeError) return "接口异常";
+      if (this.loading) return "检查中";
+      return this.gateText(this.keylime.ok);
     },
     policyNamePlaceholder() {
       return this.activePolicyType === "measured_boot"
@@ -102,7 +115,7 @@ createApp({
     },
     gateText(value) {
       if (value === true) return "通过";
-      if (value === false) return "失败";
+      if (value === false) return "未通过";
       return "未知";
     },
     stateText(value) {
@@ -174,6 +187,7 @@ createApp({
     },
     async refreshAll(showBusy = true) {
       if (showBusy) this.busy = true;
+      if (showBusy && this.keylime.ok === null) this.loading = true;
       try {
         const [keylime, nodes, policies] = await Promise.all([
           this.requestJson("/api/keylime/check"),
@@ -181,11 +195,14 @@ createApp({
           this.requestJson("/api/policies")
         ]);
         this.keylime = keylime;
+        this.keylimeError = "";
         this.nodes = nodes.filter((node) => node.role === "compute" && node.enabled);
         this.policies = policies;
       } catch (error) {
+        this.keylimeError = error.message;
         this.showNotice("bad", error.message);
       } finally {
+        this.loading = false;
         if (showBusy) this.busy = false;
       }
     },
@@ -272,6 +289,9 @@ createApp({
     },
     closeTokenDialog() {
       if (this.busy) return;
+      this.resetTokenDialog();
+    },
+    resetTokenDialog() {
       this.tokenDialog.open = false;
       this.tokenDialog.token = "";
       this.tokenDialog.action = null;
@@ -284,7 +304,7 @@ createApp({
       this.busy = true;
       try {
         await action(token);
-        this.closeTokenDialog();
+        this.resetTokenDialog();
       } catch (error) {
         this.showNotice("bad", error.message);
       } finally {
