@@ -121,6 +121,23 @@ textarea {
   color: #fff;
 }
 
+.nav-group {
+  display: grid;
+  gap: 4px;
+  padding-top: 4px;
+}
+
+.nav-group > span {
+  padding: 8px 12px 5px;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.nav button.nav-subitem {
+  padding-left: 28px;
+}
+
 .sidebar-footer {
   margin-top: auto;
   display: flex;
@@ -236,24 +253,6 @@ h2 {
   font-size: 13px;
 }
 
-.policy-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  border-top: 1px solid var(--line);
-  padding-top: 14px;
-}
-
-.policy-tabs button {
-  background: var(--panel-soft);
-}
-
-.policy-tabs button.active {
-  border-color: var(--blue);
-  background: #eef4ff;
-  color: var(--blue);
-}
-
 .trait-list {
   display: flex;
   flex-wrap: wrap;
@@ -323,6 +322,8 @@ h2 {
 
 .table {
   display: grid;
+  min-width: 0;
+  max-width: 100%;
   overflow-x: auto;
 }
 
@@ -348,7 +349,7 @@ h2 {
 }
 
 .policy-table .row {
-  grid-template-columns: 1.5fr 80px 120px 100px 150px;
+  grid-template-columns: minmax(180px, 1.4fr) minmax(220px, 2fr) 130px 150px;
 }
 
 .row-actions {
@@ -485,8 +486,72 @@ h2 {
 }
 
 .policy-form label.wide,
-.form-actions {
+.form-actions,
+.policy-form .wide {
   grid-column: 1 / -1;
+}
+
+.target-selector,
+.pcr-selector {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 12px;
+}
+
+.pcr-selector {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.target-selector legend,
+.pcr-selector legend {
+  padding: 0 5px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.policy-form label.check-option {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 3px 8px;
+  min-height: 54px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--text);
+}
+
+.policy-form label.compact-option {
+  min-height: 42px;
+}
+
+.check-option input,
+.toggle-line input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+.check-option input {
+  grid-row: 1 / 3;
+}
+
+.check-option small {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.policy-form label.toggle-line {
+  display: flex;
+  grid-template-columns: none;
+  flex-direction: row;
+  align-items: center;
+  gap: 9px;
+  color: var(--text);
 }
 
 .form-actions {
@@ -595,6 +660,32 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.binding-list {
+  display: grid;
+  gap: 8px;
+}
+
+.binding-list > div {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) auto;
+  gap: 6px 12px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel-soft);
+}
+
+.binding-list small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.binding-list .error-text {
+  color: var(--red);
+}
+
 @media (max-width: 900px) {
   #app {
     grid-template-columns: 1fr;
@@ -615,6 +706,11 @@ h2 {
   .policy-form {
     grid-template-columns: 1fr;
   }
+
+  .target-selector,
+  .pcr-selector {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 @media (max-width: 560px) {
   .main {
@@ -627,6 +723,48 @@ h2 {
 
   .keylime-grid {
     grid-template-columns: 1fr;
+  }
+
+  .target-selector,
+  .pcr-selector {
+    grid-template-columns: 1fr;
+  }
+
+  .policy-table {
+    overflow: visible;
+  }
+
+  .policy-table .row.header {
+    display: none;
+  }
+
+  .policy-table .row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 7px;
+    min-width: 0;
+    padding: 14px 0;
+  }
+
+  .policy-table .row > span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .policy-table .row > span:nth-child(2),
+  .policy-table .row > span:nth-child(3) {
+    color: var(--muted);
+  }
+
+  .policy-table .row > span:first-child {
+    font-weight: 600;
+  }
+
+  .policy-table .row > span:nth-child(2)::before {
+    content: "节点范围：";
+  }
+
+  .policy-table .row > span:nth-child(3)::before {
+    content: "下发状态：";
   }
 
 }

@@ -186,8 +186,9 @@ is added later.
 Some Kolla images default to a non-root user. The project image switches back
 to root during build so Python package metadata can be written under `/app`.
 
-The image no longer installs operating-system packages by default. If later
-operations require in-container shell tools, set:
+The image no longer installs operating-system packages by default. When the
+base image does not already contain OpenSSH, enable the packages required by
+the Ansible node-policy execution channel:
 
 ```text
 INSTALL_OS_TOOLS=true
@@ -195,6 +196,13 @@ INSTALL_OS_TOOLS=true
 
 That option requires the container build environment to reach the Debian apt
 repositories or a configured apt mirror.
+
+Before creating Measured Boot or IMA policies, complete the dedicated Ansible
+credential setup in:
+
+```text
+docs/keylime_measured_boot_ima_ansible_management.md
+```
 
 ## Deploy the control plane
 

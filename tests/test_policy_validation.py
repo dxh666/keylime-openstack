@@ -1,0 +1,62 @@
+from __future__ import annotations
+
+import pytest
+from fastapi import HTTPException
+
+from keylime_openstack.schemas import TrustPolicyIn
+from keylime_openstack.services.policy import canonical_policy_type, validated_policy_payload
+
+
+def test_legacy_tpm_policy_type_maps_to_measured_boot() -> None:
+    assert canonical_policy_type("tpm_pcr") == "measured_boot"
+
+
+def test_measured_boot_defaults_to_pcr_zero_through_seven() -> None:
+    policy = TrustPolicyIn(
+        name="compute-measured-boot",
+        policy_type="measured_boot",
+        target_node_ids=[3, 1, 3],
+        content={},
+    )
+
+    payload, node_ids, deploy_now = validated_policy_payload(policy)
+
+    assert payload["content"]["pcrs"] == list(range(8))
+    assert payload["content"]["reference_state_mode"] == "collect_from_node"
+    assert node_ids == [1, 3]
+    assert deploy_now is True
+
+
+def test_measured_boot_rejects_accept_all() -> None:
+    policy = TrustPolicyIn(
+        name="unsafe-measured-boot",
+        policy_type="measured_boot",
+        target_node_ids=[1],
+        content={"policy_engine": "accept-all"},
+    )
+
+    with pytest.raises(HTTPException, match="accept-all"):
+        validated_policy_payload(policy)
+
+
+def test_ima_policy_requires_measure_rule() -> None:
+    policy = TrustPolicyIn(
+        name="invalid-ima",
+        policy_type="ima_runtime",
+        target_node_ids=[1],
+        content={"node_ima_policy": "dont_measure fsmagic=0x9fa0"},
+    )
+
+    with pytest.raises(HTTPException, match="measure 规则"):
+        validated_policy_payload(policy)
+
+
+def test_evm_creation_is_disabled() -> None:
+    policy = TrustPolicyIn(
+        name="evm-later",
+        policy_type="evm",
+        target_node_ids=[1],
+    )
+
+    with pytest.raises(HTTPException, match="尚未启用"):
+        validated_policy_payload(policy)

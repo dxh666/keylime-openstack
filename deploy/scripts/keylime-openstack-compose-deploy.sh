@@ -87,6 +87,7 @@ prepare() {
 
   install -d -m 0755 "$(dirname "$ENV_FILE")"
   install -d -m 0755 /etc/keylime-openstack
+  install -d -m 0700 /etc/keylime-openstack/ansible
   install -d -m 0755 /var/lib/keylime-openstack/postgres
   install -d -m 0755 /var/lib/keylime-openstack-sync/policies/runtime
   install -d -m 0755 /tmp/keylime-openstack

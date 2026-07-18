@@ -35,6 +35,21 @@ class ComputeNodeOut(BaseModel):
     hardware_profile: HardwareProfileOut | None = None
 
 
+class PolicyBindingOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    target_type: str
+    target_id: int
+    target_name: str = ""
+    active: bool
+    executor: str
+    application_status: str
+    external_policy_name: str
+    applied_at: datetime | None
+    last_error: str
+
+
 class TrustPolicyOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -49,6 +64,7 @@ class TrustPolicyOut(BaseModel):
     excludes: list[str]
     source: dict[str, Any]
     description: str
+    bindings: list[PolicyBindingOut] = Field(default_factory=list)
 
 
 class TrustPolicyIn(BaseModel):
@@ -62,6 +78,8 @@ class TrustPolicyIn(BaseModel):
     excludes: list[str] = Field(default_factory=list)
     source: dict[str, Any] = Field(default_factory=dict)
     description: str = ""
+    target_node_ids: list[int] = Field(default_factory=list)
+    deploy_now: bool = True
 
 
 class TrustDecisionOut(BaseModel):

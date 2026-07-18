@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -14,7 +14,6 @@ from keylime_openstack.models import (
     AuditEvent,
     ComputeNode,
     HardwareProfile,
-    PolicyBinding,
     TaskRun,
     TrustDecision,
     TrustPolicy,
@@ -32,6 +31,15 @@ from keylime_openstack.schemas import (
 from keylime_openstack.seed import ensure_default_environment
 from keylime_openstack.services.host_integrity import host_integrity_report_to_evidence
 from keylime_openstack.services.keylime_gate import keylime_only_check
+from keylime_openstack.services.keylime import KeylimeClient
+from keylime_openstack.services.policy import (
+    bind_policy_to_nodes,
+    canonical_policy_type,
+    list_policies,
+    load_policy,
+    policy_out,
+    validated_policy_payload,
+)
 from keylime_openstack.services.sync import TrustSyncService
 from keylime_openstack.services.tasks import create_task, mark_failed, mark_running, mark_success
 
@@ -130,70 +138,154 @@ def hardware_profiles(session: Session = Depends(db_session)) -> list[dict[str, 
 
 @router.get("/policies", response_model=list[TrustPolicyOut])
 def policies(session: Session = Depends(db_session)) -> list[TrustPolicyOut]:
-    rows = session.scalars(select(TrustPolicy).order_by(TrustPolicy.policy_type, TrustPolicy.name)).all()
-    return [TrustPolicyOut.model_validate(item) for item in rows]
+    return [policy_out(session, item) for item in list_policies(session)]
 
 
 @router.get("/policies/{policy_id}", response_model=TrustPolicyOut)
 def get_policy(policy_id: int, session: Session = Depends(db_session)) -> TrustPolicyOut:
-    policy = session.get(TrustPolicy, policy_id)
+    policy = load_policy(session, policy_id)
     if not policy:
-        raise HTTPException(status_code=404, detail=f"unknown policy {policy_id}")
-    return TrustPolicyOut.model_validate(policy)
+        raise HTTPException(status_code=404, detail=f"策略不存在：{policy_id}")
+    return policy_out(session, policy)
 
 
 @router.post("/policies", response_model=TrustPolicyOut, dependencies=[Depends(require_admin)])
-def create_policy(policy_in: TrustPolicyIn, session: Session = Depends(db_session)) -> TrustPolicyOut:
-    existing = session.scalars(select(TrustPolicy).where(TrustPolicy.name == policy_in.name)).first()
+def create_policy(
+    policy_in: TrustPolicyIn,
+    session: Session = Depends(db_session),
+) -> TrustPolicyOut:
+    payload, node_ids, deploy_now = validated_policy_payload(policy_in)
+    existing = session.scalars(
+        select(TrustPolicy).where(TrustPolicy.name == payload["name"])
+    ).first()
     if existing:
-        raise HTTPException(status_code=409, detail=f"policy name already exists: {policy_in.name}")
-    policy = TrustPolicy(**policy_in.model_dump())
+        raise HTTPException(status_code=409, detail=f"策略名称已存在：{payload['name']}")
+    policy = TrustPolicy(**payload)
     session.add(policy)
     session.flush()
+    bind_policy_to_nodes(session, policy, node_ids, deploy_now=deploy_now)
+    if deploy_now:
+        create_task(
+            session,
+            "policy_deploy",
+            target=policy.name,
+            requested_by="api",
+            task_args={"policy_id": policy.id},
+        )
     _record_policy_audit(session, "policy_create", policy, "created trust policy")
     session.commit()
-    session.refresh(policy)
-    return TrustPolicyOut.model_validate(policy)
+    policy = load_policy(session, policy.id)
+    assert policy is not None
+    return policy_out(session, policy)
 
 
-@router.put("/policies/{policy_id}", response_model=TrustPolicyOut, dependencies=[Depends(require_admin)])
+@router.put(
+    "/policies/{policy_id}",
+    response_model=TrustPolicyOut,
+    dependencies=[Depends(require_admin)],
+)
 def update_policy(
     policy_id: int,
     policy_in: TrustPolicyIn,
     session: Session = Depends(db_session),
 ) -> TrustPolicyOut:
-    policy = session.get(TrustPolicy, policy_id)
+    policy = load_policy(session, policy_id)
     if not policy:
-        raise HTTPException(status_code=404, detail=f"unknown policy {policy_id}")
+        raise HTTPException(status_code=404, detail=f"策略不存在：{policy_id}")
+    if any(
+        binding.active and binding.application_status == "applied"
+        for binding in policy.bindings
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="已下发策略不能原地修改，请新增一个策略版本进行替换",
+        )
+    payload, node_ids, deploy_now = validated_policy_payload(policy_in)
     duplicate = session.scalars(
-        select(TrustPolicy).where(TrustPolicy.name == policy_in.name, TrustPolicy.id != policy_id)
+        select(TrustPolicy).where(TrustPolicy.name == payload["name"], TrustPolicy.id != policy_id)
     ).first()
     if duplicate:
-        raise HTTPException(status_code=409, detail=f"policy name already exists: {policy_in.name}")
-    for key, value in policy_in.model_dump().items():
+        raise HTTPException(status_code=409, detail=f"策略名称已存在：{payload['name']}")
+    for key, value in payload.items():
         setattr(policy, key, value)
+    for binding in list(policy.bindings):
+        session.delete(binding)
+    session.flush()
+    bind_policy_to_nodes(session, policy, node_ids, deploy_now=deploy_now)
+    if deploy_now:
+        create_task(
+            session,
+            "policy_deploy",
+            target=policy.name,
+            requested_by="api",
+            task_args={"policy_id": policy.id},
+        )
     session.flush()
     _record_policy_audit(session, "policy_update", policy, "updated trust policy")
     session.commit()
-    session.refresh(policy)
-    return TrustPolicyOut.model_validate(policy)
+    policy = load_policy(session, policy.id)
+    assert policy is not None
+    return policy_out(session, policy)
+
+
+@router.post("/policies/{policy_id}/deploy", dependencies=[Depends(require_admin)])
+def deploy_policy(policy_id: int, session: Session = Depends(db_session)) -> dict[str, object]:
+    policy = load_policy(session, policy_id)
+    if not policy:
+        raise HTTPException(status_code=404, detail=f"策略不存在：{policy_id}")
+    if not policy.bindings:
+        raise HTTPException(status_code=409, detail="策略尚未绑定节点")
+    for binding in policy.bindings:
+        binding.application_status = "queued"
+        binding.last_error = ""
+    task = create_task(
+        session,
+        "policy_deploy",
+        target=policy.name,
+        requested_by="api",
+        task_args={"policy_id": policy.id},
+    )
+    _record_policy_audit(session, "policy_deploy_queued", policy, "queued policy deployment")
+    session.commit()
+    return {"ok": True, "policy_id": policy.id, "task_id": task.id}
 
 
 @router.delete("/policies/{policy_id}", dependencies=[Depends(require_admin)])
-def delete_policy(policy_id: int, session: Session = Depends(db_session)) -> dict[str, object]:
-    policy = session.get(TrustPolicy, policy_id)
+def delete_policy(
+    policy_id: int,
+    session: Session = Depends(db_session),
+    settings: Settings = Depends(settings_dep),
+) -> dict[str, object]:
+    policy = load_policy(session, policy_id)
     if not policy:
-        raise HTTPException(status_code=404, detail=f"unknown policy {policy_id}")
-    binding_count = session.scalar(
-        select(func.count()).select_from(PolicyBinding).where(PolicyBinding.policy_id == policy_id)
-    )
-    if binding_count:
+        raise HTTPException(status_code=404, detail=f"策略不存在：{policy_id}")
+    applied = [
+        item
+        for item in policy.bindings
+        if item.active and item.application_status == "applied"
+    ]
+    if applied:
         raise HTTPException(
             status_code=409,
-            detail="policy has bindings; remove bindings before deleting it",
+            detail="已下发策略必须先从节点撤回，才能删除",
         )
+    keylime = KeylimeClient(settings)
+    policy_type = canonical_policy_type(policy.policy_type)
+    for binding in policy.bindings:
+        if not binding.external_policy_name:
+            continue
+        result = keylime.tenant_tool_delete_named_policy(
+            policy_type=policy_type,
+            name=binding.external_policy_name,
+        )
+        if result.get("rc") != 0:
+            detail = result.get("stderr") or result.get("stdout") or "Keylime 删除失败"
+            raise HTTPException(status_code=502, detail=str(detail))
     policy_name = policy.name
     policy_type = policy.policy_type
+    for binding in list(policy.bindings):
+        session.delete(binding)
+    session.flush()
     session.delete(policy)
     session.add(
         AuditEvent(

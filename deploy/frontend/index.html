@@ -15,7 +15,18 @@
       </div>
       <nav class="nav" aria-label="主导航">
         <button :class="{ active: view === 'nodes' }" @click="view = 'nodes'">节点状态</button>
-        <button :class="{ active: view === 'policies' }" @click="view = 'policies'">策略管理</button>
+        <div class="nav-group">
+          <span>策略管理</span>
+          <button
+            v-for="item in policyTypes"
+            :key="item.key"
+            class="nav-subitem"
+            :class="{ active: view === 'policies' && activePolicyType === item.key }"
+            @click="selectPolicyType(item.key)"
+          >
+            {{ item.label }}
+          </button>
+        </div>
       </nav>
       <div class="sidebar-footer">
         <span :class="['status-dot', keylime.ok ? 'ok' : 'bad']"></span>
@@ -57,7 +68,6 @@
           <div class="panel-head">
             <div>
               <h2>计算节点运行状态</h2>
-              <p>当前只展示 Keylime 已验证的 TPM 启动度量和 IMA 运行时度量状态。</p>
             </div>
           </div>
           <div class="node-grid">
@@ -90,38 +100,27 @@
         <section class="panel">
           <div class="panel-head">
             <div>
-              <h2>策略管理</h2>
-            </div>
-            <button class="primary" type="button" @click="openCreatePolicy">新增策略</button>
-          </div>
-          <div class="policy-tabs" aria-label="策略类型">
-            <button
-              v-for="item in policyTypes"
-              :key="item.key"
-              type="button"
-              :class="{ active: activePolicyType === item.key }"
-              @click="activePolicyType = item.key"
-            >
-              {{ item.label }}
-            </button>
-          </div>
-        </section>
-
-        <section class="panel">
-          <div class="panel-head compact">
-            <div>
               <h2>{{ currentPolicyType.label }}</h2>
             </div>
+            <button
+              class="primary"
+              type="button"
+              :disabled="!currentPolicyType.creatable"
+              @click="openCreatePolicy"
+            >
+              新增策略
+            </button>
           </div>
           <div class="table policy-table">
             <div class="row header">
-              <span>策略名称</span><span>版本</span><span>哈希算法</span><span>状态</span><span>操作</span>
+              <span>策略名称</span><span>节点范围</span><span>下发状态</span><span>操作</span>
             </div>
             <div v-for="policy in filteredPolicies" :key="policy.id" class="row">
               <span>{{ policy.name }}</span>
-              <span>v{{ policy.version }}</span>
-              <span>{{ policy.hash_alg }}</span>
-              <span><em :class="['pill', statusClass(policy.status)]">{{ statusText(policy.status) }}</em></span>
+              <span>{{ bindingNames(policy) }}</span>
+              <span>
+                <em :class="['pill', deploymentClass(bindingState(policy))]">{{ bindingStateText(policy) }}</em>
+              </span>
               <span class="row-actions">
                 <button type="button" @click="viewPolicy(policy)">查看</button>
                 <button class="danger" type="button" @click="deletePolicy(policy)">删除</button>
@@ -138,40 +137,49 @@
           <form class="policy-form" @submit.prevent="createPolicy">
             <label>
               <span>策略名称</span>
-              <input v-model="createForm.name" required placeholder="例如 hygon22-ima-runtime">
-            </label>
-            <label>
-              <span>状态</span>
-              <select v-model="createForm.status">
-                <option value="draft">草稿</option>
-                <option value="active">生效</option>
-                <option value="disabled">停用</option>
-              </select>
-            </label>
-            <label>
-              <span>版本</span>
-              <input v-model.number="createForm.version" type="number" min="1">
-            </label>
-            <label>
-              <span>哈希算法</span>
-              <input v-model="createForm.hash_alg" placeholder="sha256">
+              <input v-model="createForm.name" required :placeholder="policyNamePlaceholder">
             </label>
             <label class="wide">
               <span>描述</span>
               <input v-model="createForm.description" placeholder="简要说明策略用途">
             </label>
-            <label class="wide">
-              <span>保护路径</span>
-              <textarea v-model="createForm.protectedPathsText" rows="4" placeholder="/usr/bin/nova-compute"></textarea>
-            </label>
-            <label class="wide">
-              <span>排除规则</span>
-              <textarea v-model="createForm.excludesText" rows="4" placeholder="^/var/lib/docker/containers/.*"></textarea>
-            </label>
-            <label class="wide">
-              <span>策略内容 JSON</span>
-              <textarea v-model="createForm.contentText" rows="8" spellcheck="false"></textarea>
-            </label>
+            <fieldset class="wide target-selector">
+              <legend>目标节点</legend>
+              <label v-for="node in nodes" :key="node.id" class="check-option">
+                <input v-model="createForm.targetNodeIds" type="checkbox" :value="node.id">
+                <span>{{ node.hostname }}</span>
+                <small>{{ node.management_ip || node.keylime_agent_ip }}</small>
+              </label>
+            </fieldset>
+
+            <template v-if="activePolicyType === 'measured_boot'">
+              <fieldset class="wide pcr-selector">
+                <legend>TPM PCR 范围</legend>
+                <label v-for="pcr in [0,1,2,3,4,5,6,7]" :key="pcr" class="check-option compact-option">
+                  <input v-model="createForm.pcrs" type="checkbox" :value="pcr">
+                  <span>PCR {{ pcr }}</span>
+                </label>
+              </fieldset>
+              <label class="wide toggle-line">
+                <input v-model="createForm.secureBootRequired" type="checkbox">
+                <span>要求 Secure Boot 已启用</span>
+              </label>
+            </template>
+
+            <template v-if="activePolicyType === 'ima_runtime'">
+              <label class="wide">
+                <span>节点 IMA 度量策略</span>
+                <textarea v-model="createForm.nodeImaPolicy" rows="12" spellcheck="false"></textarea>
+              </label>
+              <label class="wide">
+                <span>Keylime 排除规则</span>
+                <textarea v-model="createForm.excludesText" rows="7" spellcheck="false"></textarea>
+              </label>
+              <label class="wide toggle-line">
+                <input v-model="createForm.rebootAfterApply" type="checkbox">
+                <span>在维护窗口内自动重启目标节点</span>
+              </label>
+            </template>
             <div class="form-actions">
               <button type="button" :disabled="busy" @click="closeCreatePolicy">取消</button>
               <button class="primary" type="submit" :disabled="busy">新增策略</button>
@@ -192,10 +200,19 @@
             <div><span>描述</span><strong>{{ detailPolicy.description || '-' }}</strong></div>
           </div>
           <section class="detail-block">
-            <h3>保护路径</h3>
-            <pre>{{ listText(detailPolicy.protected_paths) }}</pre>
+            <h3>目标节点</h3>
+            <div class="binding-list">
+              <div v-for="binding in detailPolicy.bindings || []" :key="binding.id">
+                <strong>{{ binding.target_name }}</strong>
+                <span :class="['pill', deploymentClass(binding.application_status)]">
+                  {{ deploymentText(binding.application_status) }}
+                </span>
+                <small>{{ binding.external_policy_name || '-' }}</small>
+                <small v-if="binding.last_error" class="error-text">{{ binding.last_error }}</small>
+              </div>
+            </div>
           </section>
-          <section class="detail-block">
+          <section v-if="detailPolicy.policy_type === 'ima_runtime'" class="detail-block">
             <h3>排除规则</h3>
             <pre>{{ listText(detailPolicy.excludes) }}</pre>
           </section>
@@ -205,6 +222,14 @@
           </section>
           <div class="modal-actions">
             <button type="button" @click="closePolicyDetail">关闭</button>
+            <button
+              v-if="canDeployPolicy(detailPolicy)"
+              class="primary"
+              type="button"
+              @click="deployPolicy(detailPolicy)"
+            >
+              重新下发
+            </button>
           </div>
         </section>
       </div>

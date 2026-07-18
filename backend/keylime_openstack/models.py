@@ -84,6 +84,12 @@ class PolicyBinding(TimestampMixin, Base):
     target_id: Mapped[int] = mapped_column(Integer, index=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     priority: Mapped[int] = mapped_column(Integer, default=100)
+    executor: Mapped[str] = mapped_column(String(40), default="ansible")
+    application_status: Mapped[str] = mapped_column(String(40), default="queued", index=True)
+    external_policy_name: Mapped[str] = mapped_column(String(255), default="")
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str] = mapped_column(Text, default="")
+    rendered_policy: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     binding_details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
     policy: Mapped[TrustPolicy] = relationship(back_populates="bindings")

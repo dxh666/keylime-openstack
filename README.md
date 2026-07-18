@@ -43,6 +43,12 @@ Deployment for the new FastAPI/PostgreSQL control plane:
 docs/keylime_openstack_production_deployment.md
 ```
 
+Measured Boot、IMA 与 Ansible 策略管理：
+
+```text
+docs/keylime_measured_boot_ima_ansible_management.md
+```
+
 Node-side IMA appraisal and EVM enablement:
 
 ```text

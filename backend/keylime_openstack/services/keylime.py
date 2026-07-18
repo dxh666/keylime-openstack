@@ -103,14 +103,18 @@ class KeylimeClient:
         self,
         *,
         agent_uuid: str,
+        agent_ip: str = "",
+        agent_port: int = 9002,
         tpm_policy: dict[str, Any] | None = None,
         runtime_policy: dict[str, Any] | None = None,
+        runtime_policy_name: str = "",
+        measured_boot_policy_name: str = "",
     ) -> dict[str, Any]:
         """Apply a policy using a temporary file only as a tool adapter."""
 
         Path(self.settings.temp_dir).mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=self.settings.temp_dir) as tmp:
-            args = [
+            compose_args = [
                 "docker",
                 "compose",
                 "run",
@@ -124,13 +128,247 @@ class KeylimeClient:
                     encoding="utf-8",
                 )
                 runtime_policy_path = "/keylime-openstack-tmp/runtime-policy.json"
-                args.extend(["-v", f"{tmp}:/keylime-openstack-tmp:ro"])
-            args.extend([self.settings.keylime_tenant_service, "-c", "update", "-u", agent_uuid])
+                compose_args.extend(["-v", f"{tmp}:/keylime-openstack-tmp:ro"])
+            tenant_args = ["-u", agent_uuid]
+            if agent_ip:
+                tenant_args.extend(["-t", agent_ip, "-tp", str(agent_port)])
+            tenant_args.extend(self._tenant_service_endpoints())
             if tpm_policy is not None:
-                args.extend(["--tpm_policy", json.dumps(tpm_policy, separators=(",", ":"))])
+                tenant_args.extend(
+                    ["--tpm_policy", json.dumps(tpm_policy, separators=(",", ":"))]
+                )
+            if runtime_policy_name:
+                tenant_args.extend(["--runtime-policy-name", runtime_policy_name])
             if runtime_policy_path:
-                args.extend(["--runtime-policy", runtime_policy_path])
-            return self._run_tenant_tool(args)
+                tenant_args.extend(["--runtime-policy", runtime_policy_path])
+            if measured_boot_policy_name:
+                tenant_args.extend(["--mb-policy-name", measured_boot_policy_name])
+
+            update = self._run_tenant_tool(
+                [
+                    *compose_args,
+                    self.settings.keylime_tenant_service,
+                    "-c",
+                    "update",
+                    *tenant_args,
+                ]
+            )
+            applied = update
+            operation = "update"
+            if update["rc"] != 0 and agent_ip:
+                applied = self._run_tenant_tool(
+                    [
+                        *compose_args,
+                        self.settings.keylime_tenant_service,
+                        "-c",
+                        "add",
+                        *tenant_args,
+                    ]
+                )
+                operation = "add"
+            if applied["rc"] != 0:
+                return applied
+
+            reactivate = self._run_tenant_tool(
+                [
+                    "docker",
+                    "compose",
+                    "run",
+                    "--rm",
+                    self.settings.keylime_tenant_service,
+                    "-c",
+                    "reactivate",
+                    "-u",
+                    agent_uuid,
+                    *self._tenant_service_endpoints(),
+                ]
+            )
+            if reactivate["rc"] != 0:
+                return reactivate
+            return {
+                "rc": 0,
+                "stdout": "\n".join(
+                    part
+                    for part in [
+                        f"policy operation: {operation}",
+                        applied.get("stdout", ""),
+                        reactivate.get("stdout", ""),
+                    ]
+                    if part
+                ),
+                "stderr": "\n".join(
+                    part
+                    for part in [applied.get("stderr", ""), reactivate.get("stderr", "")]
+                    if part
+                ),
+            }
+
+    def tenant_tool_create_measured_boot_refstate(self, event_log: bytes) -> dict[str, Any]:
+        """Create a Keylime measured boot reference state from a TPM event log."""
+
+        Path(self.settings.temp_dir).mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=self.settings.temp_dir) as tmp:
+            tmp_path = Path(tmp)
+            tmp_path.chmod(0o777)
+            event_path = tmp_path / "binary_bios_measurements"
+            output_path = tmp_path / "measured-boot-refstate.json"
+            event_path.write_bytes(event_log)
+            output_path.touch(mode=0o666)
+            command = [
+                "docker",
+                "compose",
+                "run",
+                "--rm",
+                "-v",
+                f"{tmp}:/keylime-openstack-tmp:rw",
+                "--entrypoint",
+                "create_mb_refstate",
+                self.settings.keylime_tenant_service,
+                "/keylime-openstack-tmp/binary_bios_measurements",
+                "/keylime-openstack-tmp/measured-boot-refstate.json",
+            ]
+            result = self._run_tenant_tool(command)
+            if result["rc"] != 0:
+                raise RuntimeError(result["stderr"] or result["stdout"])
+            return json.loads(output_path.read_text(encoding="utf-8"))
+
+    def tenant_tool_create_runtime_policy(
+        self,
+        measurements: str,
+        excludes: list[str],
+    ) -> dict[str, Any]:
+        """Generate a Keylime runtime policy from one node's IMA measurement list."""
+
+        Path(self.settings.temp_dir).mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=self.settings.temp_dir) as tmp:
+            tmp_path = Path(tmp)
+            tmp_path.chmod(0o777)
+            measurement_path = tmp_path / "ascii_runtime_measurements"
+            excludes_path = tmp_path / "excludes.txt"
+            output_path = tmp_path / "runtime-policy.json"
+            measurement_path.write_text(measurements, encoding="utf-8")
+            excludes_path.write_text("\n".join(excludes) + "\n", encoding="utf-8")
+            output_path.touch(mode=0o666)
+            command = [
+                "docker",
+                "compose",
+                "run",
+                "--rm",
+                "-v",
+                f"{tmp}:/keylime-openstack-tmp:rw",
+                "--entrypoint",
+                "keylime-policy",
+                self.settings.keylime_tenant_service,
+                "create",
+                "runtime",
+                "-m",
+                "/keylime-openstack-tmp/ascii_runtime_measurements",
+                "-e",
+                "/keylime-openstack-tmp/excludes.txt",
+                "-o",
+                "/keylime-openstack-tmp/runtime-policy.json",
+            ]
+            result = self._run_tenant_tool(command)
+            if result["rc"] != 0:
+                raise RuntimeError(result["stderr"] or result["stdout"])
+            return json.loads(output_path.read_text(encoding="utf-8"))
+
+    def tenant_tool_store_measured_boot_policy(
+        self,
+        *,
+        name: str,
+        reference_state: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Create or update a named policy in the Keylime verifier database."""
+
+        Path(self.settings.temp_dir).mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=self.settings.temp_dir) as tmp:
+            policy_path = Path(tmp) / "measured-boot-refstate.json"
+            policy_path.write_text(json.dumps(reference_state), encoding="utf-8")
+            base = [
+                "docker",
+                "compose",
+                "run",
+                "--rm",
+                "-v",
+                f"{tmp}:/keylime-openstack-tmp:ro",
+                self.settings.keylime_tenant_service,
+            ]
+            policy_args = [
+                "--mb-policy-name",
+                name,
+                "--mb-policy",
+                "/keylime-openstack-tmp/measured-boot-refstate.json",
+            ]
+            update = self._run_tenant_tool([*base, "-c", "updatembpolicy", *policy_args])
+            if update["rc"] == 0:
+                return update
+            create = self._run_tenant_tool([*base, "-c", "addmbpolicy", *policy_args])
+            if create["rc"] != 0:
+                detail = create["stderr"] or create["stdout"] or update["stderr"]
+                raise RuntimeError(detail)
+            return create
+
+    def tenant_tool_store_runtime_policy(
+        self,
+        *,
+        name: str,
+        runtime_policy: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Create or update one content-addressed runtime policy by name."""
+
+        Path(self.settings.temp_dir).mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=self.settings.temp_dir) as tmp:
+            policy_path = Path(tmp) / "runtime-policy.json"
+            policy_path.write_text(json.dumps(runtime_policy), encoding="utf-8")
+            base = [
+                "docker",
+                "compose",
+                "run",
+                "--rm",
+                "-v",
+                f"{tmp}:/keylime-openstack-tmp:ro",
+                self.settings.keylime_tenant_service,
+            ]
+            policy_args = [
+                "--runtime-policy-name",
+                name,
+                "--runtime-policy",
+                "/keylime-openstack-tmp/runtime-policy.json",
+            ]
+            update = self._run_tenant_tool([*base, "-c", "updateruntimepolicy", *policy_args])
+            if update["rc"] == 0:
+                return update
+            create = self._run_tenant_tool([*base, "-c", "addruntimepolicy", *policy_args])
+            if create["rc"] != 0:
+                detail = create["stderr"] or create["stdout"] or update["stderr"]
+                raise RuntimeError(detail)
+            return create
+
+    def tenant_tool_delete_named_policy(self, *, policy_type: str, name: str) -> dict[str, Any]:
+        command_name = {
+            "measured_boot": "deletembpolicy",
+            "ima_runtime": "deleteruntimepolicy",
+        }.get(policy_type)
+        option_name = {
+            "measured_boot": "--mb-policy-name",
+            "ima_runtime": "--runtime-policy-name",
+        }.get(policy_type)
+        if not command_name or not option_name:
+            raise RuntimeError(f"named policy deletion is not implemented for {policy_type}")
+        return self._run_tenant_tool(
+            [
+                "docker",
+                "compose",
+                "run",
+                "--rm",
+                self.settings.keylime_tenant_service,
+                "-c",
+                command_name,
+                option_name,
+                name,
+            ]
+        )
 
     def _verifier_agent_urls(self, agent_uuid: str) -> list[str]:
         base = self.settings.keylime_verifier_url.rstrip("/")
@@ -140,6 +378,20 @@ class KeylimeClient:
             https_base = urlunsplit(("https", parts.netloc, parts.path.rstrip("/"), "", ""))
             urls.append(f"{https_base}/v2.5/agents/{agent_uuid}")
         return urls
+
+    def _tenant_service_endpoints(self) -> list[str]:
+        verifier = urlsplit(self.settings.keylime_verifier_url)
+        registrar = urlsplit(self.settings.keylime_registrar_url)
+        args: list[str] = []
+        if verifier.hostname:
+            args.extend(["-v", verifier.hostname])
+            if verifier.port:
+                args.extend(["-vp", str(verifier.port)])
+        if registrar.hostname:
+            args.extend(["-r", registrar.hostname])
+            if registrar.port:
+                args.extend(["-rp", str(registrar.port)])
+        return args
 
     def _http_client_kwargs(self, url: str) -> dict[str, Any]:
         kwargs: dict[str, Any] = {"timeout": self.settings.keylime_api_timeout_seconds}

@@ -1,0 +1,152 @@
+---
+- name: Apply node IMA measurement policy and collect evidence
+  hosts: keylime_managed
+  become: true
+  gather_facts: true
+  tasks:
+    - name: Require a systemd-based managed node
+      ansible.builtin.assert:
+        that:
+          - ansible_service_mgr == "systemd"
+        fail_msg: The managed IMA policy requires systemd to load /etc/ima/ima-policy.
+
+    - name: Ensure IMA configuration directory exists
+      ansible.builtin.file:
+        path: /etc/ima
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install managed IMA measurement policy
+      ansible.builtin.copy:
+        content: "{{ node_ima_policy | trim }}\n"
+        dest: /etc/ima/ima-policy
+        owner: root
+        group: root
+        mode: "0644"
+        backup: true
+      register: ima_policy_install
+
+    - name: Read active built-in IMA policy boot argument
+      ansible.builtin.set_fact:
+        ima_builtin_policy: "{{ ansible_facts.cmdline.ima_policy | default('') }}"
+
+    - name: Check grubby on Red Hat family nodes
+      ansible.builtin.stat:
+        path: /usr/sbin/grubby
+      register: grubby_binary
+      when:
+        - ansible_os_family == "RedHat"
+        - ima_builtin_policy | length > 0
+
+    - name: Remove built-in IMA policy argument on Red Hat family nodes
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/grubby
+          - --update-kernel=ALL
+          - "--remove-args=ima_policy={{ ima_builtin_policy }}"
+      register: redhat_grub_update
+      changed_when: true
+      when:
+        - ansible_os_family == "RedHat"
+        - ima_builtin_policy | length > 0
+        - grubby_binary.stat.exists
+
+    - name: Require grubby on Red Hat family nodes
+      ansible.builtin.assert:
+        that:
+          - grubby_binary.stat.exists
+        fail_msg: grubby is required to activate the managed IMA policy.
+      when:
+        - ansible_os_family == "RedHat"
+        - ima_builtin_policy | length > 0
+
+    - name: Remove built-in IMA policy argument from Debian grub defaults
+      ansible.builtin.replace:
+        path: /etc/default/grub
+        regexp: '(^\s*GRUB_CMDLINE_LINUX(?:_DEFAULT)?="[^"]*)\s*ima_policy=[^"\s]+([^"\n]*")'
+        replace: '\1\2'
+        backup: true
+      register: debian_grub_defaults
+      when:
+        - ansible_os_family == "Debian"
+        - ima_builtin_policy | length > 0
+
+    - name: Regenerate Debian grub configuration
+      ansible.builtin.command: update-grub
+      register: debian_grub_update
+      changed_when: true
+      when:
+        - ansible_os_family == "Debian"
+        - debian_grub_defaults.changed
+
+    - name: Reject unsupported bootloader management
+      ansible.builtin.fail:
+        msg: "Automatic IMA boot policy activation is unsupported on {{ ansible_os_family }}."
+      when:
+        - ima_builtin_policy | length > 0
+        - ansible_os_family not in ["Debian", "RedHat"]
+
+    - name: Record whether a reboot is required
+      ansible.builtin.set_fact:
+        ima_reboot_required: >-
+          {{
+            ima_policy_install.changed
+            or (redhat_grub_update.changed | default(false))
+            or (debian_grub_update.changed | default(false))
+          }}
+
+    - name: Reboot after IMA policy change
+      ansible.builtin.reboot:
+        reboot_timeout: 900
+      when:
+        - ima_reboot_required | bool
+        - reboot_after_apply | bool
+
+    - name: Stop until a maintenance reboot activates the policy
+      ansible.builtin.fail:
+        msg: IMA policy was installed and requires a controlled reboot before baseline generation.
+      when:
+        - ima_reboot_required | bool
+        - not (reboot_after_apply | bool)
+
+    - name: Refresh boot command-line facts
+      ansible.builtin.setup:
+        filter: ansible_cmdline
+
+    - name: Require the managed policy boot path
+      ansible.builtin.assert:
+        that:
+          - "'ima_policy' not in ansible_facts.cmdline"
+        fail_msg: A built-in ima_policy argument is still active; the managed policy was not activated.
+
+    - name: Check IMA runtime measurement list
+      ansible.builtin.stat:
+        path: /sys/kernel/security/ima/ascii_runtime_measurements
+      register: ima_measurements
+
+    - name: Require IMA runtime measurements
+      ansible.builtin.assert:
+        that:
+          - ima_measurements.stat.exists
+          - ima_measurements.stat.readable
+        fail_msg: IMA runtime measurement list is unavailable or empty.
+
+    - name: Verify that systemd loaded the managed IMA policy
+      ansible.builtin.command:
+        argv:
+          - grep
+          - -F
+          - -m
+          - "1"
+          - /etc/ima/ima-policy
+          - /sys/kernel/security/ima/ascii_runtime_measurements
+      changed_when: false
+
+    - name: Fetch IMA runtime measurement list
+      ansible.builtin.fetch:
+        src: /sys/kernel/security/ima/ascii_runtime_measurements
+        dest: "{{ evidence_output_path }}"
+        flat: true
+      no_log: true

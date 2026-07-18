@@ -50,6 +50,15 @@ class Settings(BaseSettings):
     keylime_tenant_tool_enabled: bool = True
     keylime_docker_dir: str = "/opt/keylime-docker"
     keylime_tenant_service: str = "keylime-tenant"
+    keylime_measured_boot_policy_engine: str = "example"
+
+    ansible_enabled: bool = True
+    ansible_binary: str = "ansible-playbook"
+    ansible_playbook_dir: str = "/app/deploy/ansible/playbooks"
+    ansible_remote_user: str = "root"
+    ansible_ssh_private_key_file: str = ""
+    ansible_known_hosts_file: str = "/etc/keylime-openstack/ansible/known_hosts"
+    ansible_timeout_seconds: int = 900
 
     worker_interval_seconds: int = 30
     attestation_fresh_seconds: int = 120
@@ -71,6 +80,10 @@ class Settings(BaseSettings):
     @property
     def temp_path(self) -> Path:
         return Path(self.temp_dir)
+
+    @property
+    def ansible_playbook_path(self) -> Path:
+        return Path(self.ansible_playbook_dir)
 
     @property
     def compute_host_list(self) -> list[str]:

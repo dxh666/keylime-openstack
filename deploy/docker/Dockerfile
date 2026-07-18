@@ -19,13 +19,14 @@ WORKDIR /app
 
 RUN if [ "$INSTALL_OS_TOOLS" = "true" ]; then \
       apt-get update \
-      && apt-get install -y --no-install-recommends bash curl gcc libpq-dev \
+      && apt-get install -y --no-install-recommends bash curl gcc libpq-dev openssh-client \
       && rm -rf /var/lib/apt/lists/*; \
     fi
 
 COPY pyproject.toml README.md alembic.ini /app/
 COPY backend /app/backend
 COPY deploy/frontend /app/deploy/frontend
+COPY deploy/ansible /app/deploy/ansible
 
 RUN if [ -n "$PIP_INDEX_URL" ]; then \
       "$PYTHON_BIN" -m pip config set global.index-url "$PIP_INDEX_URL"; \

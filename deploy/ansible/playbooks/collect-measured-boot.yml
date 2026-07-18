@@ -1,0 +1,24 @@
+---
+- name: Collect TPM measured boot event log
+  hosts: keylime_managed
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Check measured boot event log
+      ansible.builtin.stat:
+        path: /sys/kernel/security/tpm0/binary_bios_measurements
+      register: measured_boot_log
+
+    - name: Require measured boot event log
+      ansible.builtin.assert:
+        that:
+          - measured_boot_log.stat.exists
+          - measured_boot_log.stat.readable
+        fail_msg: TPM measured boot event log is unavailable on this node.
+
+    - name: Fetch measured boot event log
+      ansible.builtin.fetch:
+        src: /sys/kernel/security/tpm0/binary_bios_measurements
+        dest: "{{ evidence_output_path }}"
+        flat: true
+      no_log: true
