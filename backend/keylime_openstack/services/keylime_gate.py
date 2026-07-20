@@ -279,6 +279,7 @@ def _remediation(*, event_id: str, trusted: bool, host: str) -> dict[str, object
             "category": "ima-runtime-policy",
             "summary": "IMA runtime policy does not match the live measurement list.",
             "next_commands": [
+                f"deploy/scripts/keylime-only-attestation-repair.sh --hosts {host}",
                 f"deploy/scripts/keylime-ima-runtime-policy-diff.sh {host} bound",
                 f"deploy/scripts/keylime-ima-runtime-policy-refresh.sh {host}",
             ],

@@ -94,6 +94,18 @@ operator hint before refreshing policies. For example, `agent-reachability`
 points to agent/network/reactivation checks, while `ima-runtime-policy` points
 to the runtime policy diff helper.
 
+For the common case where boot evidence is already trusted but IMA runtime
+policy has drifted, use the repair wrapper:
+
+```bash
+deploy/scripts/keylime-only-attestation-repair.sh --hosts csri8,csri9
+```
+
+It runs a pre-check, diffs each affected node against the bound runtime policy,
+refreshes the IMA policy with the bound PCR policy included, force-replaces the
+Keylime verifier enrollment, waits for the next attestation, and finishes with a
+stability gate. It will not refresh a node whose boot/PCR evidence is failing.
+
 ## Diagnose IMA runtime failures
 
 If a node reports:
