@@ -15,6 +15,7 @@ from keylime_openstack.models import (
     ComputeNode,
     HardwareProfile,
     OpenStackState,
+    PolicyBinding,
     TaskRun,
     TrustDecision,
     TrustPolicy,
@@ -286,6 +287,42 @@ def deploy_policy(policy_id: int, session: Session = Depends(db_session)) -> dic
     _record_policy_audit(session, "policy_deploy_queued", policy, "queued policy deployment")
     session.commit()
     return {"ok": True, "policy_id": policy.id, "task_id": task.id}
+
+
+@router.post(
+    "/policies/{policy_id}/bindings/{binding_id}/deploy",
+    dependencies=[Depends(require_admin)],
+)
+def deploy_policy_binding(
+    policy_id: int,
+    binding_id: int,
+    session: Session = Depends(db_session),
+) -> dict[str, object]:
+    policy = load_policy(session, policy_id)
+    if not policy:
+        raise HTTPException(status_code=404, detail=f"策略不存在：{policy_id}")
+    binding = session.get(PolicyBinding, binding_id)
+    if not binding or binding.policy_id != policy.id or not binding.active:
+        raise HTTPException(status_code=404, detail=f"策略绑定不存在或已失效：{binding_id}")
+    binding.application_status = "queued"
+    binding.last_error = ""
+    node = session.get(ComputeNode, binding.target_id)
+    target = f"{policy.name}:{node.hostname if node else binding.target_id}"
+    task = create_task(
+        session,
+        "policy_deploy",
+        target=target,
+        requested_by="api",
+        task_args={"policy_id": policy.id, "binding_id": binding.id},
+    )
+    _record_policy_audit(session, "policy_deploy_queued", policy, "queued node policy deployment")
+    session.commit()
+    return {
+        "ok": True,
+        "policy_id": policy.id,
+        "binding_id": binding.id,
+        "task_id": task.id,
+    }
 
 
 @router.delete("/policies/{policy_id}", dependencies=[Depends(require_admin)])

@@ -69,7 +69,11 @@ class Worker:
         session.commit()
         try:
             policy_id = int(task.task_args["policy_id"])
-            result = PolicyDeploymentService(session, self.settings).deploy(policy_id)
+            binding_id = task.task_args.get("binding_id")
+            result = PolicyDeploymentService(session, self.settings).deploy(
+                policy_id,
+                int(binding_id) if binding_id is not None else None,
+            )
         except Exception as exc:  # pragma: no cover - remote execution boundary
             LOG.exception("policy deployment failed")
             mark_failed(task, str(exc))

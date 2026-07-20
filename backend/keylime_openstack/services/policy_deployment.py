@@ -37,13 +37,15 @@ class PolicyDeploymentService:
         self.ansible = AnsibleExecutor(settings)
         self.keylime = KeylimeClient(settings)
 
-    def deploy(self, policy_id: int) -> dict[str, Any]:
+    def deploy(self, policy_id: int, binding_id: int | None = None) -> dict[str, Any]:
         policy = load_policy(self.session, policy_id)
         if not policy:
             raise RuntimeError(f"unknown policy {policy_id}")
 
         results: list[dict[str, Any]] = []
         for binding in policy.bindings:
+            if binding_id is not None and binding.id != binding_id:
+                continue
             if not binding.active:
                 continue
             node = self.session.get(ComputeNode, binding.target_id)
@@ -72,10 +74,13 @@ class PolicyDeploymentService:
             self._audit(policy.name, node.hostname, binding, details)
             results.append(self._binding_result(binding, binding.application_status))
             self.session.flush()
+        if binding_id is not None and not results:
+            raise RuntimeError(f"policy binding {binding_id} is not active or does not exist")
         return {
             "policy_id": policy.id,
             "policy_name": policy.name,
             "policy_type": policy.policy_type,
+            "binding_id": binding_id,
             "bindings": results,
             "failed": sum(item["status"] == POLICY_DEPLOY_FAILED for item in results),
             "awaiting_reboot": sum(
@@ -113,6 +118,7 @@ class PolicyDeploymentService:
             event_log = event_path.read_bytes()
             if not event_log:
                 raise RuntimeError("collected TPM measured boot event log is empty")
+            event_log_sha256 = hashlib.sha256(event_log).hexdigest()
 
             reference_state = policy.content.get("reference_state")
             if not reference_state:
@@ -133,10 +139,23 @@ class PolicyDeploymentService:
                 measured_boot_policy_name=external_name,
             )
             self._require_keylime_success(apply_result)
-            self._applied(binding, policy, external_name, reference_state)
+            self._applied(
+                binding,
+                policy,
+                external_name,
+                reference_state,
+                deployment_details={
+                    "keylime_artifact": "measured_boot_refstate",
+                    "evidence_type": "tpm_event_log",
+                    "evidence_sha256": event_log_sha256,
+                    "rendered_policy_sha256": _content_hash(reference_state),
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
+                    "deployed_by": "keylime-tenant",
+                },
+            )
             return {
                 "keylime_policy_name": external_name,
-                "event_log_sha256": hashlib.sha256(event_log).hexdigest(),
+                "event_log_sha256": event_log_sha256,
                 "policy_engine": policy.content.get("policy_engine"),
                 "pcrs": policy.content.get("pcrs"),
             }
@@ -186,7 +205,21 @@ class PolicyDeploymentService:
                 ),
             )
             self._require_keylime_success(apply_result)
-            self._applied(binding, policy, external_name, runtime_policy)
+            self._applied(
+                binding,
+                policy,
+                external_name,
+                runtime_policy,
+                deployment_details={
+                    "keylime_artifact": "runtime_policy",
+                    "evidence_type": "ima_measurement_list",
+                    "evidence_sha256": hashlib.sha256(measurements.encode("utf-8")).hexdigest(),
+                    "rendered_policy_sha256": _content_hash(runtime_policy),
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
+                    "deployed_by": "keylime-tenant",
+                    "measurement_count": len(measurements.splitlines()),
+                },
+            )
             return {
                 "keylime_policy_name": external_name,
                 "measurement_count": len(measurements.splitlines()),
@@ -199,12 +232,19 @@ class PolicyDeploymentService:
         policy: TrustPolicy,
         external_name: str,
         rendered_policy: dict[str, Any],
+        deployment_details: dict[str, Any] | None = None,
     ) -> None:
         binding.application_status = POLICY_DEPLOY_APPLIED
         binding.external_policy_name = external_name
         binding.rendered_policy = rendered_policy
         binding.applied_at = datetime.now(timezone.utc)
         binding.last_error = ""
+        binding.binding_details = {
+            **dict(binding.binding_details or {}),
+            **(deployment_details or {}),
+            "external_policy_name": external_name,
+            "policy_type": canonical_policy_type(policy.policy_type),
+        }
         other_bindings = self.session.scalars(
             select(PolicyBinding)
             .join(TrustPolicy, TrustPolicy.id == PolicyBinding.policy_id)

@@ -58,6 +58,8 @@ class PolicyBindingOut(BaseModel):
     external_policy_name: str
     applied_at: datetime | None
     last_error: str
+    binding_details: dict[str, Any] = Field(default_factory=dict)
+    keylime_policy: dict[str, Any] = Field(default_factory=dict)
 
 
 class TrustPolicyOut(BaseModel):

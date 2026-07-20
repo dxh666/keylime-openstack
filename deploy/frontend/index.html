@@ -255,7 +255,7 @@
           </div>
           <div class="table policy-table">
             <div class="row header">
-              <span>策略名称</span><span>基线来源</span><span>节点范围</span><span>下发状态</span><span>操作</span>
+              <span>策略名称</span><span>基线来源</span><span>节点范围</span><span>Keylime 下发</span><span>生效版本</span><span>操作</span>
             </div>
             <div v-for="policy in filteredPolicies" :key="policy.id" class="row">
               <span>{{ policy.name }}</span>
@@ -264,8 +264,10 @@
               <span>
                 <em :class="['pill', deploymentClass(bindingState(policy))]">{{ bindingStateText(policy) }}</em>
               </span>
+              <span>{{ policyEffectiveVersion(policy) }}</span>
               <span class="row-actions">
                 <button type="button" @click="viewPolicy(policy)">查看</button>
+                <button type="button" @click="deployPolicy(policy)">更新基线</button>
                 <button class="danger" type="button" @click="deletePolicy(policy)">删除</button>
               </span>
             </div>
@@ -447,9 +449,21 @@
                 <span :class="['pill', deploymentClass(binding.application_status)]">
                   {{ deploymentText(binding.application_status) }}
                 </span>
-                <small>{{ binding.external_policy_name || '-' }}</small>
+                <small>Keylime：{{ binding.external_policy_name || '-' }}</small>
+                <small>生效时间：{{ formatTime(binding.applied_at) }}</small>
+                <small>证据：{{ bindingEvidenceText(binding) }}</small>
                 <small v-if="binding.last_error" class="error-text">{{ binding.last_error }}</small>
+                <button type="button" class="small" @click="deployPolicy(detailPolicy, binding)">更新此节点基线</button>
               </div>
+            </div>
+          </section>
+          <section v-if="detailPolicy.policy_type === 'measured_boot'" class="detail-block">
+            <h3>可信启动规则</h3>
+            <div class="detail-grid">
+              <div><span>PCR 范围</span><strong>{{ policyPcrText(detailPolicy) }}</strong></div>
+              <div><span>Secure Boot</span><strong>{{ policySecureBootText(detailPolicy) }}</strong></div>
+              <div><span>Keylime 对象</span><strong>{{ policyArtifactText(detailPolicy) }}</strong></div>
+              <div><span>基线生成</span><strong>{{ policyGenerationModeText(detailPolicy) }}</strong></div>
             </div>
           </section>
           <section v-if="detailPolicy.policy_type === 'ima_runtime'" class="detail-block">
@@ -471,12 +485,11 @@
           <div class="modal-actions">
             <button type="button" @click="closePolicyDetail">关闭</button>
             <button
-              v-if="canDeployPolicy(detailPolicy)"
               class="primary"
               type="button"
               @click="deployPolicy(detailPolicy)"
             >
-              重新下发
+              更新全部节点基线
             </button>
           </div>
         </section>

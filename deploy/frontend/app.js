@@ -804,6 +804,37 @@ createApp({
       const state = this.bindingState(policy);
       return state === "mixed" ? "状态不一致" : this.deploymentText(state);
     },
+    policyEffectiveVersion(policy) {
+      const applied = (policy.bindings || [])
+        .filter((binding) => binding.application_status === "applied" && binding.applied_at)
+        .sort((a, b) => new Date(b.applied_at).getTime() - new Date(a.applied_at).getTime());
+      if (!applied.length) return "-";
+      return this.formatTime(applied[0].applied_at);
+    },
+    policyPcrText(policy) {
+      const pcrs = policy?.content?.pcrs || [];
+      return pcrs.length ? pcrs.map((pcr) => `PCR${pcr}`).join("、") : "PCR0-7";
+    },
+    policySecureBootText(policy) {
+      return policy?.content?.secure_boot_required === false ? "不强制" : "要求启用";
+    },
+    bindingEvidenceText(binding) {
+      const keylimePolicy = binding?.keylime_policy || {};
+      const evidenceType = keylimePolicy.evidence_type || "";
+      const evidenceName = evidenceType === "tpm_event_log"
+        ? "TPM Event Log"
+        : evidenceType === "ima_measurement_list"
+          ? "IMA 度量列表"
+          : "节点证据";
+      const evidenceHash = keylimePolicy.evidence_sha256 || "";
+      const policyHash = keylimePolicy.content_sha256 || "";
+      if (evidenceHash && policyHash) {
+        return `${evidenceName} ${evidenceHash.slice(0, 12)} / 策略 ${policyHash.slice(0, 12)}`;
+      }
+      if (evidenceHash) return `${evidenceName} ${evidenceHash.slice(0, 12)}`;
+      if (policyHash) return `策略 ${policyHash.slice(0, 12)}`;
+      return "-";
+    },
     canDeployPolicy(policy) {
       const retryable = new Set(["not_deployed", "failed", "awaiting_reboot"]);
       return (policy.bindings || []).some((binding) => retryable.has(binding.application_status));
@@ -873,14 +904,18 @@ createApp({
         }
       });
     },
-    deployPolicy(policy) {
+    deployPolicy(policy, binding = null) {
+      const targetText = binding ? `${policy.name} / ${binding.target_name}` : policy.name;
+      const endpoint = binding
+        ? `/api/policies/${policy.id}/bindings/${binding.id}/deploy`
+        : `/api/policies/${policy.id}/deploy`;
       this.requireToken({
-        title: "确认下发策略",
-        message: `将重新下发策略「${policy.name}」。`,
-        confirmText: "确认下发",
+        title: "确认更新策略基线",
+        message: `将重新采集「${targetText}」的节点证据，生成 Keylime 策略并下发到 verifier。`,
+        confirmText: "确认更新",
         action: async (token) => {
-          await this.requestJson(`/api/policies/${policy.id}/deploy`, { method: "POST" }, token);
-          this.showNotice("ok", "策略已进入下发队列");
+          await this.requestJson(endpoint, { method: "POST" }, token);
+          this.showNotice("ok", "策略基线更新任务已进入队列");
           this.detailPolicy = null;
           await this.refreshAll(false);
         }

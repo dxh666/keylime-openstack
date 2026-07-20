@@ -706,7 +706,7 @@ h3 {
 }
 
 .policy-table .row {
-  grid-template-columns: minmax(180px, 1.4fr) 140px minmax(220px, 2fr) 130px 150px;
+  grid-template-columns: minmax(170px, 1.3fr) 130px minmax(190px, 1.6fr) 120px 160px 220px;
 }
 
 .row-actions {
@@ -1021,7 +1021,7 @@ h3 {
 
 .binding-list > div {
   display: grid;
-  grid-template-columns: minmax(130px, 1fr) auto;
+  grid-template-columns: minmax(130px, 1fr) auto auto;
   gap: 6px 12px;
   align-items: center;
   padding: 10px;

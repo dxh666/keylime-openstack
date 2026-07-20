@@ -134,6 +134,8 @@ def policy_out(session: Session, policy: TrustPolicy) -> TrustPolicyOut:
             external_policy_name=binding.external_policy_name,
             applied_at=binding.applied_at,
             last_error=binding.last_error,
+            binding_details=binding.binding_details or {},
+            keylime_policy=_binding_keylime_policy(binding),
         )
         for binding in sorted(policy.bindings, key=lambda item: (item.target_type, item.target_id))
     ]
@@ -218,3 +220,17 @@ def _validate_ima_runtime(content: dict[str, Any]) -> dict[str, Any]:
         "runtime_policy_generation": "keylime-policy-from-measurements",
         "reboot_after_apply": bool(content.get("reboot_after_apply", False)),
     }
+
+
+def _binding_keylime_policy(binding: PolicyBinding) -> dict[str, Any]:
+    details = dict(binding.binding_details or {})
+    keylime_policy = {
+        "name": binding.external_policy_name,
+        "artifact": details.get("keylime_artifact", ""),
+        "content_sha256": details.get("rendered_policy_sha256", ""),
+        "evidence_sha256": details.get("evidence_sha256", ""),
+        "evidence_type": details.get("evidence_type", ""),
+        "generated_at": details.get("generated_at", ""),
+        "deployed_by": details.get("deployed_by", ""),
+    }
+    return {key: value for key, value in keylime_policy.items() if value not in ("", None)}
