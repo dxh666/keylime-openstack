@@ -194,9 +194,10 @@ INSTALL_OS_TOOLS=true
 ```
 
 That option requires the container build environment to reach the package
-repositories or configured mirrors for the selected base image. If you
-intentionally set `INSTALL_OS_TOOLS=false`, the base image must already contain
-the `ssh` client or the build will fail before policy deployment can start.
+repositories or configured mirrors for the selected base image. For older env
+files that still set `INSTALL_OS_TOOLS=false`, the build will still try to
+install OpenSSH when the base image does not contain `ssh`, because policy
+deployment cannot work without it.
 
 Before creating Measured Boot or IMA policies, complete the dedicated Ansible
 credential setup in:

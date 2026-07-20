@@ -17,7 +17,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN if [ "$INSTALL_OS_TOOLS" = "true" ]; then \
+RUN install_os_tools() { \
       if command -v apt-get >/dev/null 2>&1; then \
         apt-get update \
         && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -35,12 +35,15 @@ RUN if [ "$INSTALL_OS_TOOLS" = "true" ]; then \
       elif command -v apk >/dev/null 2>&1; then \
         apk add --no-cache bash curl gcc musl-dev postgresql-dev openssh-client; \
       else \
-        echo "INSTALL_OS_TOOLS=true but no supported package manager was found" >&2; \
+        echo "OpenSSH client is missing and no supported package manager was found" >&2; \
         exit 1; \
       fi; \
+    }; \
+    if [ "$INSTALL_OS_TOOLS" = "true" ] || ! command -v ssh >/dev/null 2>&1; then \
+      install_os_tools; \
     fi \
     && if ! command -v ssh >/dev/null 2>&1; then \
-      echo "OpenSSH client is required for Keylime/OpenStack policy deployment. Set INSTALL_OS_TOOLS=true or use a base image that already contains ssh." >&2; \
+      echo "OpenSSH client is required for Keylime/OpenStack policy deployment." >&2; \
       exit 1; \
     fi
 
