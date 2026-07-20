@@ -85,6 +85,7 @@ createApp({
       apiError: "",
       keylimeError: "",
       notice: { kind: "", text: "" },
+      userMenuOpen: false,
       health: null,
       dashboard: null,
       overview: null,
@@ -321,16 +322,25 @@ createApp({
     this.refreshAll();
     this.timer = setInterval(() => this.refreshAll(false), 10000);
     this.clockTimer = setInterval(() => this.updateClock(), 1000);
+    window.addEventListener("click", this.closeUserMenu);
   },
   beforeUnmount() {
     if (this.timer) clearInterval(this.timer);
     if (this.clockTimer) clearInterval(this.clockTimer);
+    window.removeEventListener("click", this.closeUserMenu);
   },
   methods: {
     updateClock() {
       this.currentTime = new Date();
     },
+    toggleUserMenu() {
+      this.userMenuOpen = !this.userMenuOpen;
+    },
+    closeUserMenu() {
+      this.userMenuOpen = false;
+    },
     selectView(view) {
+      this.closeUserMenu();
       this.view = view;
       this.detailPolicy = null;
     },
@@ -416,6 +426,7 @@ createApp({
       }
     },
     logoutSession() {
+      this.closeUserMenu();
       this.showNotice("ok", "已退出当前前端会话，后续管理操作仍需重新输入管理令牌。");
     },
     osText(kernel) {
