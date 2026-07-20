@@ -706,7 +706,7 @@ h3 {
 }
 
 .policy-table .row {
-  grid-template-columns: minmax(180px, 1.4fr) minmax(220px, 2fr) 130px 150px;
+  grid-template-columns: minmax(180px, 1.4fr) 140px minmax(220px, 2fr) 130px 150px;
 }
 
 .row-actions {
@@ -848,7 +848,8 @@ h3 {
 }
 
 .target-selector,
-.pcr-selector {
+.pcr-selector,
+.generation-panel {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
@@ -856,6 +857,22 @@ h3 {
   border: 1px solid var(--line);
   border-radius: 4px;
   padding: 12px;
+}
+
+.generation-panel {
+  grid-template-columns: 120px minmax(180px, 1fr) minmax(180px, 1fr);
+  align-items: center;
+  color: var(--text);
+  background: var(--panel-soft);
+}
+
+.generation-panel span,
+.generation-panel small {
+  color: var(--muted);
+}
+
+.generation-panel strong {
+  font-size: 14px;
 }
 
 .pcr-selector {

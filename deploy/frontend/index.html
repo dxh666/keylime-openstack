@@ -255,10 +255,11 @@
           </div>
           <div class="table policy-table">
             <div class="row header">
-              <span>策略名称</span><span>节点范围</span><span>下发状态</span><span>操作</span>
+              <span>策略名称</span><span>基线来源</span><span>节点范围</span><span>下发状态</span><span>操作</span>
             </div>
             <div v-for="policy in filteredPolicies" :key="policy.id" class="row">
               <span>{{ policy.name }}</span>
+              <span>{{ policyBaselineText(policy) }}</span>
               <span>{{ bindingNames(policy) }}</span>
               <span>
                 <em :class="['pill', deploymentClass(bindingState(policy))]">{{ bindingStateText(policy) }}</em>
@@ -385,6 +386,11 @@
                 <small>{{ node.management_ip || node.keylime_agent_ip }}</small>
               </label>
             </fieldset>
+            <div class="wide generation-panel">
+              <span>基线来源</span>
+              <strong>{{ policyGenerationTitle }}</strong>
+              <small>{{ policyGenerationSummary }}</small>
+            </div>
 
             <template v-if="activePolicyType === 'measured_boot'">
               <fieldset class="wide pcr-selector">
@@ -416,7 +422,7 @@
             </template>
             <div class="form-actions">
               <button type="button" :disabled="busy" @click="closeCreatePolicy">取消</button>
-              <button class="primary" type="submit" :disabled="busy">新增策略</button>
+              <button class="primary" type="submit" :disabled="busy">生成并下发策略</button>
             </div>
           </form>
         </section>
@@ -449,6 +455,14 @@
           <section v-if="detailPolicy.policy_type === 'ima_runtime'" class="detail-block">
             <h3>排除规则</h3>
             <pre>{{ listText(detailPolicy.excludes) }}</pre>
+          </section>
+          <section class="detail-block">
+            <h3>基线生成</h3>
+            <div class="detail-grid">
+              <div><span>基线来源</span><strong>{{ policyBaselineText(detailPolicy) }}</strong></div>
+              <div><span>生成方式</span><strong>{{ policyGenerationModeText(detailPolicy) }}</strong></div>
+              <div><span>Keylime 对象</span><strong>{{ policyArtifactText(detailPolicy) }}</strong></div>
+            </div>
           </section>
           <section class="detail-block">
             <h3>策略内容</h3>

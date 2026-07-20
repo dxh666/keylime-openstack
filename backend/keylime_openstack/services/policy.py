@@ -11,7 +11,6 @@ from sqlalchemy.orm import Session, selectinload
 from keylime_openstack.constants import (
     BINDING_NODE,
     LEGACY_POLICY_TYPE_ALIASES,
-    POLICY_EVM,
     POLICY_IMA_RUNTIME,
     POLICY_MEASURED_BOOT,
     POLICY_DEPLOY_NOT_DEPLOYED,
@@ -34,8 +33,6 @@ def validated_policy_payload(policy_in: TrustPolicyIn) -> tuple[dict[str, Any], 
     policy_type = canonical_policy_type(str(payload["policy_type"]))
     if policy_type not in SUPPORTED_POLICY_TYPES:
         raise HTTPException(status_code=422, detail=f"不支持的策略类型：{policy_type}")
-    if policy_type == POLICY_EVM:
-        raise HTTPException(status_code=422, detail="EVM 策略新增尚未启用")
     if not target_node_ids:
         raise HTTPException(status_code=422, detail="请至少选择一个目标节点")
 
@@ -185,7 +182,7 @@ def _validate_measured_boot(content: dict[str, Any]) -> dict[str, Any]:
             status_code=422,
             detail="可信启动 PCR 编号必须在 0 到 23 之间",
         )
-    policy_engine = str(content.get("policy_engine") or "example").strip()
+    policy_engine = str(content.get("policy_engine") or "").strip()
     if policy_engine == "accept-all":
         raise HTTPException(
             status_code=422,
@@ -199,7 +196,7 @@ def _validate_measured_boot(content: dict[str, Any]) -> dict[str, Any]:
         )
     return {
         **content,
-        "policy_engine": policy_engine,
+        "policy_engine": policy_engine or "configured",
         "pcrs": normalized_pcrs,
         "reference_state_mode": "provided" if reference_state else "collect_from_node",
         "secure_boot_required": bool(content.get("secure_boot_required", True)),

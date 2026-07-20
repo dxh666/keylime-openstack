@@ -91,6 +91,8 @@ class PolicyDeploymentService:
     ) -> dict[str, Any]:
         configured_engine = self.settings.keylime_measured_boot_policy_engine.strip()
         requested_engine = str(policy.content.get("policy_engine") or "").strip()
+        if not requested_engine or requested_engine == "configured":
+            requested_engine = configured_engine
         if configured_engine != requested_engine:
             raise RuntimeError(
                 "Measured Boot policy engine mismatch: "

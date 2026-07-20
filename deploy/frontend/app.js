@@ -119,6 +119,16 @@ createApp({
       if (this.view === "policies") return this.currentPolicyType.label;
       return viewTitles[this.view] || "管理控制台";
     },
+    policyGenerationTitle() {
+      return this.activePolicyType === "measured_boot"
+        ? "自动采集 TPM 启动基线"
+        : "自动采集 IMA 运行基线";
+    },
+    policyGenerationSummary() {
+      return this.activePolicyType === "measured_boot"
+        ? "生成 Keylime 可信启动参考状态"
+        : "生成 Keylime IMA 运行时策略";
+    },
     currentTimeText() {
       return this.currentTime.toLocaleString("zh-CN", {
         year: "numeric",
@@ -729,15 +739,18 @@ createApp({
       let excludes = [];
       if (this.activePolicyType === "measured_boot") {
         content = {
-          policy_engine: "keylime-measured-boot",
           pcrs: this.createForm.pcrs.map(Number).sort((a, b) => a - b),
           secure_boot_required: this.createForm.secureBootRequired,
-          reference_state_mode: "collect_from_node"
+          reference_state_mode: "collect_from_node",
+          baseline_generation: "auto_collect_tpm_event_log",
+          keylime_artifact: "measured_boot_refstate"
         };
       } else if (this.activePolicyType === "ima_runtime") {
         content = {
           node_ima_policy: this.createForm.nodeImaPolicy,
           runtime_policy_generation: "keylime-policy-from-measurements",
+          baseline_generation: "auto_collect_ima_measurements",
+          keylime_artifact: "runtime_policy",
           reboot_after_apply: this.createForm.rebootAfterApply
         };
         excludes = this.parseLines(this.createForm.excludesText);
@@ -754,10 +767,31 @@ createApp({
         content,
         protected_paths: [],
         excludes,
-        source: {},
+        source: {
+          baseline_source: "target_node",
+          generation_mode: "auto_collect",
+          keylime_artifact: content.keylime_artifact
+        },
         target_node_ids: this.createForm.targetNodeIds.map(Number),
         deploy_now: true
       };
+    },
+    policyBaselineText(policy) {
+      const policyType = String(policy.policy_type || "");
+      if (policyType === "measured_boot") return "TPM 启动基线";
+      if (policyType === "ima_runtime") return "IMA 运行基线";
+      return "-";
+    },
+    policyGenerationModeText(policy) {
+      const mode = policy?.source?.generation_mode || policy?.content?.baseline_generation || "";
+      if (String(mode).includes("auto") || String(mode).includes("collect")) return "自动采集";
+      return mode || "-";
+    },
+    policyArtifactText(policy) {
+      const artifact = policy?.source?.keylime_artifact || policy?.content?.keylime_artifact || "";
+      if (artifact === "measured_boot_refstate") return "可信启动参考状态";
+      if (artifact === "runtime_policy") return "IMA 运行时策略";
+      return artifact || "-";
     },
     bindingNames(policy) {
       return (policy.bindings || []).map((item) => item.target_name).join("、") || "-";
@@ -810,8 +844,8 @@ createApp({
         const payload = this.policyPayload();
         this.requireToken({
           title: "确认新增策略",
-          message: `将创建${this.currentPolicyType.label}「${payload.name}」并下发至所选节点。`,
-          confirmText: "确认新增",
+          message: `将创建${this.currentPolicyType.label}「${payload.name}」，并从目标节点自动采集基线后下发到 Keylime。`,
+          confirmText: "生成并下发",
           action: async (token) => {
             await this.requestJson("/api/policies", {
               method: "POST",
