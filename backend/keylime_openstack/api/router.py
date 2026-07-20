@@ -25,6 +25,7 @@ from keylime_openstack.schemas import (
     ComputeNodeOut,
     DashboardOut,
     HostIntegrityReportIn,
+    OpenTcsmEvidenceReportIn,
     OverviewOut,
     TaskRunOut,
     TrustDecisionOut,
@@ -35,6 +36,7 @@ from keylime_openstack.seed import ensure_default_environment
 from keylime_openstack.services.host_integrity import host_integrity_report_to_evidence
 from keylime_openstack.services.keylime_gate import keylime_only_check
 from keylime_openstack.services.keylime import KeylimeClient
+from keylime_openstack.services.opentcsm import opentcsm_report_to_evidence
 from keylime_openstack.services.policy import (
     bind_policy_to_nodes,
     canonical_policy_type,
@@ -45,6 +47,11 @@ from keylime_openstack.services.policy import (
 )
 from keylime_openstack.services.sync import TrustSyncService
 from keylime_openstack.services.tasks import create_task, mark_failed, mark_running, mark_success
+from keylime_openstack.services.trust_agents import (
+    node_trust_agent_name,
+    node_trust_agent_type,
+    node_trusted_root,
+)
 
 router = APIRouter(prefix="/api")
 
@@ -131,7 +138,10 @@ def overview(
 
 
 @router.get("/nodes", response_model=list[ComputeNodeOut])
-def nodes(session: Session = Depends(db_session)) -> list[ComputeNodeOut]:
+def nodes(
+    session: Session = Depends(db_session),
+    settings: Settings = Depends(settings_dep),
+) -> list[ComputeNodeOut]:
     ensure_default_environment(session)
     session.commit()
     rows = session.scalars(
@@ -142,6 +152,9 @@ def nodes(session: Session = Depends(db_session)) -> list[ComputeNodeOut]:
         ComputeNodeOut.model_validate(
             {
                 **item.__dict__,
+                "trust_agent_type": node_trust_agent_type(item, settings),
+                "trust_agent_name": node_trust_agent_name(item, settings),
+                "trusted_root": node_trusted_root(item, settings),
                 "hardware_profile": item.hardware_profile,
                 "openstack_state": states.get(item.id),
             }
@@ -155,7 +168,11 @@ def keylime_check(
     hosts: str = "",
     failures_only: bool = False,
 ) -> dict[str, object]:
-    return keylime_only_check(hosts=hosts, failures_only=failures_only)
+    return keylime_only_check(
+        hosts=hosts,
+        failures_only=failures_only,
+        include_non_keylime=True,
+    )
 
 
 @router.get("/hardware-profiles")
@@ -442,6 +459,60 @@ def ingest_host_integrity(
         "evidence_id": evidence.id,
         "status": evidence.status,
         "summary": evidence.summary,
+    }
+
+
+@router.post("/nodes/{hostname}/opentcsm-evidence", dependencies=[Depends(require_admin)])
+def ingest_opentcsm_evidence(
+    hostname: str,
+    report: OpenTcsmEvidenceReportIn,
+    session: Session = Depends(db_session),
+    settings: Settings = Depends(settings_dep),
+) -> dict[str, object]:
+    ensure_default_environment(session)
+    node = session.scalars(
+        select(ComputeNode).where(
+            (ComputeNode.hostname == hostname) | (ComputeNode.hypervisor_name == hostname)
+        )
+    ).first()
+    if not node:
+        raise HTTPException(status_code=404, detail=f"unknown compute node {hostname}")
+
+    report_data = report.model_dump(mode="json")
+    if report.hostname and report.hostname != hostname:
+        report_data["reported_hostname"] = report.hostname
+
+    records = opentcsm_report_to_evidence(node, report_data, settings)
+    for record in records:
+        session.add(record)
+    session.flush()
+    session.add(
+        AuditEvent(
+            event_type="opentcsm_evidence_collect",
+            target=node.hostname,
+            severity="info" if all(item.status == "pass" for item in records) else "warning",
+            message="collected OpenTCSM/Hygon TPCM evidence",
+            event_details={
+                "evidence_ids": [item.id for item in records],
+                "statuses": {item.evidence_type: item.status for item in records},
+                "provider": "opentcsm",
+            },
+        )
+    )
+    session.commit()
+    return {
+        "ok": True,
+        "node": node.hostname,
+        "provider": "opentcsm",
+        "records": [
+            {
+                "evidence_id": item.id,
+                "evidence_type": item.evidence_type,
+                "status": item.status,
+                "summary": item.summary,
+            }
+            for item in records
+        ],
     }
 
 

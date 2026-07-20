@@ -8,12 +8,18 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select
 
+from keylime_openstack.constants import TRUST_AGENT_KEYLIME, TRUST_AGENT_OPENTCSM_TPCM
 from keylime_openstack.config import get_settings
 from keylime_openstack.database import SessionLocal
 from keylime_openstack.models import ComputeNode
 from keylime_openstack.seed import ensure_default_environment
 from keylime_openstack.services.keylime import KeylimeClient
-from keylime_openstack.services.sync import keylime_status_to_evidence
+from keylime_openstack.services.sync import keylime_status_to_evidence, latest_evidence_for_decision
+from keylime_openstack.services.trust_agents import (
+    node_trust_agent_name,
+    node_trust_agent_type,
+    node_trusted_root,
+)
 
 
 def keylime_only_check(
@@ -22,12 +28,17 @@ def keylime_only_check(
     count: int = 1,
     interval_seconds: int = 30,
     failures_only: bool = False,
+    include_non_keylime: bool = False,
 ) -> dict[str, object]:
     count = max(1, count)
     interval_seconds = max(0, interval_seconds)
     runs = []
     for run_index in range(count):
-        result = _keylime_only_check_once(hosts=hosts, failures_only=failures_only)
+        result = _keylime_only_check_once(
+            hosts=hosts,
+            failures_only=failures_only,
+            include_non_keylime=include_non_keylime,
+        )
         result["run"] = run_index + 1
         runs.append(result)
         if run_index + 1 < count:
@@ -55,6 +66,7 @@ def _keylime_only_check_once(
     *,
     hosts: str = "",
     failures_only: bool = False,
+    include_non_keylime: bool = False,
 ) -> dict[str, object]:
     settings = get_settings()
     wanted = {item.strip() for item in hosts.split(",") if item.strip()}
@@ -73,11 +85,22 @@ def _keylime_only_check_once(
 
         client = KeylimeClient(settings)
         results = []
-        all_ok = bool(nodes)
+        all_ok = False
         trusted_count = 0
+        evaluated_count = 0
+        skipped_count = 0
         for node in nodes:
-            item = _keylime_node_check(client, node, settings)
-            all_ok = all_ok and bool(item.get("trusted"))
+            agent_type = node_trust_agent_type(node, settings)
+            if agent_type == TRUST_AGENT_KEYLIME:
+                item = _keylime_node_check(client, node, settings)
+                evaluated_count += 1
+            elif include_non_keylime:
+                item = _external_trust_agent_node_check(session, node, settings)
+                evaluated_count += 1
+            else:
+                skipped_count += 1
+                continue
+            all_ok = bool(item.get("trusted")) if evaluated_count == 1 else all_ok and bool(item.get("trusted"))
             if item.get("trusted"):
                 trusted_count += 1
             if not failures_only or not item.get("trusted"):
@@ -91,9 +114,10 @@ def _keylime_only_check_once(
         "trust_policy_mode": settings.normalized_trust_policy_mode,
         "trust_capabilities": settings.effective_trust_capabilities,
         "openstack_enforcement_enabled": settings.openstack_enforcement_enabled,
-        "nodes_total": len(nodes),
+        "nodes_total": evaluated_count,
         "nodes_trusted": trusted_count,
         "nodes_returned": len(results),
+        "nodes_skipped": skipped_count,
         "nodes": results,
     }
 
@@ -111,6 +135,9 @@ def _keylime_node_check(
     base: dict[str, object] = {
         "host": node.hostname,
         "agent_uuid": node.keylime_agent_uuid,
+        "trust_agent_type": TRUST_AGENT_KEYLIME,
+        "trust_agent_name": node_trust_agent_name(node, settings),
+        "trusted_root": node_trusted_root(node, settings),
         "trust_capabilities": keylime_capabilities,
     }
     if not node.keylime_agent_uuid:
@@ -124,6 +151,7 @@ def _keylime_node_check(
                 event_id="missing-agent-uuid",
                 trusted=False,
                 host=node.hostname,
+                trust_agent_type=TRUST_AGENT_KEYLIME,
             ),
         }
 
@@ -141,6 +169,7 @@ def _keylime_node_check(
                 event_id=event_id,
                 trusted=False,
                 host=node.hostname,
+                trust_agent_type=TRUST_AGENT_KEYLIME,
             ),
         }
 
@@ -204,6 +233,79 @@ def _keylime_node_check(
             event_id=str(active_event_id or reason),
             trusted=trusted,
             host=node.hostname,
+            trust_agent_type=TRUST_AGENT_KEYLIME,
+        ),
+    }
+
+
+def _external_trust_agent_node_check(
+    session,
+    node: ComputeNode,
+    settings,
+) -> dict[str, object]:
+    agent_type = node_trust_agent_type(node, settings)
+    capabilities = {
+        name: enabled
+        for name, enabled in settings.effective_trust_capabilities.items()
+        if name in {"boot", "ima", "evm"}
+    }
+    records = latest_evidence_for_decision(session, node)
+    evidence = {record.evidence_type: record.status for record in records}
+    evidence_fresh = {
+        record.evidence_type: _record_fresh(record.valid_until)
+        for record in records
+    }
+    evidence_valid_until = {
+        record.evidence_type: record.valid_until.isoformat() if record.valid_until else None
+        for record in records
+    }
+    boot_ok = evidence.get("boot") == "pass" and evidence_fresh.get("boot", False)
+    runtime_ok = evidence.get("runtime") == "pass" and evidence_fresh.get("runtime", False)
+    evm_ok = evidence.get("evm") == "pass" and evidence_fresh.get("evm", False)
+    capability_status = {
+        "boot": boot_ok,
+        "ima": runtime_ok,
+        "evm": evm_ok,
+    }
+    enabled_capabilities = [name for name, enabled in capabilities.items() if enabled]
+    trusted = bool(enabled_capabilities) and all(
+        capability_status[name] for name in enabled_capabilities
+    )
+    reason = (
+        "TRUSTED"
+        if trusted
+        else _external_agent_reason(evidence, evidence_fresh, capabilities, agent_type)
+    )
+    latest_record = max(records, key=lambda item: item.collected_at, default=None)
+    return {
+        "host": node.hostname,
+        "agent_uuid": "",
+        "agent_ip": node.management_ip,
+        "trust_agent_type": agent_type,
+        "trust_agent_name": node_trust_agent_name(node, settings),
+        "trusted_root": node_trusted_root(node, settings),
+        "trusted": trusted,
+        "reason": reason,
+        "status": "collected" if records else "pending",
+        "source": agent_type,
+        "attestation_status": "PASS" if trusted else "UNKNOWN",
+        "operational_state": "external",
+        "last_event_id": None if trusted else reason,
+        "has_runtime_policy": bool(records),
+        "last_received_quote": None,
+        "last_successful_attestation": None,
+        "attestation_age_seconds": _external_evidence_age_seconds(latest_record),
+        "tpm_policy": {},
+        "evidence": evidence,
+        "evidence_fresh": evidence_fresh,
+        "evidence_valid_until": evidence_valid_until,
+        "trust_capabilities": capabilities,
+        "capability_status": capability_status,
+        "remediation": _remediation(
+            event_id=reason,
+            trusted=trusted,
+            host=node.hostname,
+            trust_agent_type=agent_type,
         ),
     }
 
@@ -254,6 +356,12 @@ def _coerce_epoch(value: object) -> int | None:
     return timestamp if timestamp > 0 else None
 
 
+def _external_evidence_age_seconds(record) -> int | None:
+    if not record:
+        return None
+    return max(0, int((datetime.now(timezone.utc) - record.collected_at).total_seconds()))
+
+
 def _keylime_only_reason(
     evidence: dict[str, str],
     evidence_fresh: dict[str, bool],
@@ -279,6 +387,32 @@ def _keylime_only_reason(
     return "WAITING_FOR_" + "_".join(missing)
 
 
+def _external_agent_reason(
+    evidence: dict[str, str],
+    evidence_fresh: dict[str, bool],
+    capabilities: dict[str, bool],
+    agent_type: str,
+) -> str:
+    missing = []
+    checks = (
+        ("BOOT", "boot", "boot"),
+        ("DYNAMIC", "ima", "runtime"),
+        ("EVM", "evm", "evm"),
+    )
+    for label, capability_name, evidence_type in checks:
+        if not capabilities.get(capability_name):
+            continue
+        status = evidence.get(evidence_type, "missing")
+        fresh = evidence_fresh.get(evidence_type, False)
+        if status == "pass" and not fresh:
+            missing.append(f"{label}_STALE")
+        elif status != "pass":
+            missing.append(f"{label}_{status.upper()}")
+    if not missing:
+        return f"WAITING_FOR_{agent_type.upper()}_EVIDENCE"
+    return "WAITING_FOR_" + "_".join(missing)
+
+
 def _keylime_read_error_event(error: str) -> str:
     normalized = error.lower()
     if (
@@ -292,11 +426,34 @@ def _keylime_read_error_event(error: str) -> str:
     return "keylime-api-error"
 
 
-def _remediation(*, event_id: str, trusted: bool, host: str) -> dict[str, object]:
+def _remediation(
+    *,
+    event_id: str,
+    trusted: bool,
+    host: str,
+    trust_agent_type: str,
+) -> dict[str, object]:
     if trusted:
         return {"category": "none", "summary": "No action required."}
 
     event = event_id.lower()
+    if trust_agent_type == TRUST_AGENT_OPENTCSM_TPCM:
+        if "stale" in event:
+            return {
+                "category": "opentcsm-tpcm",
+                "summary": "OpenTCSM/TPCM evidence is no longer fresh.",
+                "next_commands": [
+                    f"POST /api/nodes/{host}/opentcsm-evidence with a fresh TPCM report",
+                ],
+            }
+        return {
+            "category": "opentcsm-tpcm",
+            "summary": "Waiting for OpenTCSM/Hygon TPCM evidence for this node.",
+            "next_commands": [
+                f"POST /api/nodes/{host}/opentcsm-evidence with boot and dynamic measurement status",
+            ],
+        }
+
     if event == "missing-agent-uuid":
         return {
             "category": "inventory",

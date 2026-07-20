@@ -40,6 +40,9 @@ class ComputeNodeOut(BaseModel):
     keylime_agent_uuid: str
     keylime_agent_ip: str
     keylime_agent_port: int
+    trust_agent_type: str = "keylime"
+    trust_agent_name: str = "Keylime Agent"
+    trusted_root: str = "TPM 2.0"
     facts: dict[str, Any]
     hardware_profile: HardwareProfileOut | None = None
     openstack_state: OpenStackStateOut | None = None
@@ -178,6 +181,24 @@ class HostIntegrityReportIn(BaseModel):
     xattrs: dict[str, dict[str, str]] = Field(default_factory=dict)
     errors: list[str] = Field(default_factory=list)
     facts: dict[str, Any] = Field(default_factory=dict)
+
+
+class OpenTcsmEvidenceReportIn(BaseModel):
+    hostname: str = ""
+    collected_at: datetime | None = None
+    trust_root: str = "Hygon TPCM"
+    agent_name: str = "OpenTCSM"
+    agent_version: str = ""
+    report_type: str = "tpcm"
+    boot_status: str | bool | None = None
+    dynamic_measurement_status: str | bool | None = None
+    runtime_status: str | bool | None = None
+    ima_status: str | bool | None = None
+    evm_status: str | bool | None = None
+    trusted: bool | None = None
+    summary: str = ""
+    raw: dict[str, Any] = Field(default_factory=dict)
+    errors: list[str] = Field(default_factory=list)
 
 
 class OverviewOut(BaseModel):

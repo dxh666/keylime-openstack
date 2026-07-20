@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from keylime_openstack.config import Settings
+from keylime_openstack.constants import TRUST_AGENT_KEYLIME
 from keylime_openstack.models import (
     AuditEvent,
     ComputeNode,
@@ -20,6 +21,11 @@ from keylime_openstack.seed import ensure_default_environment
 from keylime_openstack.services.decision import evaluate_trust
 from keylime_openstack.services.keylime import KeylimeClient
 from keylime_openstack.services.openstack import OpenStackClient
+from keylime_openstack.services.trust_agents import (
+    node_trust_agent_name,
+    node_trust_agent_type,
+    node_trusted_root,
+)
 
 
 class TrustSyncService:
@@ -89,7 +95,12 @@ class TrustSyncService:
             )
 
     def sync_node(self, node: ComputeNode) -> dict[str, object]:
-        keylime_result = self.collect_keylime_evidence(node)
+        trust_agent_type = node_trust_agent_type(node, self.settings)
+        trust_agent_result = (
+            self.collect_keylime_evidence(node)
+            if trust_agent_type == TRUST_AGENT_KEYLIME
+            else self.collect_external_trust_agent_evidence(node)
+        )
         evidence = latest_evidence_for_decision(self.session, node)
         openstack_state = self.session.scalars(
             select(OpenStackState)
@@ -135,7 +146,38 @@ class TrustSyncService:
             "trusted": decision.trusted,
             "reason": decision.reason,
             "desired_traits": decision.desired_traits,
-            "keylime": keylime_result,
+            "trust_agent": trust_agent_result,
+            "keylime": trust_agent_result if trust_agent_type == TRUST_AGENT_KEYLIME else {},
+        }
+
+    def collect_external_trust_agent_evidence(self, node: ComputeNode) -> dict[str, object]:
+        records = latest_evidence_for_decision(self.session, node)
+        evidence = {record.evidence_type: record.status for record in records}
+        agent_type = node_trust_agent_type(node, self.settings)
+        if not records:
+            self.session.add(
+                AuditEvent(
+                    event_type="trust_agent_evidence_collect",
+                    target=node.hostname,
+                    severity="warning",
+                    message=f"no evidence reported by {agent_type}",
+                    event_details={
+                        "trust_agent_type": agent_type,
+                        "trust_agent_name": node_trust_agent_name(node, self.settings),
+                        "trusted_root": node_trusted_root(node, self.settings),
+                    },
+                )
+            )
+            return {
+                "status": "pending",
+                "source": agent_type,
+                "reason": "waiting-for-external-trust-agent-evidence",
+                "evidence": {},
+            }
+        return {
+            "status": "collected",
+            "source": agent_type,
+            "evidence": evidence,
         }
 
     def collect_keylime_evidence(self, node: ComputeNode) -> dict[str, object]:

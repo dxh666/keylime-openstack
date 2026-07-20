@@ -37,9 +37,14 @@ POLICY_DEPLOY_APPLIED = "applied"
 POLICY_DEPLOY_AWAITING_REBOOT = "awaiting_reboot"
 POLICY_DEPLOY_FAILED = "failed"
 POLICY_DEPLOY_SUPERSEDED = "superseded"
+POLICY_DEPLOY_EXTERNAL_PENDING = "external_pending"
 
 PROVIDER_KEYLIME = "keylime"
+PROVIDER_OPENTCSM = "opentcsm"
 PROVIDER_DIM = "dim"
+
+TRUST_AGENT_KEYLIME = "keylime"
+TRUST_AGENT_OPENTCSM_TPCM = "opentcsm_tpcm"
 
 TASK_PENDING = "pending"
 TASK_RUNNING = "running"

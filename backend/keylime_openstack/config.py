@@ -75,6 +75,9 @@ class Settings(BaseSettings):
     default_controller_host: str = "csri10"
     default_compute_hosts: str = "csri8,csri9,hygon22"
 
+    trust_agent_type_map: str = ""
+    opentcsm_evidence_fresh_seconds: int = 300
+
     dim_provider_enabled: bool = False
 
     @property

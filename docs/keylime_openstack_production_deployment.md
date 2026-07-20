@@ -206,6 +206,12 @@ credential setup in:
 docs/keylime_measured_boot_ima_ansible_management.md
 ```
 
+For the mixed Keylime + OpenTCSM/Hygon TPCM deployment model, see:
+
+```text
+docs/opentcsm_hygon_tpcm_integration.md
+```
+
 ## Runtime Docker network
 
 API and worker containers must reach the OpenStack management network because

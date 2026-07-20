@@ -19,15 +19,23 @@ from keylime_openstack.constants import (
     POLICY_DEPLOY_APPLIED,
     POLICY_DEPLOY_APPLYING,
     POLICY_DEPLOY_AWAITING_REBOOT,
+    POLICY_DEPLOY_EXTERNAL_PENDING,
     POLICY_DEPLOY_FAILED,
     POLICY_DEPLOY_SUPERSEDED,
     POLICY_IMA_RUNTIME,
     POLICY_MEASURED_BOOT,
+    TRUST_AGENT_KEYLIME,
+    TRUST_AGENT_OPENTCSM_TPCM,
 )
 from keylime_openstack.models import AuditEvent, ComputeNode, PolicyBinding, TrustPolicy
 from keylime_openstack.services.ansible import AnsibleExecutor
 from keylime_openstack.services.keylime import KeylimeClient
 from keylime_openstack.services.policy import canonical_policy_type, load_policy
+from keylime_openstack.services.trust_agents import (
+    node_trust_agent_name,
+    node_trust_agent_type,
+    node_trusted_root,
+)
 
 
 class PolicyDeploymentService:
@@ -58,7 +66,9 @@ class PolicyDeploymentService:
             self.session.flush()
             try:
                 policy_type = canonical_policy_type(policy.policy_type)
-                if policy_type == POLICY_MEASURED_BOOT:
+                if node_trust_agent_type(node, self.settings) != TRUST_AGENT_KEYLIME:
+                    details = self._defer_external_trust_agent_policy(policy, binding, node)
+                elif policy_type == POLICY_MEASURED_BOOT:
                     details = self._deploy_measured_boot(policy, binding, node)
                 elif policy_type == POLICY_IMA_RUNTIME:
                     details = self._deploy_ima_runtime(policy, binding, node)
@@ -83,9 +93,40 @@ class PolicyDeploymentService:
             "binding_id": binding_id,
             "bindings": results,
             "failed": sum(item["status"] == POLICY_DEPLOY_FAILED for item in results),
+            "external_pending": sum(
+                item["status"] == POLICY_DEPLOY_EXTERNAL_PENDING for item in results
+            ),
             "awaiting_reboot": sum(
                 item["status"] == POLICY_DEPLOY_AWAITING_REBOOT for item in results
             ),
+        }
+
+    def _defer_external_trust_agent_policy(
+        self,
+        policy: TrustPolicy,
+        binding: PolicyBinding,
+        node: ComputeNode,
+    ) -> dict[str, Any]:
+        agent_type = node_trust_agent_type(node, self.settings)
+        if agent_type != TRUST_AGENT_OPENTCSM_TPCM:
+            raise RuntimeError(f"unsupported trust agent type {agent_type!r}")
+        binding.application_status = POLICY_DEPLOY_EXTERNAL_PENDING
+        binding.last_error = ""
+        binding.binding_details = {
+            **dict(binding.binding_details or {}),
+            "policy_type": canonical_policy_type(policy.policy_type),
+            "trust_agent_type": agent_type,
+            "trust_agent_name": node_trust_agent_name(node, self.settings),
+            "trusted_root": node_trusted_root(node, self.settings),
+            "deployed_by": "external-trust-agent",
+            "reason": "OpenTCSM/Hygon TPCM policy deployment is not implemented yet.",
+        }
+        return {
+            "trust_agent_type": agent_type,
+            "trust_agent_name": node_trust_agent_name(node, self.settings),
+            "trusted_root": node_trusted_root(node, self.settings),
+            "policy_deployment": "external_pending",
+            "message": "OpenTCSM/Hygon TPCM policy deployment is waiting for adapter implementation.",
         }
 
     def _deploy_measured_boot(

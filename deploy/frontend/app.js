@@ -126,8 +126,8 @@ createApp({
     },
     policyGenerationSummary() {
       return this.activePolicyType === "measured_boot"
-        ? "生成 Keylime 可信启动参考状态"
-        : "生成 Keylime IMA 运行时策略";
+        ? "生成可信启动参考状态"
+        : "生成 IMA 运行时策略";
     },
     currentTimeText() {
       return this.currentTime.toLocaleString("zh-CN", {
@@ -235,6 +235,9 @@ createApp({
           host: node.hostname,
           rawNode: node,
           keylimeNode,
+          trustAgentType: node.trust_agent_type || keylimeNode.trust_agent_type || "keylime",
+          trustAgentName: node.trust_agent_name || keylimeNode.trust_agent_name || "Keylime Agent",
+          trustedRoot: node.trusted_root || keylimeNode.trusted_root || "TPM 2.0",
           managementIp: this.primaryController.management_ip || "-",
           ownIp: node.management_ip || node.keylime_agent_ip || keylimeNode.agent_ip || "-",
           openstackText: this.openStackComputeText(node.openstack_state),
@@ -505,12 +508,14 @@ createApp({
           ]
         },
         {
-          title: "Keylime Agent",
+          title: "可信代理",
           items: [
             { label: "纳管状态", value: row.managed, state: row.managedClass },
-            { label: "Agent UUID", value: node.keylime_agent_uuid || keylimeNode.agent_uuid || "-" },
-            { label: "Agent IP", value: node.keylime_agent_ip || keylimeNode.agent_ip || "-" },
-            { label: "端口", value: node.keylime_agent_port || "-" },
+            { label: "代理类型", value: row.trustAgentName || this.trustAgentName(node, keylimeNode) },
+            { label: "可信根", value: row.trustedRoot || this.trustedRoot(node, keylimeNode) },
+            { label: "Agent UUID", value: this.agentUuidText(node, keylimeNode) },
+            { label: "Agent IP", value: node.keylime_agent_ip || keylimeNode.agent_ip || node.management_ip || "-" },
+            { label: "端口", value: this.agentPortText(node) },
             { label: "证明状态", value: keylimeNode.attestation_status || "-" },
             { label: "运行状态", value: keylimeNode.operational_state ?? "-" },
             { label: "最近事件", value: keylimeNode.last_event_id || "-" }
@@ -608,6 +613,7 @@ createApp({
         queued: "等待下发",
         applying: "下发中",
         applied: "已下发",
+        external_pending: "外部代理待接入",
         awaiting_reboot: "等待重启",
         failed: "下发失败",
         superseded: "已替换",
@@ -637,16 +643,38 @@ createApp({
       return "warn";
     },
     keylimeManagedText(node, keylimeNode) {
+      if ((node.trust_agent_type || keylimeNode.trust_agent_type) === "opentcsm_tpcm") {
+        if (keylimeNode.status === "collected") return "已纳管";
+        return "待上报";
+      }
       if (keylimeNode.status === "error") return "纳管异常";
       if (keylimeNode.status === "collected") return "已纳管";
       if (node.keylime_agent_uuid) return "待验证";
       return "未纳管";
     },
     keylimeManagedClass(node, keylimeNode) {
+      if ((node.trust_agent_type || keylimeNode.trust_agent_type) === "opentcsm_tpcm") {
+        if (keylimeNode.status === "collected") return "ok";
+        return "warn";
+      }
       if (keylimeNode.status === "error") return "bad";
       if (keylimeNode.status === "collected") return "ok";
       if (node.keylime_agent_uuid) return "warn";
       return "bad";
+    },
+    trustAgentName(node, keylimeNode) {
+      return node.trust_agent_name || keylimeNode.trust_agent_name || "Keylime Agent";
+    },
+    trustedRoot(node, keylimeNode) {
+      return node.trusted_root || keylimeNode.trusted_root || "TPM 2.0";
+    },
+    agentUuidText(node, keylimeNode) {
+      if ((node.trust_agent_type || keylimeNode.trust_agent_type) === "opentcsm_tpcm") return "不适用";
+      return node.keylime_agent_uuid || keylimeNode.agent_uuid || "-";
+    },
+    agentPortText(node) {
+      if (node.trust_agent_type === "opentcsm_tpcm") return "不适用";
+      return node.keylime_agent_port || "-";
     },
     proofTime(node) {
       return this.formatTime(this.timestampFromSeconds(node.last_successful_attestation || node.last_received_quote));
@@ -875,7 +903,7 @@ createApp({
         const payload = this.policyPayload();
         this.requireToken({
           title: "确认新增策略",
-          message: `将创建${this.currentPolicyType.label}「${payload.name}」，并从目标节点自动采集基线后下发到 Keylime。`,
+        message: `将创建${this.currentPolicyType.label}「${payload.name}」，并从目标节点自动采集基线后下发到对应可信代理。`,
           confirmText: "生成并下发",
           action: async (token) => {
             await this.requestJson("/api/policies", {
@@ -911,7 +939,7 @@ createApp({
         : `/api/policies/${policy.id}/deploy`;
       this.requireToken({
         title: "确认更新策略基线",
-        message: `将重新采集「${targetText}」的节点证据，生成 Keylime 策略并下发到 verifier。`,
+        message: `将重新采集「${targetText}」的节点证据，生成策略并下发到对应可信代理。`,
         confirmText: "确认更新",
         action: async (token) => {
           await this.requestJson(endpoint, { method: "POST" }, token);

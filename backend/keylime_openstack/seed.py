@@ -55,7 +55,11 @@ def ensure_default_environment(session: Session) -> None:
             "management_ip": "172.31.100.10",
             "role": "controller",
             "hardware_profile": intel,
-            "facts": {"kernel": "6.8.0-134-generic", "cpu_vendor": "GenuineIntel", "cpu_count": 32},
+            "facts": {
+                "kernel": "6.8.0-134-generic",
+                "cpu_vendor": "GenuineIntel",
+                "cpu_count": 32,
+            },
         },
         {
             "hostname": "csri8",
@@ -65,7 +69,14 @@ def ensure_default_environment(session: Session) -> None:
             "keylime_agent_ip": "172.31.100.8",
             "keylime_agent_uuid": "22222222-2222-4222-8222-000000000008",
             "hardware_profile": intel,
-            "facts": {"kernel": "6.8.0-134-generic", "cpu_vendor": "GenuineIntel", "cpu_count": 32},
+            "facts": {
+                "kernel": "6.8.0-134-generic",
+                "cpu_vendor": "GenuineIntel",
+                "cpu_count": 32,
+                "trust_agent_type": "keylime",
+                "trust_agent_name": "Keylime Agent",
+                "trusted_root": "TPM 2.0",
+            },
         },
         {
             "hostname": "csri9",
@@ -75,7 +86,14 @@ def ensure_default_environment(session: Session) -> None:
             "keylime_agent_ip": "172.31.100.9",
             "keylime_agent_uuid": "11111111-1111-4111-8111-000000000009",
             "hardware_profile": intel,
-            "facts": {"kernel": "6.8.0-134-generic", "cpu_vendor": "GenuineIntel", "cpu_count": 32},
+            "facts": {
+                "kernel": "6.8.0-134-generic",
+                "cpu_vendor": "GenuineIntel",
+                "cpu_count": 32,
+                "trust_agent_type": "keylime",
+                "trust_agent_name": "Keylime Agent",
+                "trusted_root": "TPM 2.0",
+            },
         },
         {
             "hostname": "hygon22",
@@ -90,6 +108,9 @@ def ensure_default_environment(session: Session) -> None:
                 "cpu_vendor": "HygonGenuine",
                 "cpu_count": 128,
                 "numa_nodes": 8,
+                "trust_agent_type": "opentcsm_tpcm",
+                "trust_agent_name": "OpenTCSM",
+                "trusted_root": "Hygon TPCM",
             },
         },
     ]
@@ -115,5 +136,12 @@ def _fill_missing_node_defaults(node: ComputeNode, payload: dict[str, object]) -
             setattr(node, field, value)
     if node.hardware_profile_id is None and payload.get("hardware_profile"):
         node.hardware_profile = payload["hardware_profile"]  # type: ignore[assignment]
-    if not node.facts and isinstance(payload.get("facts"), dict):
-        node.facts = payload["facts"]  # type: ignore[assignment]
+    if isinstance(payload.get("facts"), dict):
+        merged = dict(node.facts or {})
+        changed = False
+        for key, value in payload["facts"].items():  # type: ignore[union-attr]
+            if key not in merged or merged[key] in ("", None):
+                merged[key] = value
+                changed = True
+        if changed or not node.facts:
+            node.facts = merged

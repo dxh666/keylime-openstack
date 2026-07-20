@@ -127,6 +127,16 @@ prepare() {
     set_env_value KEYLIME_OPENSTACK_DOCKER_SUBNET "10.245.0.0/24"
   fi
 
+  current_trust_agent_map="$(get_env_value TRUST_AGENT_TYPE_MAP)"
+  if [ -z "$current_trust_agent_map" ]; then
+    set_env_value TRUST_AGENT_TYPE_MAP "csri8=keylime,csri9=keylime,hygon22=opentcsm_tpcm"
+  fi
+
+  current_opentcsm_fresh="$(get_env_value OPENTCSM_EVIDENCE_FRESH_SECONDS)"
+  if [ -z "$current_opentcsm_fresh" ]; then
+    set_env_value OPENTCSM_EVIDENCE_FRESH_SECONDS "300"
+  fi
+
   chmod 0600 "$ENV_FILE"
 }
 
