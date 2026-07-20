@@ -65,6 +65,10 @@ class Settings(BaseSettings):
     host_integrity_fresh_seconds: int = 300
     legacy_trait_enabled: bool = True
     trust_policy_mode: str = "ima-only"
+    trust_boot_enabled: bool = True
+    trust_ima_enabled: bool = True
+    trust_evm_enabled: bool = False
+    trust_openstack_service_enabled: bool = False
 
     temp_dir: str = "/tmp/keylime-openstack"
 
@@ -109,6 +113,17 @@ class Settings(BaseSettings):
             "strict": "evm-required",
         }
         return aliases.get(mode, "evm-required")
+
+    @property
+    def effective_trust_capabilities(self) -> dict[str, bool]:
+        """Return the enabled trust gates used for the final node decision."""
+
+        return {
+            "boot": self.trust_boot_enabled,
+            "ima": self.trust_ima_enabled,
+            "evm": self.trust_evm_enabled or self.normalized_trust_policy_mode == "evm-required",
+            "openstack_service": self.trust_openstack_service_enabled,
+        }
 
 
 @lru_cache

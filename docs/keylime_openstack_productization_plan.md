@@ -27,6 +27,12 @@ TPM quote + boot PCR policy + Linux IMA measurement policy
   -> operator can see, diagnose, and repair policy drift
 ```
 
+The final node decision must be capability-driven. A disabled capability is
+shown as evidence when available, but it must not block the node from becoming
+trusted. An enabled capability must pass before the node can be trusted.
+OpenStack service state is only an optional extra gate; it cannot replace
+Keylime trust evidence.
+
 Only after this milestone should the project enable:
 
 ```text
@@ -153,6 +159,33 @@ trusted
 reason
 desired_openstack_traits
 remediation
+enabled_trust_capabilities
+```
+
+The product should support these trust capability switches:
+
+```text
+TRUST_BOOT_ENABLED=true
+TRUST_IMA_ENABLED=true
+TRUST_EVM_ENABLED=false
+TRUST_OPENSTACK_SERVICE_ENABLED=false
+```
+
+Examples:
+
+```text
+only TRUST_BOOT_ENABLED=true
+  -> boot pass is enough for node trusted
+
+TRUST_BOOT_ENABLED=true and TRUST_IMA_ENABLED=true
+  -> boot and IMA runtime must both pass
+
+TRUST_EVM_ENABLED=true
+  -> EVM/appraisal evidence must also pass
+
+TRUST_OPENSTACK_SERVICE_ENABLED=true
+  -> nova-compute service enabled/up must also pass, but at least one Keylime
+     capability still has to be enabled and trusted
 ```
 
 ## IMA Measurement Model

@@ -67,6 +67,22 @@
         <section class="panel">
           <div class="panel-head">
             <div>
+              <h2>可信能力开关</h2>
+            </div>
+          </div>
+          <div class="capability-grid">
+            <article v-for="item in trustCapabilityItems" :key="item.key" class="capability-item">
+              <span>{{ item.label }}</span>
+              <strong :class="['pill', item.enabled ? 'ok' : 'warn']">
+                {{ item.enabled ? '已启用' : '未启用' }}
+              </strong>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
               <h2>计算节点运行状态</h2>
             </div>
           </div>
@@ -85,6 +101,7 @@
                 <div><span>IMA 运行时度量</span><strong>{{ stateText(node.evidence?.runtime) }}</strong></div>
                 <div><span>证明新鲜度</span><strong>{{ ageText(node.attestation_age_seconds) }}</strong></div>
                 <div><span>运行时策略</span><strong>{{ yesNo(node.has_runtime_policy) }}</strong></div>
+                <div><span>参与判定</span><strong>{{ enabledCapabilityNames(node) }}</strong></div>
                 <div><span>最近事件</span><strong>{{ node.last_event_id || '-' }}</strong></div>
               </div>
               <div class="remediation" v-if="node.remediation && node.remediation.category !== 'none'">

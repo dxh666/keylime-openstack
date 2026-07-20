@@ -69,7 +69,7 @@ createApp({
       loading: true,
       keylimeError: "",
       notice: { kind: "", text: "" },
-      keylime: { ok: null, nodes: [], nodes_total: 0, nodes_trusted: 0 },
+      keylime: { ok: null, nodes: [], nodes_total: 0, nodes_trusted: 0, trust_capabilities: {} },
       nodes: [],
       policies: [],
       createDialogOpen: false,
@@ -111,6 +111,15 @@ createApp({
     },
     filteredPolicies() {
       return this.policies.filter((policy) => policy.policy_type === this.activePolicyType);
+    },
+    trustCapabilityItems() {
+      const caps = this.keylime.trust_capabilities || {};
+      return [
+        { key: "boot", label: "可信启动", enabled: caps.boot === true },
+        { key: "ima", label: "IMA 运行时度量", enabled: caps.ima === true },
+        { key: "evm", label: "EVM 完整性保护", enabled: caps.evm === true },
+        { key: "openstack_service", label: "OpenStack 服务状态", enabled: caps.openstack_service === true }
+      ];
     }
   },
   mounted() {
@@ -183,6 +192,17 @@ createApp({
     ageText(value) {
       if (value === null || value === undefined) return "-";
       return `${value} 秒`;
+    },
+    enabledCapabilityNames(node = null) {
+      const caps = (node && node.trust_capabilities) || this.keylime.trust_capabilities || {};
+      const names = [
+        ["boot", "可信启动"],
+        ["ima", "IMA"],
+        ["evm", "EVM"],
+        ["openstack_service", "OpenStack 服务"]
+      ];
+      const enabled = names.filter(([key]) => caps[key] === true).map(([, label]) => label);
+      return enabled.length ? enabled.join("、") : "未启用";
     },
     headers(token = "") {
       const headers = { "Content-Type": "application/json" };

@@ -368,6 +368,28 @@ h2 {
   gap: 16px;
 }
 
+.capability-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.capability-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px;
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.capability-item span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .node-card,
 .keylime-card {
   padding: 18px;

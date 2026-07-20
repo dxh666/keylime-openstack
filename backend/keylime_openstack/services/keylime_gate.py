@@ -43,6 +43,7 @@ def keylime_only_check(
         "count": count,
         "interval_seconds": interval_seconds,
         "trust_policy_mode": latest["trust_policy_mode"],
+        "trust_capabilities": latest["trust_capabilities"],
         "openstack_enforcement_enabled": latest["openstack_enforcement_enabled"],
         "latest_nodes_total": latest["nodes_total"],
         "latest_nodes_trusted": latest["nodes_trusted"],
@@ -88,6 +89,7 @@ def _keylime_only_check_once(
         "mode": "keylime-only",
         "checked_at_utc": datetime.now(timezone.utc).isoformat(),
         "trust_policy_mode": settings.normalized_trust_policy_mode,
+        "trust_capabilities": settings.effective_trust_capabilities,
         "openstack_enforcement_enabled": settings.openstack_enforcement_enabled,
         "nodes_total": len(nodes),
         "nodes_trusted": trusted_count,
@@ -101,7 +103,16 @@ def _keylime_node_check(
     node: ComputeNode,
     settings,
 ) -> dict[str, object]:
-    base: dict[str, object] = {"host": node.hostname, "agent_uuid": node.keylime_agent_uuid}
+    keylime_capabilities = {
+        name: enabled
+        for name, enabled in settings.effective_trust_capabilities.items()
+        if name in {"boot", "ima", "evm"}
+    }
+    base: dict[str, object] = {
+        "host": node.hostname,
+        "agent_uuid": node.keylime_agent_uuid,
+        "trust_capabilities": keylime_capabilities,
+    }
     if not node.keylime_agent_uuid:
         return {
             **base,
@@ -147,11 +158,27 @@ def _keylime_node_check(
     }
     boot_ok = evidence.get("boot") == "pass"
     runtime_ok = evidence.get("runtime") == "pass"
+    evm_ok = evidence.get("evm") == "pass"
     boot_fresh = evidence_fresh.get("boot", False)
     runtime_fresh = evidence_fresh.get("runtime", False)
-    trusted = boot_ok and runtime_ok and boot_fresh and runtime_fresh
+    evm_fresh = evidence_fresh.get("evm", False)
+    capability_status = {
+        "boot": boot_ok and boot_fresh,
+        "ima": runtime_ok and runtime_fresh,
+        "evm": evm_ok and evm_fresh,
+    }
+    enabled_capabilities = [
+        name for name, enabled in keylime_capabilities.items() if enabled
+    ]
+    trusted = bool(enabled_capabilities) and all(
+        capability_status[name] for name in enabled_capabilities
+    )
     active_event_id = _active_last_event_id(status)
-    reason = "TRUSTED" if trusted else _keylime_only_reason(evidence, evidence_fresh)
+    reason = (
+        "TRUSTED"
+        if trusted
+        else _keylime_only_reason(evidence, evidence_fresh, keylime_capabilities)
+    )
     return {
         **base,
         "agent_ip": reported_ip,
@@ -170,6 +197,8 @@ def _keylime_node_check(
         "evidence": evidence,
         "evidence_fresh": evidence_fresh,
         "evidence_valid_until": evidence_valid_until,
+        "trust_capabilities": keylime_capabilities,
+        "capability_status": capability_status,
         "remediation": _remediation(
             event_id=str(active_event_id or reason),
             trusted=trusted,
@@ -227,9 +256,17 @@ def _coerce_epoch(value: object) -> int | None:
 def _keylime_only_reason(
     evidence: dict[str, str],
     evidence_fresh: dict[str, bool],
+    capabilities: dict[str, bool],
 ) -> str:
     missing = []
-    for label, evidence_type in (("BOOT", "boot"), ("IMA", "runtime")):
+    checks = (
+        ("BOOT", "boot", "boot"),
+        ("IMA", "ima", "runtime"),
+        ("EVM", "evm", "evm"),
+    )
+    for label, capability_name, evidence_type in checks:
+        if not capabilities.get(capability_name):
+            continue
         status = evidence.get(evidence_type, "missing")
         fresh = evidence_fresh.get(evidence_type, False)
         if status == "pass" and not fresh:
@@ -237,7 +274,7 @@ def _keylime_only_reason(
         elif status != "pass":
             missing.append(f"{label}_{status.upper()}")
     if not missing:
-        return "NOT_TRUSTED"
+        return "NO_KEYLIME_TRUST_CAPABILITY_ENABLED"
     return "WAITING_FOR_" + "_".join(missing)
 
 

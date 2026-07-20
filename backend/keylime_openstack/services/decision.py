@@ -71,8 +71,9 @@ def evaluate_trust(
     runtime_keylime = bool(runtime and runtime.status == "pass" and runtime_fresh)
     evm_trusted = bool(evm and evm.status == "pass" and evm_fresh)
     trust_policy_mode = settings.normalized_trust_policy_mode
-    evm_required = trust_policy_mode == "evm-required"
-    runtime_trusted = runtime_keylime and (evm_trusted if evm_required else True)
+    capabilities = settings.effective_trust_capabilities
+    evm_required = capabilities["evm"]
+    runtime_trusted = runtime_keylime
 
     service_ok = bool(
         openstack_state
@@ -80,11 +81,25 @@ def evaluate_trust(
         and openstack_state.service_state == "up"
     )
 
-    trusted = boot_trusted and runtime_trusted and service_ok
+    capability_status = {
+        "boot": boot_trusted,
+        "ima": runtime_keylime,
+        "evm": evm_trusted,
+        "openstack_service": service_ok,
+    }
+    enabled_capabilities = [
+        name for name, enabled in capabilities.items() if enabled
+    ]
+    enabled_keylime_capabilities = [
+        name for name in ("boot", "ima", "evm") if capabilities[name]
+    ]
+    trusted = bool(enabled_keylime_capabilities) and all(
+        capability_status[name] for name in enabled_capabilities
+    )
     desired_traits: list[str] = []
-    if boot_trusted:
+    if capabilities["boot"] and boot_trusted:
         desired_traits.append(TRAIT_BOOT_TRUSTED)
-    if runtime_trusted:
+    if capabilities["ima"] and runtime_trusted:
         desired_traits.append(TRAIT_RUNTIME_TRUSTED)
     if trusted:
         desired_traits.append(TRAIT_TRUSTED)
@@ -92,16 +107,21 @@ def evaluate_trust(
             desired_traits.append(TRAIT_LEGACY_ATTESTED)
 
     missing = []
-    if not boot_trusted:
+    if capabilities["boot"] and not boot_trusted:
         missing.append(_waiting_reason("boot", boot, boot_fresh))
-    if not runtime_keylime:
+    if capabilities["ima"] and not runtime_keylime:
         missing.append(_waiting_reason("ima", runtime, runtime_fresh))
-    if evm_required and not evm_trusted:
+    if capabilities["evm"] and not evm_trusted:
         missing.append(_waiting_reason("evm", evm, evm_fresh))
-    if not service_ok:
+    if capabilities["openstack_service"] and not service_ok:
         missing.append("openstack-service")
 
-    reason = "TRUSTED" if trusted else "WAITING_FOR_" + "_".join(missing).upper()
+    if trusted:
+        reason = "TRUSTED"
+    elif not enabled_keylime_capabilities:
+        reason = "NO_KEYLIME_TRUST_CAPABILITY_ENABLED"
+    else:
+        reason = "WAITING_FOR_" + "_".join(missing).upper()
     return {
         "boot_trusted": boot_trusted,
         "runtime_trusted": runtime_trusted,
@@ -125,6 +145,10 @@ def evaluate_trust(
             "evm_valid_until": _valid_until(evm),
             "evm_required": evm_required,
             "trust_policy_mode": trust_policy_mode,
+            "trust_capabilities": capabilities,
+            "enabled_trust_capabilities": enabled_capabilities,
+            "enabled_keylime_trust_capabilities": enabled_keylime_capabilities,
+            "capability_status": capability_status,
             "service_status": openstack_state.service_status if openstack_state else "missing",
             "service_state": openstack_state.service_state if openstack_state else "missing",
         },

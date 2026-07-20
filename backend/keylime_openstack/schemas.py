@@ -149,3 +149,4 @@ class OverviewOut(BaseModel):
     worker: dict[str, Any]
     traits: list[str]
     trust_policy_mode: str
+    trust_capabilities: dict[str, bool]

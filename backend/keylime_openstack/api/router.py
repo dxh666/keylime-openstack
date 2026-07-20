@@ -98,6 +98,7 @@ def overview(
         },
         traits=DEFAULT_TRUST_TRAITS,
         trust_policy_mode=settings.normalized_trust_policy_mode,
+        trust_capabilities=settings.effective_trust_capabilities,
     )
 
 

@@ -23,8 +23,19 @@ For the current lab, keep:
 
 ```text
 TRUST_POLICY_MODE=ima-only
+TRUST_BOOT_ENABLED=true
+TRUST_IMA_ENABLED=true
+TRUST_EVM_ENABLED=false
+TRUST_OPENSTACK_SERVICE_ENABLED=false
 OPENSTACK_ENFORCEMENT_ENABLED=false
 ```
+
+Only enabled trust capabilities participate in the final node decision. For
+example, if only `TRUST_BOOT_ENABLED=true`, a fresh trusted boot result is enough
+for the node to be trusted in the Keylime-only gate. IMA, EVM, and OpenStack
+service evidence may still be displayed, but disabled capabilities do not block
+trust. OpenStack service state is an optional extra gate and cannot make a node
+trusted without at least one enabled Keylime trust capability.
 
 ## Check current state
 
