@@ -663,7 +663,7 @@ h3 {
 }
 
 .compute-table .row {
-  grid-template-columns: minmax(120px, 1fr) 130px 150px 110px 180px;
+  grid-template-columns: minmax(110px, 1fr) 130px 130px 120px 100px 170px;
 }
 
 .control-table .row {

@@ -148,7 +148,7 @@ createApp({
         const node = this.dashboard.control_node;
         return [
           { label: "主机名", value: node.hostname || "-" },
-          { label: "管理 IP", value: node.management_ip || "-" },
+          { label: "IP 地址", value: node.management_ip || "-" },
           { label: "操作系统", value: node.operating_system || "-" },
           { label: "内核版本", value: node.kernel || "-" },
           { label: "CPU", value: node.cpu_model || "-" },
@@ -160,7 +160,7 @@ createApp({
       const profile = node.hardware_profile || {};
       return [
         { label: "主机名", value: node.hostname || "-" },
-        { label: "管理 IP", value: node.management_ip || "-" },
+        { label: "IP 地址", value: node.management_ip || "-" },
         { label: "操作系统", value: facts.os || this.osText(facts.kernel) },
         { label: "内核版本", value: facts.kernel || "-" },
         { label: "CPU", value: profile.model || facts.cpu_model || facts.cpu_vendor || "-" },
@@ -222,7 +222,10 @@ createApp({
         return {
           id: node.id,
           host: node.hostname,
-          ip: keylimeNode.agent_ip || node.management_ip || node.keylime_agent_ip || "-",
+          managementIp: this.primaryController.management_ip || "-",
+          ownIp: node.management_ip || node.keylime_agent_ip || keylimeNode.agent_ip || "-",
+          openstackText: this.openStackComputeText(node.openstack_state),
+          openstackClass: this.openStackComputeClass(node.openstack_state),
           managed: this.keylimeManagedText(node, keylimeNode),
           managedClass: this.keylimeManagedClass(node, keylimeNode),
           trusted: keylimeNode.trusted,
@@ -484,6 +487,22 @@ createApp({
     deploymentClass(value) {
       if (value === "applied") return "ok";
       if (value === "failed") return "bad";
+      return "warn";
+    },
+    openStackComputeText(state) {
+      if (!state) return "未知";
+      const serviceStatus = String(state.service_status || "").toLowerCase();
+      const serviceState = String(state.service_state || "").toLowerCase();
+      if (serviceStatus === "enabled" && serviceState === "up") return "在线";
+      if (serviceStatus === "disabled" || serviceState === "down") return "离线";
+      return "未知";
+    },
+    openStackComputeClass(state) {
+      if (!state) return "warn";
+      const serviceStatus = String(state.service_status || "").toLowerCase();
+      const serviceState = String(state.service_state || "").toLowerCase();
+      if (serviceStatus === "enabled" && serviceState === "up") return "ok";
+      if (serviceStatus === "disabled" || serviceState === "down") return "bad";
       return "warn";
     },
     keylimeManagedText(node, keylimeNode) {

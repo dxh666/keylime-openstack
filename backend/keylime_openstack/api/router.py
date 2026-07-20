@@ -14,6 +14,7 @@ from keylime_openstack.models import (
     AuditEvent,
     ComputeNode,
     HardwareProfile,
+    OpenStackState,
     TaskRun,
     TrustDecision,
     TrustPolicy,
@@ -135,7 +136,17 @@ def nodes(session: Session = Depends(db_session)) -> list[ComputeNodeOut]:
     rows = session.scalars(
         select(ComputeNode).options(joinedload(ComputeNode.hardware_profile)).order_by(ComputeNode.hostname)
     ).all()
-    return [ComputeNodeOut.model_validate(item) for item in rows]
+    states = _latest_openstack_states(session, [item.id for item in rows])
+    return [
+        ComputeNodeOut.model_validate(
+            {
+                **item.__dict__,
+                "hardware_profile": item.hardware_profile,
+                "openstack_state": states.get(item.id),
+            }
+        )
+        for item in rows
+    ]
 
 
 @router.get("/keylime/check")
@@ -492,6 +503,20 @@ def _dashboard_current_user(request: Request) -> dict[str, str]:
         "user_group": forwarded_group or "Administrator",
         "ip_address": (forwarded_for.split(",", 1)[0].strip() if forwarded_for else client_host) or "-",
     }
+
+
+def _latest_openstack_states(session: Session, node_ids: list[int]) -> dict[int, OpenStackState]:
+    if not node_ids:
+        return {}
+    rows = session.scalars(
+        select(OpenStackState)
+        .where(OpenStackState.node_id.in_(node_ids))
+        .order_by(OpenStackState.updated_at.desc())
+    ).all()
+    latest: dict[int, OpenStackState] = {}
+    for row in rows:
+        latest.setdefault(row.node_id, row)
+    return latest
 
 
 def _latest_decisions(session: Session, limit: int, node_ids: list[int] | None = None) -> list[TrustDecision]:

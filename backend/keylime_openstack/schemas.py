@@ -19,6 +19,15 @@ class HardwareProfileOut(BaseModel):
     notes: str = ""
 
 
+class OpenStackStateOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    service_binary: str
+    service_status: str
+    service_state: str
+    updated_at: datetime
+
+
 class ComputeNodeOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -33,6 +42,7 @@ class ComputeNodeOut(BaseModel):
     keylime_agent_port: int
     facts: dict[str, Any]
     hardware_profile: HardwareProfileOut | None = None
+    openstack_state: OpenStackStateOut | None = None
 
 
 class PolicyBindingOut(BaseModel):
