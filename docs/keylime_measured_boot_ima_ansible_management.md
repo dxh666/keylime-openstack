@@ -36,6 +36,13 @@ measured_boot_policy_name = example
 KEYLIME_MEASURED_BOOT_POLICY_ENGINE=example
 ```
 
+可信启动策略下发时，控制面会先采集节点
+`/sys/kernel/security/tpm0/binary_bios_measurements`，再调用 Keylime tenant
+容器内的 `keylime-policy create measured-boot` 生成 measured boot reference
+state，并通过 `addmbpolicy` / `updatembpolicy` 写入 verifier。旧版 Keylime
+镜像如果仍提供 `create_mb_refstate`，控制面会作为兼容 fallback 使用；新版镜像
+没有该入口时不需要手工进入容器处理。
+
 worker 会在下发前校验两者的管理面声明，且拒绝 `accept-all`。节点的 PCR 0-7
 作为默认管理范围；最终纳入 Quote 和事件日志重放的 PCR 由 verifier 中启用的
 elchecking policy 的 `get_relevant_pcrs()` 决定。

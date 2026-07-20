@@ -163,7 +163,10 @@ class PolicyDeploymentService:
 
             reference_state = policy.content.get("reference_state")
             if not reference_state:
-                reference_state = self.keylime.tenant_tool_create_measured_boot_refstate(event_log)
+                reference_state = self.keylime.tenant_tool_create_measured_boot_refstate(
+                    event_log,
+                    secure_boot_required=bool(policy.content.get("secure_boot_required", True)),
+                )
             external_name = _external_name("mb", policy.name, node.hostname, reference_state)
             self.keylime.tenant_tool_store_measured_boot_policy(
                 name=external_name,
@@ -192,6 +195,9 @@ class PolicyDeploymentService:
                     "rendered_policy_sha256": _content_hash(reference_state),
                     "generated_at": datetime.now(timezone.utc).isoformat(),
                     "deployed_by": "keylime-tenant",
+                    "secure_boot_required": bool(
+                        policy.content.get("secure_boot_required", True)
+                    ),
                 },
             )
             return {

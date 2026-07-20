@@ -204,7 +204,12 @@ class KeylimeClient:
                 ),
             }
 
-    def tenant_tool_create_measured_boot_refstate(self, event_log: bytes) -> dict[str, Any]:
+    def tenant_tool_create_measured_boot_refstate(
+        self,
+        event_log: bytes,
+        *,
+        secure_boot_required: bool = True,
+    ) -> dict[str, Any]:
         """Create a Keylime measured boot reference state from a TPM event log."""
 
         Path(self.settings.temp_dir).mkdir(parents=True, exist_ok=True)
@@ -215,7 +220,7 @@ class KeylimeClient:
             output_path = tmp_path / "measured-boot-refstate.json"
             event_path.write_bytes(event_log)
             output_path.touch(mode=0o666)
-            command = [
+            modern_command = [
                 "docker",
                 "compose",
                 "run",
@@ -223,14 +228,55 @@ class KeylimeClient:
                 "-v",
                 f"{tmp}:/keylime-openstack-tmp:rw",
                 "--entrypoint",
-                "create_mb_refstate",
+                "keylime-policy",
                 self.settings.keylime_tenant_service,
+                "create",
+                "measured-boot",
+                "-e",
                 "/keylime-openstack-tmp/binary_bios_measurements",
+                "-o",
                 "/keylime-openstack-tmp/measured-boot-refstate.json",
             ]
-            result = self._run_tenant_tool(command)
+            command_attempts = [modern_command]
+            if not secure_boot_required:
+                command_attempts = [
+                    [*modern_command, "--without-secureboot"],
+                    [*modern_command, "-i"],
+                    modern_command,
+                ]
+            result = {"rc": 1, "stdout": "", "stderr": "measured boot policy generation not run"}
+            attempt_errors: list[str] = []
+            for command in command_attempts:
+                output_path.write_text("", encoding="utf-8")
+                result = self._run_tenant_tool(command)
+                if result["rc"] == 0:
+                    break
+                attempt_errors.append(result["stderr"] or result["stdout"])
+
             if result["rc"] != 0:
-                raise RuntimeError(result["stderr"] or result["stdout"])
+                legacy_command = [
+                    "docker",
+                    "compose",
+                    "run",
+                    "--rm",
+                    "-v",
+                    f"{tmp}:/keylime-openstack-tmp:rw",
+                    "--entrypoint",
+                    "create_mb_refstate",
+                    self.settings.keylime_tenant_service,
+                    "/keylime-openstack-tmp/binary_bios_measurements",
+                    "/keylime-openstack-tmp/measured-boot-refstate.json",
+                ]
+                output_path.write_text("", encoding="utf-8")
+                result = self._run_tenant_tool(legacy_command)
+                if result["rc"] != 0:
+                    detail = result["stderr"] or result["stdout"]
+                    attempt_errors.append(detail)
+                    raise RuntimeError(
+                        "Keylime measured boot reference-state generation failed. "
+                        "Tried keylime-policy create measured-boot and legacy "
+                        f"create_mb_refstate. Details: {_join_errors(attempt_errors)}"
+                    )
             return json.loads(output_path.read_text(encoding="utf-8"))
 
     def tenant_tool_create_runtime_policy(
@@ -509,3 +555,10 @@ def _exception_summary(exc: Exception) -> str:
     if message:
         return message
     return f"{exc.__class__.__module__}.{exc.__class__.__name__}"
+
+
+def _join_errors(errors: list[str]) -> str:
+    normalized = [item.strip() for item in errors if item and item.strip()]
+    if not normalized:
+        return "no error output"
+    return " | ".join(dict.fromkeys(normalized))
