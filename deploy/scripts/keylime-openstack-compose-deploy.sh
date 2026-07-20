@@ -117,6 +117,16 @@ prepare() {
     echo "generated_admin_token=true"
   fi
 
+  current_docker_network="$(get_env_value KEYLIME_OPENSTACK_DOCKER_NETWORK)"
+  if [ -z "$current_docker_network" ]; then
+    set_env_value KEYLIME_OPENSTACK_DOCKER_NETWORK "keylime_openstack_net"
+  fi
+
+  current_docker_subnet="$(get_env_value KEYLIME_OPENSTACK_DOCKER_SUBNET)"
+  if [ -z "$current_docker_subnet" ]; then
+    set_env_value KEYLIME_OPENSTACK_DOCKER_SUBNET "10.245.0.0/24"
+  fi
+
   chmod 0600 "$ENV_FILE"
 }
 

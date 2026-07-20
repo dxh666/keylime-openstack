@@ -206,6 +206,44 @@ credential setup in:
 docs/keylime_measured_boot_ima_ansible_management.md
 ```
 
+## Runtime Docker network
+
+API and worker containers must reach the OpenStack management network because
+the policy executor uses SSH/Ansible to collect TPM event logs and IMA
+measurements from compute nodes. The compose file creates a dedicated runtime
+network instead of relying on Docker's default bridge subnet:
+
+```text
+KEYLIME_OPENSTACK_DOCKER_NETWORK=keylime_openstack_net
+KEYLIME_OPENSTACK_DOCKER_SUBNET=10.245.0.0/24
+```
+
+The subnet must not overlap the OpenStack management, tenant, provider, or
+storage networks. In this lab the management network is `172.31.100.0/24`, so
+`10.245.0.0/24` avoids the common failure where the controller can SSH to a
+compute node but the worker container times out:
+
+```bash
+ssh -o ConnectTimeout=5 root@172.31.100.8 hostname
+docker exec keylime_openstack_worker sh -lc \
+  "ssh -o ConnectTimeout=5 root@172.31.100.8 hostname"
+```
+
+If the host command succeeds and the container command times out, inspect the
+container route table and Docker network:
+
+```bash
+docker network inspect keylime_openstack_net
+docker exec keylime_openstack_worker ip route
+```
+
+Choose another unused subnet if `10.245.0.0/24` is already used locally, update
+`/etc/keylime-openstack/keylime-openstack.env`, and recreate the containers:
+
+```text
+KEYLIME_OPENSTACK_DOCKER_SUBNET=10.246.0.0/24
+```
+
 ## Deploy the control plane
 
 Use the deployment helper for normal installs and redeploys:

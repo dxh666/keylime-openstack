@@ -82,6 +82,21 @@ worker 启动策略任务前会检查 `ansible-playbook`、OpenSSH `ssh`、私�
 客户端；即使旧环境文件仍设置为 `false`，当基础镜像缺少 `ssh` 时构建也会尝试
 自动补齐，否则可信启动和 IMA 策略下发无法工作。
 
+下发策略前还应确认 worker 容器到计算节点管理 IP 的 SSH 出口正常。宿主机能 SSH
+而容器超时，通常是 Docker bridge 子网与 OpenStack 管理网段重叠或容器出口被
+防火墙拦截：
+
+```bash
+ssh -o ConnectTimeout=5 root@172.31.100.8 hostname
+docker exec keylime_openstack_worker sh -lc \
+  "ssh -o ConnectTimeout=5 root@172.31.100.8 hostname"
+docker exec keylime_openstack_worker ip route
+docker network inspect keylime_openstack_net
+```
+
+默认控制面网络为 `10.245.0.0/24`。如果该网段在现场已被占用，修改
+`KEYLIME_OPENSTACK_DOCKER_SUBNET` 后重建 API/worker 容器。
+
 节点 IMA 策略下发会安装 `/etc/ima/ima-policy`。如果当前内核命令行含有
 `ima_policy=tcb` 等内置策略参数，Ansible 会通过 Ubuntu 的 `update-grub` 或
 Anolis/RHEL 系的 `grubby` 移除该参数，防止内置策略抢先占用自定义策略加载入口。

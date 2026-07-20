@@ -11,6 +11,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-keylime_openstack}
     volumes:
       - /var/lib/keylime-openstack/postgres:/var/lib/postgresql/data
+    networks:
+      - trust_plane
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-keylime_openstack} -d ${POSTGRES_DB:-keylime_openstack}"]
       interval: 10s
@@ -44,6 +46,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - /tmp/keylime-openstack:/tmp/keylime-openstack:rw
       - /etc/keylime-openstack/ansible:/etc/keylime-openstack/ansible:ro
+    networks:
+      - trust_plane
 
   worker:
     image: ${KEYLIME_OPENSTACK_IMAGE:-keylime-openstack-trust-plane:latest}
@@ -63,3 +67,12 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - /tmp/keylime-openstack:/tmp/keylime-openstack:rw
       - /etc/keylime-openstack/ansible:/etc/keylime-openstack/ansible:ro
+    networks:
+      - trust_plane
+
+networks:
+  trust_plane:
+    name: ${KEYLIME_OPENSTACK_DOCKER_NETWORK:-keylime_openstack_net}
+    ipam:
+      config:
+        - subnet: ${KEYLIME_OPENSTACK_DOCKER_SUBNET:-10.245.0.0/24}
