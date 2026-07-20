@@ -44,7 +44,9 @@ class AnsibleExecutor:
             raise RuntimeError(f"Ansible executable not found: {self.settings.ansible_binary}")
         if not shutil.which("ssh"):
             raise RuntimeError(
-                "OpenSSH client is required by the Ansible SSH connection plugin"
+                "OpenSSH client is required by the Ansible SSH connection plugin. "
+                "Set INSTALL_OS_TOOLS=true in /etc/keylime-openstack/keylime-openstack.env "
+                "and rebuild the api/worker image."
             )
         self._validate_ssh_files()
         self._validate_node(node)

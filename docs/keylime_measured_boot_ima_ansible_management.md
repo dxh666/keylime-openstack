@@ -78,9 +78,9 @@ chmod 0644 /etc/keylime-openstack/ansible/known_hosts
 `ssh-keyscan` 只采集主机公钥，不验证公钥来源。生产部署必须通过带外管理或资产
 系统核对指纹后再写入 `known_hosts`。
 worker 启动策略任务前会检查 `ansible-playbook`、OpenSSH `ssh`、私钥和
-`known_hosts` 是否存在。使用 `python:3.12-slim` 构建时需设置
-`INSTALL_OS_TOOLS=true` 以安装 OpenSSH 客户端；Kolla toolbox 已包含相关工具时
-可以保持为 `false`。
+`known_hosts` 是否存在。镜像默认使用 `INSTALL_OS_TOOLS=true` 安装 OpenSSH
+客户端；如果手动改为 `false`，基础镜像必须已经包含 `ssh`，否则可信启动和 IMA
+策略下发会在构建或任务执行阶段失败。
 
 节点 IMA 策略下发会安装 `/etc/ima/ima-policy`。如果当前内核命令行含有
 `ima_policy=tcb` 等内置策略参数，Ansible 会通过 Ubuntu 的 `update-grub` 或
