@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import ssl
 import subprocess
 import tempfile
@@ -424,6 +425,17 @@ class KeylimeClient:
     def _run_tenant_tool(self, command: list[str]) -> dict[str, Any]:
         if not self.settings.keylime_tenant_tool_enabled:
             return {"rc": 1, "stdout": "", "stderr": "tenant tool fallback disabled"}
+        if command and command[0] == "docker" and shutil.which("docker") is None:
+            return {
+                "rc": 127,
+                "stdout": "",
+                "stderr": (
+                    "docker CLI is unavailable in the API/worker container. "
+                    "Mount HOST_DOCKER_BIN, HOST_DOCKER_COMPOSE_PLUGIN, and "
+                    "/var/run/docker.sock, or disable KEYLIME_TENANT_TOOL_ENABLED "
+                    "when tenant-tool policy operations are not required."
+                ),
+            }
         try:
             completed = subprocess.run(
                 command,

@@ -70,6 +70,22 @@ get_env_value() {
   grep -E "^${key}=" "$ENV_FILE" | tail -1 | cut -d= -f2- || true
 }
 
+find_docker_compose_plugin() {
+  local candidate
+  for candidate in \
+    /usr/libexec/docker/cli-plugins/docker-compose \
+    /usr/lib/docker/cli-plugins/docker-compose \
+    /usr/local/libexec/docker/cli-plugins/docker-compose \
+    /usr/local/lib/docker/cli-plugins/docker-compose \
+    "${HOME:-/root}/.docker/cli-plugins/docker-compose"; do
+    if [ -x "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
 is_unset_or_placeholder() {
   local value="${1:-}"
   [ -z "$value" ] || [ "$value" = "change-me" ] || [ "$value" = "keylime_openstack" ]
@@ -125,6 +141,25 @@ prepare() {
   current_docker_subnet="$(get_env_value KEYLIME_OPENSTACK_DOCKER_SUBNET)"
   if [ -z "$current_docker_subnet" ]; then
     set_env_value KEYLIME_OPENSTACK_DOCKER_SUBNET "10.245.0.0/24"
+  fi
+
+  current_host_docker_bin="$(get_env_value HOST_DOCKER_BIN)"
+  if [ -z "$current_host_docker_bin" ]; then
+    host_docker_bin="$(command -v docker || true)"
+    if [ -n "$host_docker_bin" ]; then
+      set_env_value HOST_DOCKER_BIN "$host_docker_bin"
+    else
+      echo "WARN: docker CLI not found on host; Keylime tenant-tool operations will be unavailable." >&2
+    fi
+  fi
+
+  current_host_compose_plugin="$(get_env_value HOST_DOCKER_COMPOSE_PLUGIN)"
+  if [ -z "$current_host_compose_plugin" ]; then
+    if host_compose_plugin="$(find_docker_compose_plugin)"; then
+      set_env_value HOST_DOCKER_COMPOSE_PLUGIN "$host_compose_plugin"
+    else
+      echo "WARN: docker compose plugin not found on host; Keylime tenant-tool operations will be unavailable." >&2
+    fi
   fi
 
   current_trust_agent_map="$(get_env_value TRUST_AGENT_TYPE_MAP)"

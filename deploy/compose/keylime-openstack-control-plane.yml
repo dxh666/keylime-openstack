@@ -43,6 +43,8 @@ services:
     volumes:
       - /etc/kolla:/etc/kolla:ro
       - /opt/keylime-docker:/opt/keylime-docker:rw
+      - ${HOST_DOCKER_BIN:-/usr/bin/docker}:/usr/bin/docker:ro
+      - ${HOST_DOCKER_COMPOSE_PLUGIN:-/usr/libexec/docker/cli-plugins/docker-compose}:/usr/libexec/docker/cli-plugins/docker-compose:ro
       - /var/run/docker.sock:/var/run/docker.sock
       - /tmp/keylime-openstack:/tmp/keylime-openstack:rw
       - /etc/keylime-openstack/ansible:/etc/keylime-openstack/ansible:ro
@@ -64,6 +66,8 @@ services:
     volumes:
       - /etc/kolla:/etc/kolla:ro
       - /opt/keylime-docker:/opt/keylime-docker:rw
+      - ${HOST_DOCKER_BIN:-/usr/bin/docker}:/usr/bin/docker:ro
+      - ${HOST_DOCKER_COMPOSE_PLUGIN:-/usr/libexec/docker/cli-plugins/docker-compose}:/usr/libexec/docker/cli-plugins/docker-compose:ro
       - /var/run/docker.sock:/var/run/docker.sock
       - /tmp/keylime-openstack:/tmp/keylime-openstack:rw
       - /etc/keylime-openstack/ansible:/etc/keylime-openstack/ansible:ro

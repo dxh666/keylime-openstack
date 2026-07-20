@@ -13,6 +13,8 @@ Install this control plane on the OpenStack controller that can access:
 /etc/kolla/clouds.yaml
 /etc/kolla/admin-openrc.sh
 /opt/keylime-docker
+/usr/bin/docker
+/usr/libexec/docker/cli-plugins/docker-compose
 /var/run/docker.sock
 ```
 
@@ -91,6 +93,21 @@ Keylime verifier certificate does not contain `172.31.100.10` in its SAN. This
 still validates the CA chain. In a hardened production deployment, reissue the
 verifier certificate with the management IP or DNS name in SAN and set
 `KEYLIME_TLS_VERIFY_HOSTNAME=true`.
+
+Keylime policy generation and policy binding currently use the tenant tool
+inside the Keylime Docker deployment. API and worker containers therefore need
+all three host Docker resources:
+
+```text
+HOST_DOCKER_BIN=/usr/bin/docker
+HOST_DOCKER_COMPOSE_PLUGIN=/usr/libexec/docker/cli-plugins/docker-compose
+/var/run/docker.sock
+```
+
+The deploy script auto-detects `HOST_DOCKER_BIN` and
+`HOST_DOCKER_COMPOSE_PLUGIN` for existing env files. If the compose plugin is
+installed under a different directory, set `HOST_DOCKER_COMPOSE_PLUGIN` to the
+actual host path before starting API/worker.
 
 Keep these defaults for the first dry run:
 

@@ -17,6 +17,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+RUN mkdir -p /usr/libexec/docker/cli-plugins
+
 RUN install_os_tools() { \
       if command -v apt-get >/dev/null 2>&1; then \
         apt-get update \
