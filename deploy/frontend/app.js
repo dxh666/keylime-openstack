@@ -86,6 +86,7 @@ createApp({
       keylimeError: "",
       notice: { kind: "", text: "" },
       health: null,
+      dashboard: null,
       overview: null,
       keylime: { ok: null, nodes: [], nodes_total: 0, nodes_trusted: 0, trust_capabilities: {} },
       nodes: [],
@@ -129,6 +130,17 @@ createApp({
       };
     },
     controlNodeInfo() {
+      if (this.dashboard?.control_node) {
+        const node = this.dashboard.control_node;
+        return [
+          { label: "主机名", value: node.hostname || "-" },
+          { label: "管理 IP", value: node.management_ip || "-" },
+          { label: "操作系统", value: node.operating_system || "-" },
+          { label: "内核版本", value: node.kernel || "-" },
+          { label: "CPU", value: node.cpu_model || "-" },
+          { label: "CPU 核心数", value: node.cpu_count || "-" }
+        ];
+      }
       const node = this.primaryController;
       const facts = node.facts || {};
       const profile = node.hardware_profile || {};
@@ -142,6 +154,9 @@ createApp({
       ];
     },
     controlRuntimeItems() {
+      if (this.dashboard?.control_plane_status?.length) {
+        return this.dashboard.control_plane_status;
+      }
       return [
         {
           name: "管理 API",
@@ -166,14 +181,9 @@ createApp({
       ];
     },
     onlineUsers() {
-      return [
-        {
-          user: "当前访问会话",
-          role: "系统管理员",
-          auth: "管理令牌确认",
-          status: "在线"
-        }
-      ];
+      return this.dashboard?.online_users?.length
+        ? this.dashboard.online_users
+        : [{ type: "HTTP", username: "admin", user_group: "Administrator", ip_address: "-" }];
     },
     keylimeNodesByHost() {
       const items = new Map();
@@ -338,6 +348,7 @@ createApp({
       this.loading = true;
       const requests = {
         health: this.requestJson("/api/health"),
+        dashboard: this.requestJson("/api/dashboard"),
         overview: this.requestJson("/api/overview"),
         keylime: this.requestJson("/api/keylime/check"),
         nodes: this.requestJson("/api/nodes"),
@@ -356,6 +367,7 @@ createApp({
       );
       for (const [key, value, error] of entries) {
         if (key === "health" && value) this.health = value;
+        if (key === "dashboard" && value) this.dashboard = value;
         if (key === "overview" && value) this.overview = value;
         if (key === "keylime") {
           if (value) {
@@ -383,6 +395,9 @@ createApp({
           if (this.notice.text === text) this.notice = { kind: "", text: "" };
         }, 6000);
       }
+    },
+    logoutSession() {
+      this.showNotice("ok", "已退出当前前端会话，后续管理操作仍需重新输入管理令牌。");
     },
     osText(kernel) {
       const value = String(kernel || "");

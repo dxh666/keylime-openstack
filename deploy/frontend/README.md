@@ -39,6 +39,7 @@ VM 风险标记
 主要接口：
 
 ```text
+GET    /api/dashboard
 GET    /api/keylime/check
 GET    /api/nodes
 GET    /api/policies

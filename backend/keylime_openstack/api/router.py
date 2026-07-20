@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from keylime_openstack.api.deps import db_session, require_admin, settings_dep
 from keylime_openstack.config import Settings
@@ -21,6 +21,7 @@ from keylime_openstack.models import (
 from keylime_openstack.schemas import (
     AuditEventOut,
     ComputeNodeOut,
+    DashboardOut,
     HostIntegrityReportIn,
     OverviewOut,
     TaskRunOut,
@@ -60,6 +61,31 @@ def bootstrap(session: Session = Depends(db_session)) -> dict[str, object]:
     ensure_default_environment(session)
     session.commit()
     return {"ok": True}
+
+
+@router.get("/dashboard", response_model=DashboardOut)
+def dashboard(
+    request: Request,
+    session: Session = Depends(db_session),
+    settings: Settings = Depends(settings_dep),
+) -> DashboardOut:
+    ensure_default_environment(session)
+    session.commit()
+    controller = session.scalars(
+        select(ComputeNode)
+        .options(joinedload(ComputeNode.hardware_profile))
+        .where(ComputeNode.role == "controller")
+        .order_by(ComputeNode.hostname)
+        .limit(1)
+    ).first()
+    if not controller:
+        raise HTTPException(status_code=404, detail="控制节点尚未初始化")
+
+    return DashboardOut(
+        control_node=_dashboard_control_node(controller),
+        control_plane_status=_dashboard_control_plane(settings),
+        online_users=[_dashboard_current_user(request)],
+    )
 
 
 @router.get("/overview", response_model=OverviewOut)
@@ -401,6 +427,71 @@ def _record_policy_audit(
             },
         )
     )
+
+
+def _dashboard_control_node(node: ComputeNode) -> dict[str, object]:
+    facts = node.facts or {}
+    profile = node.hardware_profile
+    kernel = str(facts.get("kernel") or "")
+    return {
+        "hostname": node.hostname,
+        "management_ip": node.management_ip,
+        "operating_system": str(facts.get("os") or _infer_os(kernel)),
+        "kernel": kernel or "-",
+        "cpu_model": (
+            profile.model
+            if profile and profile.model
+            else str(facts.get("cpu_model") or facts.get("cpu_vendor") or "-")
+        ),
+        "cpu_count": facts.get("cpu_count") or "-",
+        "deployment_mode": "Kolla / Docker",
+    }
+
+
+def _infer_os(kernel: str) -> str:
+    if "generic" in kernel:
+        return "Ubuntu Server"
+    if "an23" in kernel:
+        return "Anolis OS 23"
+    return "-"
+
+
+def _dashboard_control_plane(settings: Settings) -> list[dict[str, str]]:
+    keylime_configured = bool(settings.keylime_verifier_url and settings.keylime_registrar_url)
+    openstack_configured = bool(settings.openstack_clouds_yaml or settings.openstack_openrc)
+    return [
+        {"name": "管理 API", "status": "正常", "state": "ok"},
+        {"name": "PostgreSQL", "status": "正常", "state": "ok"},
+        {
+            "name": "Keylime Registrar",
+            "status": "已配置" if keylime_configured else "待接入",
+            "state": "ok" if keylime_configured else "warn",
+        },
+        {
+            "name": "Keylime Verifier",
+            "status": "已配置" if keylime_configured else "待接入",
+            "state": "ok" if keylime_configured else "warn",
+        },
+        {
+            "name": "OpenStack 控制面",
+            "status": "已配置" if openstack_configured else "待接入",
+            "state": "ok" if openstack_configured else "warn",
+        },
+    ]
+
+
+def _dashboard_current_user(request: Request) -> dict[str, str]:
+    forwarded_for = request.headers.get("x-forwarded-for", "")
+    forwarded_user = request.headers.get("x-forwarded-user", "")
+    forwarded_group = request.headers.get("x-forwarded-groups", "")
+    forwarded_proto = request.headers.get("x-forwarded-proto", "")
+    client_host = request.client.host if request.client else ""
+    return {
+        "type": (forwarded_proto or request.url.scheme or "http").upper(),
+        "username": forwarded_user or "admin",
+        "user_group": forwarded_group or "Administrator",
+        "ip_address": (forwarded_for.split(",", 1)[0].strip() if forwarded_for else client_host) or "-",
+    }
 
 
 def _latest_decisions(session: Session, limit: int, node_ids: list[int] | None = None) -> list[TrustDecision]:

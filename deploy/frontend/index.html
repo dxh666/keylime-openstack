@@ -54,18 +54,22 @@
       </nav>
 
       <div class="sidebar-footer">
-        <span :class="['status-dot', keylimeStatusClass]"></span>
-        <span>{{ keylime.nodes_trusted || 0 }}/{{ keylime.nodes_total || 0 }} 节点可信</span>
+        <span>Keylime OpenStack</span>
       </div>
     </aside>
 
     <main class="main">
       <header class="topbar">
         <div>
-          <p class="eyebrow">可信计算节点纳管</p>
           <h1>{{ currentTitle }}</h1>
         </div>
-        <span class="topbar-meta">自动更新</span>
+        <div class="topbar-actions">
+          <button type="button" :disabled="busy" @click="refreshAll(true)">
+            {{ busy ? '刷新中' : '刷新界面' }}
+          </button>
+          <button type="button" class="user-action">admin</button>
+          <button type="button" @click="logoutSession">退出登录</button>
+        </div>
       </header>
 
       <section v-if="notice.text" :class="['notice', notice.kind]">{{ notice.text }}</section>
@@ -100,12 +104,15 @@
             <div class="panel-head">
               <h2>在线用户信息</h2>
             </div>
-            <div class="user-list">
-              <div v-for="user in onlineUsers" :key="user.user">
-                <strong>{{ user.user }}</strong>
-                <span>{{ user.role }}</span>
-                <span>{{ user.auth }}</span>
-                <em class="pill ok">{{ user.status }}</em>
+            <div class="table compact-table online-user-table">
+              <div class="row header">
+                <span>类型</span><span>用户名</span><span>用户组</span><span>IP 地址</span>
+              </div>
+              <div v-for="user in onlineUsers" :key="`${user.username}-${user.ip_address}`" class="row">
+                <span>{{ user.type }}</span>
+                <span>{{ user.username }}</span>
+                <span>{{ user.user_group }}</span>
+                <span>{{ user.ip_address }}</span>
               </div>
             </div>
           </article>

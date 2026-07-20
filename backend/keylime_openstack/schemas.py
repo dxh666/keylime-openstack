@@ -123,6 +123,35 @@ class AuditEventOut(BaseModel):
     event_details: dict[str, Any]
 
 
+class DashboardControlNodeOut(BaseModel):
+    hostname: str
+    management_ip: str
+    operating_system: str
+    kernel: str
+    cpu_model: str
+    cpu_count: int | str
+    deployment_mode: str
+
+
+class DashboardComponentOut(BaseModel):
+    name: str
+    status: str
+    state: str
+
+
+class DashboardOnlineUserOut(BaseModel):
+    type: str
+    username: str
+    user_group: str
+    ip_address: str
+
+
+class DashboardOut(BaseModel):
+    control_node: DashboardControlNodeOut
+    control_plane_status: list[DashboardComponentOut]
+    online_users: list[DashboardOnlineUserOut]
+
+
 class HostIntegrityReportIn(BaseModel):
     hostname: str = ""
     collected_at: datetime | None = None
