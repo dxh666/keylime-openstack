@@ -250,6 +250,7 @@ class PolicyDeploymentService:
             agent_ip=node.keylime_agent_ip or node.management_ip,
             agent_port=node.keylime_agent_port,
             tpm_policy=tpm_policy,
+            replace_existing=True,
             runtime_policy_name=self._active_external_policy_name(
                 node.id,
                 POLICY_IMA_RUNTIME,

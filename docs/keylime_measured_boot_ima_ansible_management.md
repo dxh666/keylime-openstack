@@ -48,6 +48,9 @@ state，并通过 `addmbpolicy` / `updatembpolicy` 写入 verifier。旧版 Keyl
 quote 约束：通过 Ansible 采集选定 PCR 的 `sha256` 当前值，生成 `--tpm_policy`
 并绑定到 Keylime verifier。该模式仍由 Keylime 验证 TPM Quote，只是可信启动证据
 级别标记为 `tpm_pcr_quote_policy`，不是严格的 `measured_boot_refstate`。
+从 measured boot 降级到 PCR quote 时，控制面会对该 agent 执行一次替换式
+`delete -> add -> reactivate`，以清除 verifier 中可能残留的 measured boot policy
+绑定，避免后续 Quote 继续触发 event log parser。
 
 worker 会在下发前校验两者的管理面声明，且拒绝 `accept-all`。节点的 PCR 0-7
 作为默认管理范围；最终纳入 Quote 和事件日志重放的 PCR 由 verifier 中启用的

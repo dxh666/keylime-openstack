@@ -110,6 +110,7 @@ class KeylimeClient:
         runtime_policy: dict[str, Any] | None = None,
         runtime_policy_name: str = "",
         measured_boot_policy_name: str = "",
+        replace_existing: bool = False,
     ) -> dict[str, Any]:
         """Apply a policy using a temporary file only as a tool adapter."""
 
@@ -147,18 +148,22 @@ class KeylimeClient:
             if measured_boot_policy_name:
                 tenant_args.extend(["--mb-policy-name", measured_boot_policy_name])
 
-            update = self._run_tenant_tool(
-                [
-                    *compose_args,
-                    self.settings.keylime_tenant_service,
-                    "-c",
-                    "update",
-                    *tenant_args,
-                ]
-            )
-            applied = update
-            operation = "update"
-            if update["rc"] != 0 and agent_ip:
+            delete = {"rc": 0, "stdout": "", "stderr": ""}
+            if replace_existing:
+                delete = self._run_tenant_tool(
+                    [
+                        "docker",
+                        "compose",
+                        "run",
+                        "--rm",
+                        self.settings.keylime_tenant_service,
+                        "-c",
+                        "delete",
+                        "-u",
+                        agent_uuid,
+                        *self._tenant_service_endpoints(),
+                    ]
+                )
                 applied = self._run_tenant_tool(
                     [
                         *compose_args,
@@ -168,7 +173,30 @@ class KeylimeClient:
                         *tenant_args,
                     ]
                 )
-                operation = "add"
+                operation = "replace-add"
+            else:
+                update = self._run_tenant_tool(
+                    [
+                        *compose_args,
+                        self.settings.keylime_tenant_service,
+                        "-c",
+                        "update",
+                        *tenant_args,
+                    ]
+                )
+                applied = update
+                operation = "update"
+                if update["rc"] != 0 and agent_ip:
+                    applied = self._run_tenant_tool(
+                        [
+                            *compose_args,
+                            self.settings.keylime_tenant_service,
+                            "-c",
+                            "add",
+                            *tenant_args,
+                        ]
+                    )
+                    operation = "add"
             if applied["rc"] != 0:
                 return applied
 
@@ -194,6 +222,7 @@ class KeylimeClient:
                     part
                     for part in [
                         f"policy operation: {operation}",
+                        delete.get("stdout", ""),
                         applied.get("stdout", ""),
                         reactivate.get("stdout", ""),
                     ]
@@ -201,7 +230,11 @@ class KeylimeClient:
                 ),
                 "stderr": "\n".join(
                     part
-                    for part in [applied.get("stderr", ""), reactivate.get("stderr", "")]
+                    for part in [
+                        delete.get("stderr", ""),
+                        applied.get("stderr", ""),
+                        reactivate.get("stderr", ""),
+                    ]
                     if part
                 ),
             }

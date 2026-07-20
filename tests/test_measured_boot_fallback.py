@@ -47,3 +47,27 @@ def test_tenant_tool_apply_policy_strips_local_mask_from_tpm_policy():
     update_command = commands[0]
     tpm_policy_arg = update_command[update_command.index("--tpm_policy") + 1]
     assert json.loads(tpm_policy_arg) == {"7": ["c" * 64]}
+
+
+def test_tenant_tool_replace_existing_deletes_before_add():
+    client = KeylimeClient(Settings(keylime_docker_dir="."))
+    commands = []
+
+    def fake_run(command):
+        commands.append(command)
+        return {"rc": 0, "stdout": "ok", "stderr": ""}
+
+    client._run_tenant_tool = fake_run  # type: ignore[method-assign]
+
+    client.tenant_tool_apply_policy(
+        agent_uuid="11111111-1111-4111-8111-000000000009",
+        agent_ip="172.31.100.9",
+        tpm_policy={"7": ["d" * 64], "mask": "0x80"},
+        replace_existing=True,
+    )
+
+    assert commands[0][commands[0].index("-c") + 1] == "delete"
+    assert commands[1][commands[1].index("-c") + 1] == "add"
+    assert commands[2][commands[2].index("-c") + 1] == "reactivate"
+    tpm_policy_arg = commands[1][commands[1].index("--tpm_policy") + 1]
+    assert json.loads(tpm_policy_arg) == {"7": ["d" * 64]}
