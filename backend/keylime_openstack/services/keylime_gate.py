@@ -130,6 +130,7 @@ def _keylime_node_check(
     try:
         status = client.read_agent_status(node.keylime_agent_uuid)
     except Exception as exc:
+        event_id = _keylime_read_error_event(str(exc))
         return {
             **base,
             "agent_ip": node.keylime_agent_ip,
@@ -137,7 +138,7 @@ def _keylime_node_check(
             "status": "error",
             "reason": str(exc),
             "remediation": _remediation(
-                event_id="keylime-api-error",
+                event_id=event_id,
                 trusted=False,
                 host=node.hostname,
             ),
@@ -278,6 +279,19 @@ def _keylime_only_reason(
     return "WAITING_FOR_" + "_".join(missing)
 
 
+def _keylime_read_error_event(error: str) -> str:
+    normalized = error.lower()
+    if (
+        "404 not found" in normalized
+        or "agent not found" in normalized
+        or "verifier status not found" in normalized
+    ):
+        return "keylime-verifier-agent-not-found"
+    if "no such file or directory: 'docker'" in normalized:
+        return "keylime-tenant-tool-unavailable"
+    return "keylime-api-error"
+
+
 def _remediation(*, event_id: str, trusted: bool, host: str) -> dict[str, object]:
     if trusted:
         return {"category": "none", "summary": "No action required."}
@@ -289,6 +303,25 @@ def _remediation(*, event_id: str, trusted: bool, host: str) -> dict[str, object
             "summary": "Node has no Keylime agent UUID in the trust-plane inventory.",
             "next_commands": [
                 "deploy/scripts/keylime-agent-inventory-refresh.sh",
+            ],
+        }
+    if event == "keylime-verifier-agent-not-found":
+        return {
+            "category": "verifier-enrollment",
+            "summary": "Keylime verifier does not have an active enrollment for this agent.",
+            "next_commands": [
+                "cd /opt/keylime-docker && docker compose run --rm keylime-tenant -c reglist",
+                "cd /opt/keylime-docker && docker compose run --rm keylime-tenant -c cvlist",
+                f"cd /opt/keylime-openstack && deploy/scripts/keylime-ima-runtime-policy-refresh.sh {host}",
+            ],
+        }
+    if event == "keylime-tenant-tool-unavailable":
+        return {
+            "category": "tenant-tool",
+            "summary": "Verifier API failed and tenant-tool fallback cannot run because Docker is unavailable in the API container.",
+            "next_commands": [
+                "Run the Keylime tenant command from /opt/keylime-docker on csri10.",
+                "Mount Docker access into the API container only if tenant-tool fallback is required.",
             ],
         }
     if event == "keylime-api-error":
