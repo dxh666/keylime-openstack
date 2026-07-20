@@ -64,11 +64,17 @@
           <h1>{{ currentTitle }}</h1>
         </div>
         <div class="topbar-actions">
-          <button type="button" :disabled="busy" @click="refreshAll(true)">
-            {{ busy ? '刷新中' : '刷新界面' }}
-          </button>
-          <button type="button" class="user-action">admin</button>
-          <button type="button" @click="logoutSession">退出登录</button>
+          <span class="system-clock">{{ currentTimeText }}</span>
+          <div class="topbar-toolbox" aria-label="页面工具">
+            <button type="button" class="toolbar-button refresh-button" :disabled="busy" @click="refreshAll(true)">
+              <span class="toolbar-icon" aria-hidden="true">↻</span>
+              <span>{{ busy ? '刷新中' : '刷新' }}</span>
+            </button>
+            <button type="button" class="toolbar-button user-menu-button" @click="logoutSession">
+              <span class="toolbar-icon user-avatar" aria-hidden="true"></span>
+              <span>admin</span>
+            </button>
+          </div>
         </div>
       </header>
 

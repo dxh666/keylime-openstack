@@ -104,7 +104,9 @@ createApp({
         token: "",
         action: null
       },
-      timer: null
+      timer: null,
+      clockTimer: null,
+      currentTime: new Date()
     };
   },
   computed: {
@@ -114,6 +116,17 @@ createApp({
     currentTitle() {
       if (this.view === "policies") return this.currentPolicyType.label;
       return viewTitles[this.view] || "管理控制台";
+    },
+    currentTimeText() {
+      return this.currentTime.toLocaleString("zh-CN", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false
+      });
     },
     controllerNodes() {
       return this.nodes.filter((node) => node.role === "controller");
@@ -304,13 +317,19 @@ createApp({
     }
   },
   mounted() {
+    this.updateClock();
     this.refreshAll();
     this.timer = setInterval(() => this.refreshAll(false), 10000);
+    this.clockTimer = setInterval(() => this.updateClock(), 1000);
   },
   beforeUnmount() {
     if (this.timer) clearInterval(this.timer);
+    if (this.clockTimer) clearInterval(this.clockTimer);
   },
   methods: {
+    updateClock() {
+      this.currentTime = new Date();
+    },
     selectView(view) {
       this.view = view;
       this.detailPolicy = null;

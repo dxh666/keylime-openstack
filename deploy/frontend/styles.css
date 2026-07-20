@@ -206,18 +206,101 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 12px;
   flex-wrap: wrap;
 }
 
-.topbar-actions button {
-  min-height: 34px;
+.system-clock {
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-.topbar-actions .user-action {
-  background: var(--panel-soft);
-  color: var(--text);
-  cursor: default;
+.topbar-toolbox {
+  display: inline-flex;
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid #075f9d;
+  background: #0b72b7;
+}
+
+.toolbar-button {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 0;
+  background: #0b72b7;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 650;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  box-shadow: none;
+}
+
+.toolbar-button + .toolbar-button {
+  border-left: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.toolbar-button:hover {
+  background: #075f9d;
+  color: #fff;
+  border-color: transparent;
+}
+
+.toolbar-button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.toolbar-icon {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.user-avatar {
+  position: relative;
+}
+
+.user-avatar::before,
+.user-avatar::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  background: currentColor;
+}
+
+.user-avatar::before {
+  top: 1px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.user-avatar::after {
+  bottom: 1px;
+  width: 11px;
+  height: 6px;
+  border-radius: 7px 7px 2px 2px;
+}
+
+.user-menu-button::after {
+  content: "";
+  width: 0;
+  height: 0;
+  margin-left: 1px;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid currentColor;
 }
 
 .eyebrow {
