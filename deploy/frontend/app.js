@@ -97,6 +97,7 @@ createApp({
       createDialogOpen: false,
       createForm: emptyPolicyForm(),
       detailPolicy: null,
+      detailNode: null,
       tokenDialog: {
         open: false,
         title: "",
@@ -222,6 +223,8 @@ createApp({
         return {
           id: node.id,
           host: node.hostname,
+          rawNode: node,
+          keylimeNode,
           managementIp: this.primaryController.management_ip || "-",
           ownIp: node.management_ip || node.keylime_agent_ip || keylimeNode.agent_ip || "-",
           openstackText: this.openStackComputeText(node.openstack_state),
@@ -344,6 +347,7 @@ createApp({
     },
     selectView(view) {
       this.closeUserMenu();
+      this.closeNodeDetail();
       this.view = view;
       this.detailPolicy = null;
     },
@@ -359,6 +363,7 @@ createApp({
       this.view = "policies";
       this.activePolicyType = policyType;
       this.detailPolicy = null;
+      this.closeNodeDetail();
       this.expandedGroups.policies = true;
     },
     headers(token = "") {
@@ -432,11 +437,121 @@ createApp({
       this.closeUserMenu();
       this.showNotice("ok", "已退出当前前端会话，后续管理操作仍需重新输入管理令牌。");
     },
+    async refreshNodeStatus() {
+      await this.refreshAll(true);
+      if (!this.apiError) this.showNotice("ok", "节点状态已刷新。");
+    },
+    openControllerDetail(node) {
+      this.detailNode = {
+        title: node.hostname || "控制节点",
+        subtitle: "控制节点详情",
+        sections: [
+          {
+            title: "基本信息",
+            items: [
+              { label: "节点名称", value: node.hostname || "-" },
+              { label: "IP 地址", value: node.management_ip || "-" },
+              { label: "操作系统", value: this.nodeOsText(node) },
+              { label: "内核版本", value: node.facts?.kernel || "-" },
+              { label: "CPU", value: this.nodeCpuText(node) },
+              { label: "CPU 核心数", value: node.facts?.cpu_count || "-" }
+            ]
+          },
+          {
+            title: "控制面运行状况",
+            items: this.controlRuntimeItems.map((item) => ({
+              label: item.name,
+              value: item.status,
+              state: item.state
+            }))
+          }
+        ]
+      };
+    },
+    openComputeDetail(row) {
+      const node = row.rawNode || {};
+      const keylimeNode = row.keylimeNode || {};
+      const remediation = keylimeNode.remediation || {};
+      const sections = [
+        {
+          title: "基本信息",
+          items: [
+            { label: "节点名称", value: row.host || node.hostname || "-" },
+            { label: "Hypervisor 名称", value: node.hypervisor_name || row.host || "-" },
+            { label: "管理节点 IP", value: row.managementIp || "-" },
+            { label: "自身 IP", value: row.ownIp || "-" },
+            { label: "操作系统", value: this.nodeOsText(node) },
+            { label: "CPU", value: this.nodeCpuText(node) }
+          ]
+        },
+        {
+          title: "OpenStack 计算服务",
+          items: [
+            { label: "服务名称", value: node.openstack_state?.service_binary || "nova-compute" },
+            { label: "服务状态", value: row.openstackText, state: row.openstackClass },
+            { label: "status", value: node.openstack_state?.service_status || "-" },
+            { label: "state", value: node.openstack_state?.service_state || "-" },
+            { label: "更新时间", value: this.formatTime(node.openstack_state?.updated_at) }
+          ]
+        },
+        {
+          title: "Keylime Agent",
+          items: [
+            { label: "纳管状态", value: row.managed, state: row.managedClass },
+            { label: "Agent UUID", value: node.keylime_agent_uuid || keylimeNode.agent_uuid || "-" },
+            { label: "Agent IP", value: node.keylime_agent_ip || keylimeNode.agent_ip || "-" },
+            { label: "端口", value: node.keylime_agent_port || "-" },
+            { label: "证明状态", value: keylimeNode.attestation_status || "-" },
+            { label: "运行状态", value: keylimeNode.operational_state ?? "-" },
+            { label: "最近事件", value: keylimeNode.last_event_id || "-" }
+          ]
+        },
+        {
+          title: "可信状态",
+          items: [
+            { label: "可信状态", value: row.trustText, state: row.trustClass },
+            { label: "可信启动", value: this.stateText(keylimeNode.evidence?.boot), state: this.evidenceClass(keylimeNode.evidence?.boot) },
+            { label: "IMA 运行时", value: this.stateText(keylimeNode.evidence?.runtime), state: this.evidenceClass(keylimeNode.evidence?.runtime) },
+            { label: "最近证明时间", value: row.attestationTime },
+            { label: "原因", value: row.reason || "-" }
+          ]
+        }
+      ];
+      if (remediation.summary) {
+        sections.push({
+          title: "修复建议",
+          items: [
+            { label: "类别", value: remediation.category || "-" },
+            { label: "建议", value: remediation.summary },
+            { label: "命令", value: this.listText(remediation.next_commands || []) }
+          ]
+        });
+      }
+      this.detailNode = {
+        title: row.host || node.hostname || "计算节点",
+        subtitle: "计算节点详情",
+        sections
+      };
+    },
+    closeNodeDetail() {
+      this.detailNode = null;
+    },
     osText(kernel) {
       const value = String(kernel || "");
       if (value.includes("generic")) return "Ubuntu Server";
       if (value.includes("an23")) return "Anolis OS 23";
       return "-";
+    },
+    nodeOsText(node) {
+      return node?.facts?.os || this.osText(node?.facts?.kernel) || "-";
+    },
+    nodeCpuText(node) {
+      return (
+        node?.hardware_profile?.model ||
+        node?.facts?.cpu_model ||
+        node?.facts?.cpu_vendor ||
+        "-"
+      );
     },
     yesNo(value) {
       return value ? "是" : "否";
@@ -458,6 +573,12 @@ createApp({
         error: "异常"
       };
       return names[normalized] || value || "-";
+    },
+    evidenceClass(value) {
+      const normalized = String(value || "").toLowerCase();
+      if (normalized === "pass") return "ok";
+      if (normalized === "fail") return "bad";
+      return "warn";
     },
     statusText(value) {
       const names = {

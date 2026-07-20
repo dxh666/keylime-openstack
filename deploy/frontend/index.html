@@ -155,7 +155,7 @@
           <div class="panel-head">
             <h2>OpenStack 计算服务状态</h2>
           </div>
-          <div class="table compact-table compute-table">
+          <div class="table compact-table dashboard-compute-table">
             <div class="row header">
               <span>节点名称</span><span>管理节点 IP</span><span>自身 IP</span><span>计算服务状态</span><span>可信状态</span><span>最近证明时间</span>
             </div>
@@ -197,14 +197,18 @@
           </div>
           <div class="table compact-table control-table">
             <div class="row header">
-              <span>节点名称</span><span>IP 地址</span><span>操作系统</span><span>CPU</span><span>状态</span>
+              <span>节点名称</span><span>IP 地址</span><span>操作系统</span><span>CPU</span><span>状态</span><span>操作</span>
             </div>
             <div v-for="node in controllerNodes" :key="node.id" class="row">
               <span>{{ node.hostname }}</span>
               <span>{{ node.management_ip || '-' }}</span>
-              <span>{{ node.facts?.os || osText(node.facts?.kernel) }}</span>
-              <span>{{ node.hardware_profile?.model || node.facts?.cpu_vendor || '-' }}</span>
+              <span>{{ nodeOsText(node) }}</span>
+              <span>{{ nodeCpuText(node) }}</span>
               <span><em class="pill ok">在线</em></span>
+              <span class="row-actions">
+                <button type="button" class="small" @click="openControllerDetail(node)">查看详情</button>
+                <button type="button" class="small" :disabled="busy" @click="refreshNodeStatus">刷新状态</button>
+              </span>
             </div>
           </div>
         </section>
@@ -215,17 +219,22 @@
           <div class="panel-head">
             <h2>计算节点</h2>
           </div>
-          <div class="table compact-table compute-table">
+          <div class="table compact-table node-compute-table">
             <div class="row header">
-              <span>节点名称</span><span>管理节点 IP</span><span>自身 IP</span><span>计算服务状态</span><span>可信状态</span><span>最近证明时间</span>
+              <span>节点名称</span><span>管理节点 IP</span><span>自身 IP</span><span>计算服务状态</span><span>Keylime Agent</span><span>可信状态</span><span>最近证明时间</span><span>操作</span>
             </div>
             <div v-for="node in computeRows" :key="node.id" class="row">
               <span>{{ node.host }}</span>
               <span>{{ node.managementIp }}</span>
               <span>{{ node.ownIp }}</span>
               <span><em :class="['pill', node.openstackClass]">{{ node.openstackText }}</em></span>
+              <span><em :class="['pill', node.managedClass]">{{ node.managed }}</em></span>
               <span><em :class="['pill', node.trustClass]">{{ node.trustText }}</em></span>
               <span>{{ node.attestationTime }}</span>
+              <span class="row-actions">
+                <button type="button" class="small" @click="openComputeDetail(node)">查看详情</button>
+                <button type="button" class="small" :disabled="busy" @click="refreshNodeStatus">刷新状态</button>
+              </span>
             </div>
           </div>
         </section>
@@ -457,6 +466,30 @@
             </button>
           </div>
         </section>
+      </div>
+
+      <div v-if="detailNode" class="drawer-backdrop" @click.self="closeNodeDetail">
+        <aside class="node-drawer" role="dialog" aria-modal="true">
+          <header class="drawer-head">
+            <div>
+              <p class="eyebrow">{{ detailNode.subtitle }}</p>
+              <h2>{{ detailNode.title }}</h2>
+            </div>
+            <button type="button" @click="closeNodeDetail">关闭</button>
+          </header>
+          <section v-for="section in detailNode.sections" :key="section.title" class="detail-block">
+            <h3>{{ section.title }}</h3>
+            <div class="detail-grid">
+              <div v-for="item in section.items" :key="`${section.title}-${item.label}`">
+                <span>{{ item.label }}</span>
+                <strong>
+                  <em v-if="item.state" :class="['pill', item.state]">{{ item.value }}</em>
+                  <template v-else>{{ item.value }}</template>
+                </strong>
+              </div>
+            </div>
+          </section>
+        </aside>
       </div>
 
       <div v-if="tokenDialog.open" class="modal-backdrop" @click.self="closeTokenDialog">

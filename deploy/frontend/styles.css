@@ -65,6 +65,12 @@ button.danger {
   color: var(--red);
 }
 
+button.small {
+  min-height: 30px;
+  padding: 5px 9px;
+  font-size: 12px;
+}
+
 input,
 select,
 textarea {
@@ -546,6 +552,10 @@ h3 {
   font-size: 13px;
 }
 
+.detail-grid strong {
+  white-space: pre-wrap;
+}
+
 .component-list,
 .user-list {
   display: grid;
@@ -662,12 +672,16 @@ h3 {
   min-width: 720px;
 }
 
-.compute-table .row {
+.dashboard-compute-table .row {
   grid-template-columns: minmax(110px, 1fr) 130px 130px 120px 100px 170px;
 }
 
+.node-compute-table .row {
+  grid-template-columns: minmax(110px, 1fr) 130px 130px 120px 130px 100px 165px 150px;
+}
+
 .control-table .row {
-  grid-template-columns: 130px 130px 150px minmax(180px, 1fr) 80px;
+  grid-template-columns: 130px 130px 150px minmax(180px, 1fr) 80px 150px;
 }
 
 .event-table .row {
@@ -699,6 +713,39 @@ h3 {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(15, 23, 42, 0.34);
+}
+
+.node-drawer {
+  width: min(560px, 100vw);
+  height: 100vh;
+  overflow-y: auto;
+  padding: 22px;
+  background: var(--panel);
+  box-shadow: -16px 0 34px rgba(15, 23, 42, 0.2);
+}
+
+.drawer-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.drawer-head h2 {
+  margin-bottom: 0;
+  font-size: 22px;
 }
 
 .switch-grid {
