@@ -14,10 +14,11 @@ Collects the live IMA ascii_runtime_measurements file from a compute host,
 generates a Keylime runtime policy with the deployed keylime-policy tool, and
 registers/binds the generated policy in the local policy store.
 
-Default dynamic excludes cover Docker transient container config, Docker local
-network state, container JSON logs, temporary files, and systemd journal files.
-Extend the exclude file before running if a host has additional expected
-transient paths:
+Default dynamic excludes use the kolla-docker-host profile. It keeps Keylime
+IMA focused on stable host/service files and excludes Docker/containerd runtime
+state, /run, temporary files, and logs. Use
+KEYLIME_RUNTIME_POLICY_EXCLUDE_PROFILE=minimal to keep only narrow legacy
+transient rules, or extend the host exclude file before running:
 
   /var/lib/keylime-openstack-sync/policies/runtime/<host>-runtime-exclude.txt
 EOF
@@ -66,6 +67,7 @@ REGISTER_POLICY="${KEYLIME_RUNTIME_POLICY_GENERATE_REGISTER:-true}"
 BASE_POLICY="${KEYLIME_RUNTIME_POLICY_BASE_POLICY:-}"
 EXCLUDE_FILE="${KEYLIME_RUNTIME_POLICY_EXCLUDE_FILE:-$RUNTIME_DIR/${HOST}-runtime-exclude.txt}"
 EXTRA_EXCLUDES="${KEYLIME_RUNTIME_POLICY_EXTRA_EXCLUDES:-}"
+EXCLUDE_PROFILE="${KEYLIME_RUNTIME_POLICY_EXCLUDE_PROFILE:-kolla-docker-host}"
 
 HOST_IP="$AGENT_IP_OVERRIDE"
 if [ -z "$HOST_IP" ]; then
@@ -93,6 +95,26 @@ ensure_exclude_rule '^/var/lib/docker/containers/[0-9a-f]+/[0-9a-f]+-json\.log.*
 ensure_exclude_rule '^/var/lib/docker/network/files/local-kv\.db$'
 ensure_exclude_rule '^/tmp/tmp[A-Za-z0-9._-]+$'
 ensure_exclude_rule '^/var/log/journal/[0-9a-f]+/.*\.journal$'
+
+case "${EXCLUDE_PROFILE,,}" in
+  kolla-docker-host|docker-host|default)
+    ensure_exclude_rule '^/var/lib/docker/.*$'
+    ensure_exclude_rule '^/var/lib/containerd/.*$'
+    ensure_exclude_rule '^/run/.*$'
+    ensure_exclude_rule '^/var/run/.*$'
+    ensure_exclude_rule '^/tmp/.*$'
+    ensure_exclude_rule '^/var/tmp/.*$'
+    ensure_exclude_rule '^/var/log/.*$'
+    ensure_exclude_rule '^/dev/.*$'
+    ensure_exclude_rule '^/etc/mtab$'
+    ;;
+  minimal|legacy|narrow)
+    ;;
+  *)
+    echo "WARN: unknown KEYLIME_RUNTIME_POLICY_EXCLUDE_PROFILE=$EXCLUDE_PROFILE; using minimal rules only" >&2
+    ;;
+esac
+
 if [ -n "$EXTRA_EXCLUDES" ]; then
   printf '%s\n' "$EXTRA_EXCLUDES" >> "$EXCLUDE_FILE"
 fi
@@ -108,6 +130,7 @@ echo "host=$HOST"
 echo "host_ip=$HOST_IP"
 echo "live_ima_file=$LIVE_FILE"
 echo "exclude_file=$EXCLUDE_FILE"
+echo "exclude_profile=$EXCLUDE_PROFILE"
 echo "runtime_policy=$RUNTIME_PATH"
 
 # shellcheck disable=SC2086

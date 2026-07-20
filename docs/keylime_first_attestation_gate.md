@@ -98,6 +98,7 @@ For the common case where boot evidence is already trusted but IMA runtime
 policy has drifted, use the repair wrapper:
 
 ```bash
+export KEYLIME_RUNTIME_POLICY_EXCLUDE_PROFILE=kolla-docker-host
 deploy/scripts/keylime-only-attestation-repair.sh --hosts csri8,csri9
 ```
 
@@ -105,6 +106,14 @@ It runs a pre-check, diffs each affected node against the bound runtime policy,
 refreshes the IMA policy with the bound PCR policy included, force-replaces the
 Keylime verifier enrollment, waits for the next attestation, and finishes with a
 stability gate. It will not refresh a node whose boot/PCR evidence is failing.
+
+The default `kolla-docker-host` profile is intentional for Docker/Kolla compute
+hosts. It excludes Docker/containerd runtime state, `/run`, temporary files, and
+logs from the Keylime runtime policy. Those paths change continuously on a
+running cloud node and should not be learned as trusted runtime baseline. Keep
+the measured set focused on stable host binaries, service files, and
+administrator-controlled configuration. Use
+`KEYLIME_RUNTIME_POLICY_EXCLUDE_PROFILE=minimal` only for narrow debugging.
 
 ## Diagnose IMA runtime failures
 

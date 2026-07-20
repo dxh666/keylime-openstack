@@ -24,7 +24,16 @@ const DEFAULT_IMA_EXCLUDES = `^/var/lib/docker/containers/[0-9a-f]+/\\.tmp-confi
 ^/var/lib/docker/containers/[0-9a-f]+/[0-9a-f]+-json\\.log.*$
 ^/var/lib/docker/network/files/local-kv\\.db$
 ^/tmp/tmp[A-Za-z0-9._-]+$
-^/var/log/journal/[0-9a-f]+/.*\\.journal$`;
+^/var/log/journal/[0-9a-f]+/.*\\.journal$
+^/var/lib/docker/.*$
+^/var/lib/containerd/.*$
+^/run/.*$
+^/var/run/.*$
+^/tmp/.*$
+^/var/tmp/.*$
+^/var/log/.*$
+^/dev/.*$
+^/etc/mtab$`;
 
 const emptyPolicyForm = (policyType = "measured_boot") => ({
   name: "",
