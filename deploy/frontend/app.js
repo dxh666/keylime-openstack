@@ -33,7 +33,19 @@ const DEFAULT_IMA_EXCLUDES = `^/var/lib/docker/containers/[0-9a-f]+/\\.tmp-confi
 ^/var/tmp/.*$
 ^/var/log/.*$
 ^/dev/.*$
-^/etc/mtab$`;
+^/etc/mtab$
+^/root/\\.ansible/tmp/.*$
+^/home/[^/]+/\\.ansible/tmp/.*$
+^/var/lib/apt/.*$
+^/var/cache/apt/.*$
+^/var/lib/ubuntu-advantage/apt-esm/.*$
+^/var/lib/update-notifier/.*$
+^/var/lib/landscape/.*$
+^/var/lib/openvswitch/.*\\.db$
+^/run_command$
+^/.*/__pycache__/.*\\.pyc$
+^/usr/lib/python[0-9.]+/.*/__pycache__/.*\\.pyc$
+^/usr/lib/python3/dist-packages/.*/__pycache__/.*\\.pyc$`;
 
 const emptyPolicyForm = (policyType = "measured_boot") => ({
   name: "",

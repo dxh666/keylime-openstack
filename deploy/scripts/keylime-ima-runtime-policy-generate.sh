@@ -107,6 +107,18 @@ case "${EXCLUDE_PROFILE,,}" in
     ensure_exclude_rule '^/var/log/.*$'
     ensure_exclude_rule '^/dev/.*$'
     ensure_exclude_rule '^/etc/mtab$'
+    ensure_exclude_rule '^/root/\.ansible/tmp/.*$'
+    ensure_exclude_rule '^/home/[^/]+/\.ansible/tmp/.*$'
+    ensure_exclude_rule '^/var/lib/apt/.*$'
+    ensure_exclude_rule '^/var/cache/apt/.*$'
+    ensure_exclude_rule '^/var/lib/ubuntu-advantage/apt-esm/.*$'
+    ensure_exclude_rule '^/var/lib/update-notifier/.*$'
+    ensure_exclude_rule '^/var/lib/landscape/.*$'
+    ensure_exclude_rule '^/var/lib/openvswitch/.*\.db$'
+    ensure_exclude_rule '^/run_command$'
+    ensure_exclude_rule '^/.*/__pycache__/.*\.pyc$'
+    ensure_exclude_rule '^/usr/lib/python[0-9.]+/.*/__pycache__/.*\.pyc$'
+    ensure_exclude_rule '^/usr/lib/python3/dist-packages/.*/__pycache__/.*\.pyc$'
     ;;
   minimal|legacy|narrow)
     ;;

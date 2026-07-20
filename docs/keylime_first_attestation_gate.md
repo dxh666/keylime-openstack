@@ -108,12 +108,14 @@ Keylime verifier enrollment, waits for the next attestation, and finishes with a
 stability gate. It will not refresh a node whose boot/PCR evidence is failing.
 
 The default `kolla-docker-host` profile is intentional for Docker/Kolla compute
-hosts. It excludes Docker/containerd runtime state, `/run`, temporary files, and
-logs from the Keylime runtime policy. Those paths change continuously on a
-running cloud node and should not be learned as trusted runtime baseline. Keep
-the measured set focused on stable host binaries, service files, and
-administrator-controlled configuration. Use
-`KEYLIME_RUNTIME_POLICY_EXCLUDE_PROFILE=minimal` only for narrow debugging.
+hosts. It excludes Docker/containerd runtime state, Ansible temporary modules,
+APT package indexes/caches, Python bytecode caches, Open vSwitch local DB
+state, `/run`, temporary files, and logs from the Keylime runtime policy. Those
+paths change continuously on a running cloud node and should not be learned as
+trusted runtime baseline. Keep the measured set focused on stable host
+binaries, service files, system libraries, and administrator-controlled
+configuration. Use `KEYLIME_RUNTIME_POLICY_EXCLUDE_PROFILE=minimal` only for
+narrow debugging.
 
 ## Diagnose IMA runtime failures
 
