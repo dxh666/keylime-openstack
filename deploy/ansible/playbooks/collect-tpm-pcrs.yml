@@ -1,0 +1,25 @@
+---
+- name: Collect TPM PCR values
+  hosts: keylime_managed
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Require tpm2_pcrread
+      ansible.builtin.shell: command -v tpm2_pcrread
+      changed_when: false
+
+    - name: Read selected TPM PCR bank
+      ansible.builtin.command:
+        argv:
+          - tpm2_pcrread
+          - "{{ pcr_bank | default('sha256') }}:{{ pcr_selection }}"
+      changed_when: false
+      register: pcrread_result
+
+    - name: Store PCR evidence on controller workspace
+      ansible.builtin.copy:
+        content: "{{ pcrread_result.stdout }}\n"
+        dest: "{{ evidence_output_path }}"
+        mode: "0600"
+      delegate_to: localhost
+      become: false

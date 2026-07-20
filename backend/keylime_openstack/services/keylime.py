@@ -135,8 +135,10 @@ class KeylimeClient:
                 tenant_args.extend(["-t", agent_ip, "-tp", str(agent_port)])
             tenant_args.extend(self._tenant_service_endpoints())
             if tpm_policy is not None:
+                tenant_tpm_policy = dict(tpm_policy)
+                tenant_tpm_policy.pop("mask", None)
                 tenant_args.extend(
-                    ["--tpm_policy", json.dumps(tpm_policy, separators=(",", ":"))]
+                    ["--tpm_policy", json.dumps(tenant_tpm_policy, separators=(",", ":"))]
                 )
             if runtime_policy_name:
                 tenant_args.extend(["--runtime-policy-name", runtime_policy_name])

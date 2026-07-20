@@ -43,6 +43,12 @@ state，并通过 `addmbpolicy` / `updatembpolicy` 写入 verifier。旧版 Keyl
 镜像如果仍提供 `create_mb_refstate`，控制面会作为兼容 fallback 使用；新版镜像
 没有该入口时不需要手工进入容器处理。
 
+如果固件 event log 被 `tpm2_eventlog` 判定为不可靠，例如出现 digest mismatch，
+控制面不会伪造 measured boot reference state。默认策略会退到 Keylime TPM PCR
+quote 约束：通过 Ansible 采集选定 PCR 的 `sha256` 当前值，生成 `--tpm_policy`
+并绑定到 Keylime verifier。该模式仍由 Keylime 验证 TPM Quote，只是可信启动证据
+级别标记为 `tpm_pcr_quote_policy`，不是严格的 `measured_boot_refstate`。
+
 worker 会在下发前校验两者的管理面声明，且拒绝 `accept-all`。节点的 PCR 0-7
 作为默认管理范围；最终纳入 Quote 和事件日志重放的 PCR 由 verifier 中启用的
 elchecking policy 的 `get_relevant_pcrs()` 决定。

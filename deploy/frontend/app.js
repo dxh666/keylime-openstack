@@ -770,8 +770,9 @@ createApp({
           pcrs: this.createForm.pcrs.map(Number).sort((a, b) => a - b),
           secure_boot_required: this.createForm.secureBootRequired,
           reference_state_mode: "collect_from_node",
+          event_log_fallback: "pcr_quote",
           baseline_generation: "auto_collect_tpm_event_log",
-          keylime_artifact: "measured_boot_refstate"
+          keylime_artifact: "measured_boot_refstate_or_tpm_policy"
         };
       } else if (this.activePolicyType === "ima_runtime") {
         content = {
@@ -818,6 +819,8 @@ createApp({
     policyArtifactText(policy) {
       const artifact = policy?.source?.keylime_artifact || policy?.content?.keylime_artifact || "";
       if (artifact === "measured_boot_refstate") return "可信启动参考状态";
+      if (artifact === "measured_boot_refstate_or_tpm_policy") return "可信启动策略";
+      if (artifact === "tpm_pcr_quote_policy") return "TPM PCR Quote 策略";
       if (artifact === "runtime_policy") return "IMA 运行时策略";
       return artifact || "-";
     },
@@ -851,6 +854,8 @@ createApp({
       const evidenceType = keylimePolicy.evidence_type || "";
       const evidenceName = evidenceType === "tpm_event_log"
         ? "TPM Event Log"
+        : evidenceType === "tpm_pcr_quote"
+          ? "TPM PCR Quote"
         : evidenceType === "ima_measurement_list"
           ? "IMA 度量列表"
           : "节点证据";

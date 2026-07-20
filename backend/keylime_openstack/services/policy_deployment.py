@@ -163,10 +163,22 @@ class PolicyDeploymentService:
 
             reference_state = policy.content.get("reference_state")
             if not reference_state:
-                reference_state = self.keylime.tenant_tool_create_measured_boot_refstate(
-                    event_log,
-                    secure_boot_required=bool(policy.content.get("secure_boot_required", True)),
-                )
+                try:
+                    reference_state = self.keylime.tenant_tool_create_measured_boot_refstate(
+                        event_log,
+                        secure_boot_required=bool(policy.content.get("secure_boot_required", True)),
+                    )
+                except RuntimeError as exc:
+                    if _event_log_fallback_mode(policy) != "pcr_quote":
+                        raise
+                    return self._deploy_measured_boot_pcr_quote(
+                        policy=policy,
+                        binding=binding,
+                        node=node,
+                        workspace=workspace,
+                        event_log_sha256=event_log_sha256,
+                        measured_boot_error=str(exc),
+                    )
             external_name = _external_name("mb", policy.name, node.hostname, reference_state)
             self.keylime.tenant_tool_store_measured_boot_policy(
                 name=external_name,
@@ -207,6 +219,71 @@ class PolicyDeploymentService:
                 "pcrs": policy.content.get("pcrs"),
             }
 
+    def _deploy_measured_boot_pcr_quote(
+        self,
+        *,
+        policy: TrustPolicy,
+        binding: PolicyBinding,
+        node: ComputeNode,
+        workspace: Path,
+        event_log_sha256: str,
+        measured_boot_error: str,
+    ) -> dict[str, Any]:
+        pcr_output_path = workspace / "tpm-pcr-sha256.txt"
+        selected_pcrs = [int(item) for item in policy.content.get("pcrs") or list(range(8))]
+        result = self.ansible.run(
+            playbook="collect-tpm-pcrs.yml",
+            node=node,
+            workspace=workspace,
+            extra_vars={
+                "evidence_output_path": str(pcr_output_path),
+                "pcr_bank": "sha256",
+                "pcr_selection": ",".join(str(item) for item in selected_pcrs),
+            },
+        )
+        self._require_ansible_success(result.rc, result.stdout, result.stderr)
+        pcr_output = pcr_output_path.read_text(encoding="utf-8")
+        pcr_values = _parse_tpm2_pcrread_sha256(pcr_output, selected_pcrs)
+        tpm_policy = _tpm_policy_from_pcrs(pcr_values)
+        apply_result = self.keylime.tenant_tool_apply_policy(
+            agent_uuid=node.keylime_agent_uuid,
+            agent_ip=node.keylime_agent_ip or node.management_ip,
+            agent_port=node.keylime_agent_port,
+            tpm_policy=tpm_policy,
+            runtime_policy_name=self._active_external_policy_name(
+                node.id,
+                POLICY_IMA_RUNTIME,
+            ),
+        )
+        self._require_keylime_success(apply_result)
+        self._applied(
+            binding,
+            policy,
+            "",
+            tpm_policy,
+            deployment_details={
+                "keylime_artifact": "tpm_pcr_quote_policy",
+                "evidence_type": "tpm_pcr_quote",
+                "evidence_sha256": hashlib.sha256(pcr_output.encode("utf-8")).hexdigest(),
+                "event_log_sha256": event_log_sha256,
+                "rendered_policy_sha256": _content_hash(tpm_policy),
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "deployed_by": "keylime-tenant",
+                "measured_boot_fallback": "pcr_quote",
+                "measured_boot_refstate_error": measured_boot_error[:2000],
+                "pcr_bank": "sha256",
+                "pcrs": sorted(pcr_values),
+            },
+        )
+        return {
+            "keylime_policy_name": "",
+            "keylime_artifact": "tpm_pcr_quote_policy",
+            "measured_boot_fallback": "pcr_quote",
+            "pcrs": sorted(pcr_values),
+            "event_log_sha256": event_log_sha256,
+            "pcr_policy_sha256": _content_hash(tpm_policy),
+        }
+
     def _deploy_ima_runtime(
         self,
         policy: TrustPolicy,
@@ -241,15 +318,14 @@ class PolicyDeploymentService:
                 name=external_name,
                 runtime_policy=runtime_policy,
             )
+            boot_policy = self._active_boot_policy_adapter(node.id)
             apply_result = self.keylime.tenant_tool_apply_policy(
                 agent_uuid=node.keylime_agent_uuid,
                 agent_ip=node.keylime_agent_ip or node.management_ip,
                 agent_port=node.keylime_agent_port,
+                tpm_policy=boot_policy.get("tpm_policy"),
                 runtime_policy_name=external_name,
-                measured_boot_policy_name=self._active_external_policy_name(
-                    node.id,
-                    POLICY_MEASURED_BOOT,
-                ),
+                measured_boot_policy_name=boot_policy.get("measured_boot_policy_name", ""),
             )
             self._require_keylime_success(apply_result)
             self._applied(
@@ -317,7 +393,32 @@ class PolicyDeploymentService:
             .order_by(PolicyBinding.applied_at.desc())
             .limit(1)
         ).first()
+        if binding and policy_type == POLICY_MEASURED_BOOT:
+            details = dict(binding.binding_details or {})
+            if details.get("keylime_artifact") != "measured_boot_refstate":
+                return ""
         return binding.external_policy_name if binding else ""
+
+    def _active_boot_policy_adapter(self, node_id: int) -> dict[str, Any]:
+        binding = self.session.scalars(
+            select(PolicyBinding)
+            .join(TrustPolicy, TrustPolicy.id == PolicyBinding.policy_id)
+            .where(PolicyBinding.target_type == "node")
+            .where(PolicyBinding.target_id == node_id)
+            .where(PolicyBinding.active.is_(True))
+            .where(PolicyBinding.application_status == POLICY_DEPLOY_APPLIED)
+            .where(TrustPolicy.policy_type == POLICY_MEASURED_BOOT)
+            .order_by(PolicyBinding.applied_at.desc())
+            .limit(1)
+        ).first()
+        if not binding:
+            return {}
+        details = dict(binding.binding_details or {})
+        if details.get("keylime_artifact") == "measured_boot_refstate":
+            return {"measured_boot_policy_name": binding.external_policy_name}
+        if details.get("keylime_artifact") == "tpm_pcr_quote_policy":
+            return {"tpm_policy": dict(binding.rendered_policy or {})}
+        return {}
 
     @staticmethod
     def _failed(binding: PolicyBinding, error: str) -> None:
@@ -391,3 +492,31 @@ def _content_hash(value: dict[str, Any]) -> str:
 def _external_name(prefix: str, policy_name: str, hostname: str, value: dict[str, Any]) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", f"{policy_name}-{hostname}".lower()).strip("-")
     return f"klos-{prefix}-{slug[:180]}-{_content_hash(value)[:12]}"
+
+
+def _event_log_fallback_mode(policy: TrustPolicy) -> str:
+    value = str(policy.content.get("event_log_fallback") or "pcr_quote")
+    normalized = value.strip().lower().replace("-", "_")
+    return "pcr_quote" if normalized in {"pcr_quote", "tpm_pcr", "tpm_pcr_quote"} else "none"
+
+
+def _parse_tpm2_pcrread_sha256(output: str, selected_pcrs: list[int]) -> dict[int, str]:
+    values: dict[int, str] = {}
+    for line in output.splitlines():
+        match = re.match(r"\s*([0-9]+)\s*:\s*0x([0-9A-Fa-f]{64})\s*$", line)
+        if match:
+            values[int(match.group(1))] = match.group(2).lower()
+    missing = [item for item in selected_pcrs if item not in values]
+    if missing:
+        raise RuntimeError(f"tpm2_pcrread output is missing sha256 PCR values: {missing}")
+    return {item: values[item] for item in selected_pcrs}
+
+
+def _tpm_policy_from_pcrs(pcr_values: dict[int, str]) -> dict[str, Any]:
+    mask = 0
+    policy: dict[str, Any] = {}
+    for pcr, digest in sorted(pcr_values.items()):
+        mask |= 1 << pcr
+        policy[str(pcr)] = [digest.lower()]
+    policy["mask"] = hex(mask)
+    return policy

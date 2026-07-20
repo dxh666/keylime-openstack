@@ -201,6 +201,7 @@ def _validate_measured_boot(content: dict[str, Any]) -> dict[str, Any]:
         "policy_engine": policy_engine or "configured",
         "pcrs": normalized_pcrs,
         "reference_state_mode": "provided" if reference_state else "collect_from_node",
+        "event_log_fallback": str(content.get("event_log_fallback") or "pcr_quote"),
         "secure_boot_required": bool(content.get("secure_boot_required", True)),
     }
 
