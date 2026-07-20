@@ -7,6 +7,13 @@ OPENRC="${OPENRC:-/etc/kolla/admin-openrc.sh}"
 [ -r "$ENV_FILE" ] && source "$ENV_FILE"
 [ -r "$OPENRC" ] && source "$OPENRC"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -r "$SCRIPT_DIR/keylime-script-lib.sh" ]; then
+  # shellcheck disable=SC1091
+  source "$SCRIPT_DIR/keylime-script-lib.sh"
+  load_keylime_agent_inventory
+fi
+
 TARGET="${1:-all}"
 POLICY_ID="${2:-bound}"
 
@@ -38,7 +45,11 @@ parse_map_value() {
 
 hosts=()
 if [ "$TARGET" = "all" ]; then
-  IFS=',' read -r -a hosts <<< "${KEYLIME_AGENT_HOSTS:-}"
+  if command -v keylime_resolve_agent_hosts >/dev/null 2>&1; then
+    IFS=',' read -r -a hosts <<< "$(keylime_resolve_agent_hosts "$TARGET")"
+  else
+    IFS=',' read -r -a hosts <<< "${KEYLIME_AGENT_HOSTS:-}"
+  fi
 else
   hosts=("$TARGET")
 fi
@@ -51,8 +62,16 @@ for host in "${hosts[@]}"; do
   host="${host//[[:space:]]/}"
   [ -z "$host" ] && continue
 
-  uuid="$(parse_map_value "${KEYLIME_AGENT_UUID_MAP:-}" "$host")"
-  ip="$(parse_map_value "${KEYLIME_AGENT_IP_MAP:-}" "$host")"
+  if command -v keylime_resolve_agent_uuid >/dev/null 2>&1; then
+    uuid="$(keylime_resolve_agent_uuid "$host")"
+  else
+    uuid="$(parse_map_value "${KEYLIME_AGENT_UUID_MAP:-}" "$host")"
+  fi
+  if command -v keylime_resolve_agent_ip >/dev/null 2>&1; then
+    ip="$(keylime_resolve_agent_ip "$host")"
+  else
+    ip="$(parse_map_value "${KEYLIME_AGENT_IP_MAP:-}" "$host")"
+  fi
 
   selected_policy_id="$POLICY_ID"
   if [ "$POLICY_ID" = "bound" ]; then

@@ -32,6 +32,13 @@ if [ -z "$ENV_FILE" ]; then
 fi
 [ -r "$ENV_FILE" ] && source "$ENV_FILE"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -r "$SCRIPT_DIR/keylime-script-lib.sh" ]; then
+  # shellcheck disable=SC1091
+  source "$SCRIPT_DIR/keylime-script-lib.sh"
+  load_keylime_agent_inventory
+fi
+
 HOST="${1:-}"
 POLICY_ID="${2:-bound}"
 
@@ -52,18 +59,16 @@ SSH_OPTS="${KEYLIME_RUNTIME_POLICY_SSH_OPTS:--o BatchMode=yes -o ConnectTimeout=
 AGENT_IP_OVERRIDE="${KEYLIME_RUNTIME_POLICY_HOST_IP:-}"
 MAX_PRINT="${KEYLIME_RUNTIME_POLICY_DIFF_MAX_PRINT:-80}"
 
-parse_map_value() {
-  local map="$1"
-  local key="$2"
-  echo "$map" | tr ',' '\n' | awk -F= -v k="$key" '$1 == k {print $2; exit}'
-}
-
 HOST_IP="$AGENT_IP_OVERRIDE"
 if [ -z "$HOST_IP" ]; then
-  HOST_IP="$(parse_map_value "${KEYLIME_AGENT_IP_MAP:-}" "$HOST")"
+  if command -v keylime_resolve_agent_ip >/dev/null 2>&1; then
+    HOST_IP="$(keylime_resolve_agent_ip "$HOST")"
+  else
+    HOST_IP="$(echo "${KEYLIME_AGENT_IP_MAP:-}" | tr ',' '\n' | awk -F= -v k="$HOST" '$1 == k {print $2; exit}')"
+  fi
 fi
 if [ -z "$HOST_IP" ]; then
-  echo "ERROR: cannot resolve IP for host '$HOST'. Set KEYLIME_AGENT_IP_MAP or KEYLIME_RUNTIME_POLICY_HOST_IP." >&2
+  echo "ERROR: cannot resolve IP for host '$HOST'. Set KEYLIME_AGENT_IP_MAP, KEYLIME_RUNTIME_POLICY_HOST_IP, inventory file, or ensure /api/nodes is reachable." >&2
   exit 1
 fi
 

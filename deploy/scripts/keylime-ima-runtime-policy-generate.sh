@@ -47,6 +47,13 @@ if [ "$HOST" = "-h" ] || [ "$HOST" = "--help" ] || [ -z "$HOST" ]; then
   exit 0
 fi
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -r "$SCRIPT_DIR/keylime-script-lib.sh" ]; then
+  # shellcheck disable=SC1091
+  source "$SCRIPT_DIR/keylime-script-lib.sh"
+  load_keylime_agent_inventory
+fi
+
 KEYLIME_DIR="${KEYLIME_DIR:-${KEYLIME_DOCKER_DIR:-/opt/keylime-docker}}"
 STATE_DIR="${KEYLIME_OPENSTACK_STATE_DIR:-/var/lib/keylime-openstack-sync}"
 POLICY_BASE="${KEYLIME_POLICY_BASE_DIR:-$STATE_DIR/policies}"
@@ -60,18 +67,16 @@ BASE_POLICY="${KEYLIME_RUNTIME_POLICY_BASE_POLICY:-}"
 EXCLUDE_FILE="${KEYLIME_RUNTIME_POLICY_EXCLUDE_FILE:-$RUNTIME_DIR/${HOST}-runtime-exclude.txt}"
 EXTRA_EXCLUDES="${KEYLIME_RUNTIME_POLICY_EXTRA_EXCLUDES:-}"
 
-parse_map_value() {
-  local map="$1"
-  local key="$2"
-  echo "$map" | tr ',' '\n' | awk -F= -v k="$key" '$1 == k {print $2; exit}'
-}
-
 HOST_IP="$AGENT_IP_OVERRIDE"
 if [ -z "$HOST_IP" ]; then
-  HOST_IP="$(parse_map_value "${KEYLIME_AGENT_IP_MAP:-}" "$HOST")"
+  if command -v keylime_resolve_agent_ip >/dev/null 2>&1; then
+    HOST_IP="$(keylime_resolve_agent_ip "$HOST")"
+  else
+    HOST_IP="$(echo "${KEYLIME_AGENT_IP_MAP:-}" | tr ',' '\n' | awk -F= -v k="$HOST" '$1 == k {print $2; exit}')"
+  fi
 fi
 if [ -z "$HOST_IP" ]; then
-  echo "ERROR: cannot resolve IP for host '$HOST'. Set KEYLIME_AGENT_IP_MAP or KEYLIME_RUNTIME_POLICY_HOST_IP." >&2
+  echo "ERROR: cannot resolve IP for host '$HOST'. Set KEYLIME_AGENT_IP_MAP, KEYLIME_RUNTIME_POLICY_HOST_IP, inventory file, or ensure /api/nodes is reachable." >&2
   exit 1
 fi
 
