@@ -250,6 +250,7 @@ class PolicyDeploymentService:
             agent_ip=node.keylime_agent_ip or node.management_ip,
             agent_port=node.keylime_agent_port,
             tpm_policy=tpm_policy,
+            disable_measured_boot=True,
             replace_existing=True,
             runtime_policy_name=self._active_external_policy_name(
                 node.id,
@@ -327,6 +328,7 @@ class PolicyDeploymentService:
                 tpm_policy=boot_policy.get("tpm_policy"),
                 runtime_policy_name=external_name,
                 measured_boot_policy_name=boot_policy.get("measured_boot_policy_name", ""),
+                disable_measured_boot=bool(boot_policy.get("disable_measured_boot")),
             )
             self._require_keylime_success(apply_result)
             self._applied(
@@ -418,7 +420,10 @@ class PolicyDeploymentService:
         if details.get("keylime_artifact") == "measured_boot_refstate":
             return {"measured_boot_policy_name": binding.external_policy_name}
         if details.get("keylime_artifact") == "tpm_pcr_quote_policy":
-            return {"tpm_policy": dict(binding.rendered_policy or {})}
+            return {
+                "tpm_policy": dict(binding.rendered_policy or {}),
+                "disable_measured_boot": True,
+            }
         return {}
 
     @staticmethod

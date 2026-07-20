@@ -110,6 +110,7 @@ class KeylimeClient:
         runtime_policy: dict[str, Any] | None = None,
         runtime_policy_name: str = "",
         measured_boot_policy_name: str = "",
+        disable_measured_boot: bool = False,
         replace_existing: bool = False,
     ) -> dict[str, Any]:
         """Apply a policy using a temporary file only as a tool adapter."""
@@ -145,7 +146,9 @@ class KeylimeClient:
                 tenant_args.extend(["--runtime-policy-name", runtime_policy_name])
             if runtime_policy_path:
                 tenant_args.extend(["--runtime-policy", runtime_policy_path])
-            if measured_boot_policy_name:
+            if disable_measured_boot:
+                tenant_args.extend(["--mb-policy-name", ""])
+            elif measured_boot_policy_name:
                 tenant_args.extend(["--mb-policy-name", measured_boot_policy_name])
 
             delete = {"rc": 0, "stdout": "", "stderr": ""}

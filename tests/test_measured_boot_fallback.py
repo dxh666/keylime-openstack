@@ -71,3 +71,26 @@ def test_tenant_tool_replace_existing_deletes_before_add():
     assert commands[2][commands[2].index("-c") + 1] == "reactivate"
     tpm_policy_arg = commands[1][commands[1].index("--tpm_policy") + 1]
     assert json.loads(tpm_policy_arg) == {"7": ["d" * 64]}
+
+
+def test_tenant_tool_can_disable_measured_boot_default():
+    client = KeylimeClient(Settings(keylime_docker_dir="."))
+    commands = []
+
+    def fake_run(command):
+        commands.append(command)
+        return {"rc": 0, "stdout": "ok", "stderr": ""}
+
+    client._run_tenant_tool = fake_run  # type: ignore[method-assign]
+
+    client.tenant_tool_apply_policy(
+        agent_uuid="11111111-1111-4111-8111-000000000009",
+        agent_ip="172.31.100.9",
+        tpm_policy={"7": ["d" * 64], "mask": "0x80"},
+        disable_measured_boot=True,
+        replace_existing=True,
+    )
+
+    add_command = commands[1]
+    assert "--mb-policy-name" in add_command
+    assert add_command[add_command.index("--mb-policy-name") + 1] == ""
