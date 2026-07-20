@@ -465,11 +465,12 @@ def _remediation(
     if event == "keylime-verifier-agent-not-found":
         return {
             "category": "verifier-enrollment",
-            "summary": "Keylime verifier does not have an active enrollment for this agent.",
+            "summary": "Keylime 验证器中没有该节点的有效纳管记录。",
             "next_commands": [
                 "cd /opt/keylime-docker && docker compose run --rm keylime-tenant -c reglist",
                 "cd /opt/keylime-docker && docker compose run --rm keylime-tenant -c cvlist",
-                f"cd /opt/keylime-openstack && deploy/scripts/keylime-ima-runtime-policy-refresh.sh {host}",
+                "进入可信启动策略页面，对该节点重新下发当前生效策略。",
+                f"cd /opt/keylime-openstack && deploy/scripts/keylime-only-attestation-check.sh --strict --hosts {host}",
             ],
         }
     if event == "keylime-tenant-tool-unavailable":
