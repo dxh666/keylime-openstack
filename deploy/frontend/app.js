@@ -2,8 +2,7 @@ const { createApp } = Vue;
 
 const POLICY_TYPES = [
   { key: "measured_boot", label: "可信启动", creatable: true },
-  { key: "ima_runtime", label: "IMA 运行时策略", creatable: true },
-  { key: "evm", label: "EVM 策略", creatable: false }
+  { key: "ima_runtime", label: "IMA 运行时策略", creatable: true }
 ];
 
 const DEFAULT_IMA_POLICY = `dont_measure fsmagic=0x9fa0
@@ -59,19 +58,40 @@ const emptyPolicyForm = (policyType = "measured_boot") => ({
   policy_type: policyType
 });
 
+const viewTitles = {
+  dashboard: "首页",
+  control_nodes: "控制节点",
+  compute_nodes: "计算节点",
+  policies: "策略管理",
+  global_policy: "全局策略控制",
+  alerts: "告警中心",
+  tasks: "任务中心",
+  audit: "审计日志",
+  settings: "系统设置"
+};
+
 createApp({
   data() {
     return {
-      view: "nodes",
+      view: "dashboard",
+      expandedGroups: {
+        nodes: true,
+        policies: true
+      },
       policyTypes: POLICY_TYPES,
       activePolicyType: "measured_boot",
       busy: false,
       loading: true,
+      apiError: "",
       keylimeError: "",
       notice: { kind: "", text: "" },
+      health: null,
+      overview: null,
       keylime: { ok: null, nodes: [], nodes_total: 0, nodes_trusted: 0, trust_capabilities: {} },
       nodes: [],
       policies: [],
+      auditEvents: [],
+      tasks: [],
       createDialogOpen: false,
       createForm: emptyPolicyForm(),
       detailPolicy: null,
@@ -91,23 +111,115 @@ createApp({
       return this.policyTypes.find((item) => item.key === this.activePolicyType) || this.policyTypes[0];
     },
     currentTitle() {
-      return this.view === "nodes" ? "节点状态" : this.currentPolicyType.label;
+      if (this.view === "policies") return this.currentPolicyType.label;
+      return viewTitles[this.view] || "管理控制台";
     },
-    keylimeStatusClass() {
-      if (this.keylimeError) return "bad";
-      if (this.keylime.ok === true) return "ok";
-      if (this.keylime.ok === false) return "bad";
-      return "warn";
+    controllerNodes() {
+      return this.nodes.filter((node) => node.role === "controller");
     },
-    keylimeStatusText() {
-      if (this.keylimeError) return "接口异常";
-      if (this.loading) return "检查中";
-      return this.gateText(this.keylime.ok);
+    computeInventory() {
+      return this.nodes.filter((node) => node.role === "compute" && node.enabled);
     },
-    policyNamePlaceholder() {
-      return this.activePolicyType === "measured_boot"
-        ? "例如 compute-measured-boot-v1"
-        : "例如 compute-ima-runtime-v1";
+    primaryController() {
+      return this.controllerNodes[0] || {
+        hostname: "csri10",
+        management_ip: "172.31.100.10",
+        role: "controller",
+        facts: {}
+      };
+    },
+    controlNodeInfo() {
+      const node = this.primaryController;
+      const facts = node.facts || {};
+      const profile = node.hardware_profile || {};
+      return [
+        { label: "主机名", value: node.hostname || "-" },
+        { label: "管理 IP", value: node.management_ip || "-" },
+        { label: "操作系统", value: facts.os || this.osText(facts.kernel) },
+        { label: "内核版本", value: facts.kernel || "-" },
+        { label: "CPU", value: profile.model || facts.cpu_model || facts.cpu_vendor || "-" },
+        { label: "CPU 核心数", value: facts.cpu_count || "-" }
+      ];
+    },
+    controlRuntimeItems() {
+      return [
+        {
+          name: "管理 API",
+          status: this.health?.ok ? "正常" : "待确认",
+          state: this.health?.ok ? "ok" : "warn"
+        },
+        {
+          name: "Keylime 接入",
+          status: this.keylimeError ? "异常" : this.keylime.ok === null ? "检查中" : "正常",
+          state: this.keylimeError ? "bad" : this.keylime.ok === null ? "warn" : "ok"
+        },
+        {
+          name: "OpenStack 控制面",
+          status: "待接入",
+          state: "warn"
+        },
+        {
+          name: "PostgreSQL",
+          status: this.overview ? "正常" : "待确认",
+          state: this.overview ? "ok" : "warn"
+        }
+      ];
+    },
+    onlineUsers() {
+      return [
+        {
+          user: "当前访问会话",
+          role: "系统管理员",
+          auth: "管理令牌确认",
+          status: "在线"
+        }
+      ];
+    },
+    keylimeNodesByHost() {
+      const items = new Map();
+      for (const node of this.keylime.nodes || []) {
+        if (node.host) items.set(node.host, node);
+      }
+      return items;
+    },
+    keylimeNodesByUuid() {
+      const items = new Map();
+      for (const node of this.keylime.nodes || []) {
+        if (node.agent_uuid) items.set(node.agent_uuid, node);
+      }
+      return items;
+    },
+    computeRows() {
+      return this.computeInventory.map((node) => {
+        const keylimeNode =
+          this.keylimeNodesByHost.get(node.hostname) ||
+          this.keylimeNodesByUuid.get(node.keylime_agent_uuid) ||
+          {};
+        return {
+          id: node.id,
+          host: node.hostname,
+          ip: keylimeNode.agent_ip || node.management_ip || node.keylime_agent_ip || "-",
+          managed: this.keylimeManagedText(node, keylimeNode),
+          managedClass: this.keylimeManagedClass(node, keylimeNode),
+          trusted: keylimeNode.trusted,
+          trustText: this.trustText(keylimeNode.trusted),
+          trustClass: keylimeNode.trusted === true ? "ok" : keylimeNode.trusted === false ? "bad" : "warn",
+          attestationTime: this.proofTime(keylimeNode),
+          reason: keylimeNode.reason || keylimeNode.last_event_id || "-"
+        };
+      });
+    },
+    dashboardSummary() {
+      const total = this.computeRows.length || this.keylime.nodes_total || 0;
+      const trusted = this.computeRows.filter((node) => node.trusted === true).length || this.keylime.nodes_trusted || 0;
+      const untrusted = Math.max(total - trusted, 0);
+      const managed = this.computeRows.filter((node) => node.managedClass === "ok").length;
+      return [
+        { label: "计算节点", value: total, state: "" },
+        { label: "可信节点", value: trusted, state: "ok" },
+        { label: "异常节点", value: untrusted, state: untrusted ? "bad" : "ok" },
+        { label: "已纳管节点", value: managed, state: "ok" }
+      ];
     },
     filteredPolicies() {
       return this.policies.filter((policy) => policy.policy_type === this.activePolicyType);
@@ -116,10 +228,69 @@ createApp({
       const caps = this.keylime.trust_capabilities || {};
       return [
         { key: "boot", label: "可信启动", enabled: caps.boot === true },
-        { key: "ima", label: "IMA 运行时度量", enabled: caps.ima === true },
-        { key: "evm", label: "EVM 完整性保护", enabled: caps.evm === true },
+        { key: "ima", label: "IMA 运行时", enabled: caps.ima === true },
+        { key: "evm", label: "EVM", enabled: caps.evm === true },
         { key: "openstack_service", label: "OpenStack 服务状态", enabled: caps.openstack_service === true }
       ];
+    },
+    recentEvents() {
+      const items = [];
+      for (const event of this.auditEvents.slice(0, 10)) {
+        items.push({
+          time: event.created_at,
+          severity: this.severityText(event.severity),
+          state: this.severityClass(event.severity),
+          target: event.target || "-",
+          message: this.auditMessage(event)
+        });
+      }
+      for (const task of this.tasks.slice(0, 5)) {
+        const time = task.finished_at || task.started_at;
+        if (!time) continue;
+        items.push({
+          time,
+          severity: this.taskSeverity(task.status),
+          state: this.taskSeverityClass(task.status),
+          target: task.target || task.task_type,
+          message: `${this.taskTypeText(task.task_type)}：${this.taskStatusText(task.status)}`
+        });
+      }
+      for (const node of this.keylime.nodes || []) {
+        if (node.trusted === false) {
+          items.push({
+            time: this.timestampFromSeconds(node.last_received_quote),
+            severity: "重要",
+            state: "bad",
+            target: node.host || node.agent_uuid || "-",
+            message: `可信状态未通过：${node.reason || node.last_event_id || "原因待确认"}`
+          });
+        }
+      }
+      return items
+        .filter((item) => item.time)
+        .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
+        .slice(0, 10);
+    },
+    alertRows() {
+      return (this.keylime.nodes || [])
+        .filter((node) => node.trusted === false || node.status === "error")
+        .map((node) => ({
+          target: node.host || node.agent_uuid || "-",
+          severity: node.status === "error" ? "重要" : "提醒",
+          message: node.reason || node.last_event_id || "可信状态未通过",
+          remediation: node.remediation?.summary || "-"
+        }));
+    },
+    policyNamePlaceholder() {
+      return this.activePolicyType === "measured_boot"
+        ? "例如 compute-trusted-boot-v1"
+        : "例如 compute-ima-runtime-v1";
+    },
+    keylimeStatusClass() {
+      if (this.keylimeError) return "bad";
+      if (this.keylime.ok === true) return "ok";
+      if (this.keylime.ok === false) return "bad";
+      return "warn";
     }
   },
   mounted() {
@@ -130,10 +301,94 @@ createApp({
     if (this.timer) clearInterval(this.timer);
   },
   methods: {
+    selectView(view) {
+      this.view = view;
+      this.detailPolicy = null;
+    },
+    toggleGroup(group) {
+      this.expandedGroups[group] = !this.expandedGroups[group];
+    },
+    groupActive(group) {
+      if (group === "nodes") return ["control_nodes", "compute_nodes"].includes(this.view);
+      if (group === "policies") return this.view === "policies";
+      return false;
+    },
     selectPolicyType(policyType) {
       this.view = "policies";
       this.activePolicyType = policyType;
       this.detailPolicy = null;
+      this.expandedGroups.policies = true;
+    },
+    headers(token = "") {
+      const headers = { "Content-Type": "application/json" };
+      if (token) headers["X-Admin-Token"] = token;
+      return headers;
+    },
+    async requestJson(path, options = {}, token = "") {
+      const response = await fetch(path, {
+        ...options,
+        headers: { ...this.headers(token), ...(options.headers || {}) }
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || data.error || `HTTP ${response.status}`);
+      return data;
+    },
+    async refreshAll(showBusy = true) {
+      if (showBusy) this.busy = true;
+      this.loading = true;
+      const requests = {
+        health: this.requestJson("/api/health"),
+        overview: this.requestJson("/api/overview"),
+        keylime: this.requestJson("/api/keylime/check"),
+        nodes: this.requestJson("/api/nodes"),
+        policies: this.requestJson("/api/policies"),
+        audit: this.requestJson("/api/audit?limit=20"),
+        tasks: this.requestJson("/api/tasks?limit=20")
+      };
+      const entries = await Promise.all(
+        Object.entries(requests).map(async ([key, promise]) => {
+          try {
+            return [key, await promise, null];
+          } catch (error) {
+            return [key, null, error];
+          }
+        })
+      );
+      for (const [key, value, error] of entries) {
+        if (key === "health" && value) this.health = value;
+        if (key === "overview" && value) this.overview = value;
+        if (key === "keylime") {
+          if (value) {
+            this.keylime = value;
+            this.keylimeError = "";
+          } else if (error) {
+            this.keylimeError = error.message;
+          }
+        }
+        if (key === "nodes" && value) this.nodes = value;
+        if (key === "policies" && value) this.policies = value;
+        if (key === "audit" && value) this.auditEvents = value;
+        if (key === "tasks" && value) this.tasks = value;
+      }
+      const failed = entries.filter(([, , error]) => error);
+      this.apiError = failed.length ? failed.map(([key, , error]) => `${key}: ${error.message}`).join("；") : "";
+      if (showBusy && this.apiError) this.showNotice("bad", this.apiError);
+      this.loading = false;
+      if (showBusy) this.busy = false;
+    },
+    showNotice(kind, text) {
+      this.notice = { kind, text };
+      if (text) {
+        setTimeout(() => {
+          if (this.notice.text === text) this.notice = { kind: "", text: "" };
+        }, 6000);
+      }
+    },
+    osText(kernel) {
+      const value = String(kernel || "");
+      if (value.includes("generic")) return "Ubuntu Server";
+      if (value.includes("an23")) return "Anolis OS 23";
+      return "-";
     },
     yesNo(value) {
       return value ? "是" : "否";
@@ -143,11 +398,6 @@ createApp({
       if (value === false) return "不可信";
       return "未知";
     },
-    gateText(value) {
-      if (value === true) return "通过";
-      if (value === false) return "未通过";
-      return "未知";
-    },
     stateText(value) {
       const normalized = String(value || "").toLowerCase();
       const names = {
@@ -155,7 +405,9 @@ createApp({
         fail: "失败",
         missing: "缺失",
         unknown: "未知",
-        none: "-"
+        none: "-",
+        collected: "已采集",
+        error: "异常"
       };
       return names[normalized] || value || "-";
     },
@@ -189,63 +441,79 @@ createApp({
       if (value === "failed") return "bad";
       return "warn";
     },
-    ageText(value) {
-      if (value === null || value === undefined) return "-";
-      return `${value} 秒`;
+    keylimeManagedText(node, keylimeNode) {
+      if (keylimeNode.status === "error") return "纳管异常";
+      if (keylimeNode.status === "collected") return "已纳管";
+      if (node.keylime_agent_uuid) return "待验证";
+      return "未纳管";
     },
-    enabledCapabilityNames(node = null) {
-      const caps = (node && node.trust_capabilities) || this.keylime.trust_capabilities || {};
-      const names = [
-        ["boot", "可信启动"],
-        ["ima", "IMA"],
-        ["evm", "EVM"],
-        ["openstack_service", "OpenStack 服务"]
-      ];
-      const enabled = names.filter(([key]) => caps[key] === true).map(([, label]) => label);
-      return enabled.length ? enabled.join("、") : "未启用";
+    keylimeManagedClass(node, keylimeNode) {
+      if (keylimeNode.status === "error") return "bad";
+      if (keylimeNode.status === "collected") return "ok";
+      if (node.keylime_agent_uuid) return "warn";
+      return "bad";
     },
-    headers(token = "") {
-      const headers = { "Content-Type": "application/json" };
-      if (token) headers["X-Admin-Token"] = token;
-      return headers;
+    proofTime(node) {
+      return this.formatTime(this.timestampFromSeconds(node.last_successful_attestation || node.last_received_quote));
     },
-    async requestJson(path, options = {}, token = "") {
-      const response = await fetch(path, {
-        ...options,
-        headers: { ...this.headers(token), ...(options.headers || {}) }
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || data.error || `HTTP ${response.status}`);
-      return data;
+    timestampFromSeconds(value) {
+      if (!value) return "";
+      const seconds = Number(value);
+      if (!Number.isFinite(seconds) || seconds <= 0) return "";
+      return new Date(seconds * 1000).toISOString();
     },
-    showNotice(kind, text) {
-      this.notice = { kind, text };
-      if (text) {
-        setTimeout(() => {
-          if (this.notice.text === text) this.notice = { kind: "", text: "" };
-        }, 6000);
-      }
+    formatTime(value) {
+      if (!value) return "-";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return "-";
+      return date.toLocaleString("zh-CN", { hour12: false });
     },
-    async refreshAll(showBusy = true) {
-      if (showBusy) this.busy = true;
-      if (showBusy && this.keylime.ok === null) this.loading = true;
-      try {
-        const [keylime, nodes, policies] = await Promise.all([
-          this.requestJson("/api/keylime/check"),
-          this.requestJson("/api/nodes"),
-          this.requestJson("/api/policies")
-        ]);
-        this.keylime = keylime;
-        this.keylimeError = "";
-        this.nodes = nodes.filter((node) => node.role === "compute" && node.enabled);
-        this.policies = policies;
-      } catch (error) {
-        this.keylimeError = error.message;
-        this.showNotice("bad", error.message);
-      } finally {
-        this.loading = false;
-        if (showBusy) this.busy = false;
-      }
+    severityText(value) {
+      const names = {
+        info: "信息",
+        warning: "提醒",
+        error: "重要",
+        critical: "重要"
+      };
+      return names[String(value || "").toLowerCase()] || value || "信息";
+    },
+    severityClass(value) {
+      const normalized = String(value || "").toLowerCase();
+      if (["error", "critical", "重要"].includes(normalized)) return "bad";
+      if (["warning", "提醒"].includes(normalized)) return "warn";
+      return "ok";
+    },
+    auditMessage(event) {
+      const names = {
+        policy_create: "新增策略",
+        policy_update: "更新策略",
+        policy_delete: "删除策略",
+        policy_deploy_queued: "策略下发已入队",
+        host_integrity_evidence_collect: "采集节点完整性证据"
+      };
+      return names[event.event_type] || event.message || event.event_type || "-";
+    },
+    taskTypeText(value) {
+      const names = {
+        sync: "可信状态同步",
+        policy_deploy: "策略下发"
+      };
+      return names[value] || value || "任务";
+    },
+    taskStatusText(value) {
+      const names = {
+        queued: "等待执行",
+        running: "执行中",
+        success: "成功",
+        failed: "失败"
+      };
+      return names[value] || value || "-";
+    },
+    taskSeverity(value) {
+      return value === "failed" ? "重要" : value === "running" || value === "queued" ? "提醒" : "信息";
+    },
+    taskSeverityClass(value) {
+      return value === "failed" ? "bad" : value === "running" || value === "queued" ? "warn" : "ok";
     },
     openCreatePolicy() {
       if (!this.currentPolicyType.creatable) return;
@@ -276,7 +544,7 @@ createApp({
       let excludes = [];
       if (this.activePolicyType === "measured_boot") {
         content = {
-          policy_engine: "example",
+          policy_engine: "keylime-measured-boot",
           pcrs: this.createForm.pcrs.map(Number).sort((a, b) => a - b),
           secure_boot_required: this.createForm.secureBootRequired,
           reference_state_mode: "collect_from_node"
@@ -289,7 +557,7 @@ createApp({
         };
         excludes = this.parseLines(this.createForm.excludesText);
       } else {
-        throw new Error("EVM 策略新增尚未启用");
+        throw new Error("该策略类型暂未启用");
       }
       return {
         name,

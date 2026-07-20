@@ -10,24 +10,49 @@
   <div id="app" v-cloak>
     <aside class="sidebar">
       <div class="brand">
-        <strong>可信管理</strong>
-        <span>Keylime 基础能力</span>
+        <strong>可信云管理平台</strong>
+        <span>Keylime OpenStack</span>
       </div>
+
       <nav class="nav" aria-label="主导航">
-        <button :class="{ active: view === 'nodes' }" @click="view = 'nodes'">节点状态</button>
-        <div class="nav-group">
-          <span>策略管理</span>
-          <button
-            v-for="item in policyTypes"
-            :key="item.key"
-            class="nav-subitem"
-            :class="{ active: view === 'policies' && activePolicyType === item.key }"
-            @click="selectPolicyType(item.key)"
-          >
-            {{ item.label }}
+        <button class="nav-item" :class="{ active: view === 'dashboard' }" @click="selectView('dashboard')">首页</button>
+
+        <div class="nav-group" :class="{ active: groupActive('nodes') }">
+          <button class="nav-parent" type="button" @click="toggleGroup('nodes')">
+            <span>节点管理</span>
+            <span class="chevron">{{ expandedGroups.nodes ? '收起' : '展开' }}</span>
           </button>
+          <div v-show="expandedGroups.nodes" class="nav-children">
+            <button class="nav-subitem" :class="{ active: view === 'control_nodes' }" @click="selectView('control_nodes')">控制节点</button>
+            <button class="nav-subitem" :class="{ active: view === 'compute_nodes' }" @click="selectView('compute_nodes')">计算节点</button>
+          </div>
         </div>
+
+        <div class="nav-group" :class="{ active: groupActive('policies') }">
+          <button class="nav-parent" type="button" @click="toggleGroup('policies')">
+            <span>策略管理</span>
+            <span class="chevron">{{ expandedGroups.policies ? '收起' : '展开' }}</span>
+          </button>
+          <div v-show="expandedGroups.policies" class="nav-children">
+            <button
+              v-for="item in policyTypes"
+              :key="item.key"
+              class="nav-subitem"
+              :class="{ active: view === 'policies' && activePolicyType === item.key }"
+              @click="selectPolicyType(item.key)"
+            >
+              {{ item.label }}
+            </button>
+          </div>
+        </div>
+
+        <button class="nav-item" :class="{ active: view === 'global_policy' }" @click="selectView('global_policy')">全局策略控制</button>
+        <button class="nav-item" :class="{ active: view === 'alerts' }" @click="selectView('alerts')">告警中心</button>
+        <button class="nav-item" :class="{ active: view === 'tasks' }" @click="selectView('tasks')">任务中心</button>
+        <button class="nav-item" :class="{ active: view === 'audit' }" @click="selectView('audit')">审计日志</button>
+        <button class="nav-item" :class="{ active: view === 'settings' }" @click="selectView('settings')">系统设置</button>
       </nav>
+
       <div class="sidebar-footer">
         <span :class="['status-dot', keylimeStatusClass]"></span>
         <span>{{ keylime.nodes_trusted || 0 }}/{{ keylime.nodes_total || 0 }} 节点可信</span>
@@ -37,78 +62,136 @@
     <main class="main">
       <header class="topbar">
         <div>
-          <p class="eyebrow">TPM / IMA / Keylime</p>
+          <p class="eyebrow">可信计算节点纳管</p>
           <h1>{{ currentTitle }}</h1>
         </div>
+        <span class="topbar-meta">自动更新</span>
       </header>
 
       <section v-if="notice.text" :class="['notice', notice.kind]">{{ notice.text }}</section>
 
-      <section v-if="view === 'nodes'" class="screen">
+      <section v-if="view === 'dashboard'" class="screen">
+        <section class="dashboard-grid">
+          <article class="panel control-info">
+            <div class="panel-head">
+              <h2>控制节点信息</h2>
+            </div>
+            <div class="info-grid">
+              <div v-for="item in controlNodeInfo" :key="item.label">
+                <span>{{ item.label }}</span>
+                <strong>{{ item.value }}</strong>
+              </div>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <h2>控制节点运行状况</h2>
+            </div>
+            <div class="component-list">
+              <div v-for="item in controlRuntimeItems" :key="item.name">
+                <span>{{ item.name }}</span>
+                <em :class="['pill', item.state]">{{ item.status }}</em>
+              </div>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <h2>在线用户信息</h2>
+            </div>
+            <div class="user-list">
+              <div v-for="user in onlineUsers" :key="user.user">
+                <strong>{{ user.user }}</strong>
+                <span>{{ user.role }}</span>
+                <span>{{ user.auth }}</span>
+                <em class="pill ok">{{ user.status }}</em>
+              </div>
+            </div>
+          </article>
+        </section>
+
         <div class="summary-grid">
-          <article class="metric" :class="keylimeStatusClass">
-            <span>Keylime 验证</span>
-            <strong>{{ keylimeStatusText }}</strong>
-          </article>
-          <article class="metric ok">
-            <span>可信节点</span>
-            <strong>{{ keylime.nodes_trusted || 0 }}</strong>
-          </article>
-          <article class="metric">
-            <span>节点总数</span>
-            <strong>{{ keylime.nodes_total || 0 }}</strong>
-          </article>
-          <article class="metric warn">
-            <span>策略模式</span>
-            <strong>{{ keylime.trust_policy_mode || '-' }}</strong>
+          <article v-for="item in dashboardSummary" :key="item.label" class="metric" :class="item.state">
+            <span>{{ item.label }}</span>
+            <strong>{{ item.value }}</strong>
           </article>
         </div>
 
         <section class="panel">
           <div class="panel-head">
-            <div>
-              <h2>可信能力开关</h2>
+            <h2>计算节点运行状况</h2>
+          </div>
+          <div class="table compact-table compute-table">
+            <div class="row header">
+              <span>节点名称</span><span>管理 IP</span><span>Keylime 纳管状态</span><span>可信状态</span><span>最近证明时间</span>
+            </div>
+            <div v-for="node in computeRows" :key="node.id" class="row">
+              <span>{{ node.host }}</span>
+              <span>{{ node.ip }}</span>
+              <span><em :class="['pill', node.managedClass]">{{ node.managed }}</em></span>
+              <span><em :class="['pill', node.trustClass]">{{ node.trustText }}</em></span>
+              <span>{{ node.attestationTime }}</span>
             </div>
           </div>
-          <div class="capability-grid">
-            <article v-for="item in trustCapabilityItems" :key="item.key" class="capability-item">
-              <span>{{ item.label }}</span>
-              <strong :class="['pill', item.enabled ? 'ok' : 'warn']">
-                {{ item.enabled ? '已启用' : '未启用' }}
-              </strong>
-            </article>
-          </div>
+          <p v-if="!computeRows.length" class="empty">暂无计算节点。</p>
         </section>
 
         <section class="panel">
           <div class="panel-head">
-            <div>
-              <h2>计算节点运行状态</h2>
+            <h2>近期事件日志</h2>
+          </div>
+          <div class="table compact-table event-table">
+            <div class="row header">
+              <span>时间</span><span>级别</span><span>对象</span><span>事件内容</span>
+            </div>
+            <div v-for="event in recentEvents" :key="`${event.time}-${event.target}-${event.message}`" class="row">
+              <span>{{ formatTime(event.time) }}</span>
+              <span><em :class="['pill', event.state]">{{ event.severity }}</em></span>
+              <span>{{ event.target }}</span>
+              <span>{{ event.message }}</span>
             </div>
           </div>
-          <div class="node-grid">
-            <article v-for="node in keylime.nodes || []" :key="node.agent_uuid" class="node-card">
-              <div class="node-title">
-                <div>
-                  <h2>{{ node.host }}</h2>
-                  <p>{{ node.agent_ip || '-' }}</p>
-                </div>
-                <span :class="['pill', node.trusted ? 'ok' : 'bad']">{{ trustText(node.trusted) }}</span>
-              </div>
-              <div class="facts">
-                <div><span>Keylime 状态</span><strong>{{ stateText(node.attestation_status) }}</strong></div>
-                <div><span>TPM 启动度量</span><strong>{{ stateText(node.evidence?.boot) }}</strong></div>
-                <div><span>IMA 运行时度量</span><strong>{{ stateText(node.evidence?.runtime) }}</strong></div>
-                <div><span>证明新鲜度</span><strong>{{ ageText(node.attestation_age_seconds) }}</strong></div>
-                <div><span>运行时策略</span><strong>{{ yesNo(node.has_runtime_policy) }}</strong></div>
-                <div><span>参与判定</span><strong>{{ enabledCapabilityNames(node) }}</strong></div>
-                <div><span>最近事件</span><strong>{{ node.last_event_id || '-' }}</strong></div>
-              </div>
-              <div class="remediation" v-if="node.remediation && node.remediation.category !== 'none'">
-                <strong>{{ node.remediation.category }}</strong>
-                <p>{{ node.remediation.summary }}</p>
-              </div>
-            </article>
+          <p v-if="!recentEvents.length" class="empty">暂无事件。</p>
+        </section>
+      </section>
+
+      <section v-if="view === 'control_nodes'" class="screen">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>控制节点</h2>
+          </div>
+          <div class="table compact-table control-table">
+            <div class="row header">
+              <span>节点名称</span><span>管理 IP</span><span>操作系统</span><span>CPU</span><span>状态</span>
+            </div>
+            <div v-for="node in controllerNodes" :key="node.id" class="row">
+              <span>{{ node.hostname }}</span>
+              <span>{{ node.management_ip || '-' }}</span>
+              <span>{{ node.facts?.os || osText(node.facts?.kernel) }}</span>
+              <span>{{ node.hardware_profile?.model || node.facts?.cpu_vendor || '-' }}</span>
+              <span><em class="pill ok">在线</em></span>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <section v-if="view === 'compute_nodes'" class="screen">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>计算节点</h2>
+          </div>
+          <div class="table compact-table compute-table">
+            <div class="row header">
+              <span>节点名称</span><span>管理 IP</span><span>Keylime 纳管状态</span><span>可信状态</span><span>最近证明时间</span>
+            </div>
+            <div v-for="node in computeRows" :key="node.id" class="row">
+              <span>{{ node.host }}</span>
+              <span>{{ node.ip }}</span>
+              <span><em :class="['pill', node.managedClass]">{{ node.managed }}</em></span>
+              <span><em :class="['pill', node.trustClass]">{{ node.trustText }}</em></span>
+              <span>{{ node.attestationTime }}</span>
+            </div>
           </div>
         </section>
       </section>
@@ -116,9 +199,7 @@
       <section v-if="view === 'policies'" class="screen">
         <section class="panel">
           <div class="panel-head">
-            <div>
-              <h2>{{ currentPolicyType.label }}</h2>
-            </div>
+            <h2>{{ currentPolicyType.label }}</h2>
             <button
               class="primary"
               type="button"
@@ -148,6 +229,98 @@
         </section>
       </section>
 
+      <section v-if="view === 'global_policy'" class="screen">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>全局策略控制</h2>
+          </div>
+          <div class="switch-grid">
+            <article v-for="item in trustCapabilityItems" :key="item.key" class="switch-item">
+              <div>
+                <strong>{{ item.label }}</strong>
+                <span>{{ item.enabled ? '已参与可信判定' : '未参与可信判定' }}</span>
+              </div>
+              <em :class="['switch', item.enabled ? 'on' : 'off']"></em>
+            </article>
+          </div>
+        </section>
+      </section>
+
+      <section v-if="view === 'alerts'" class="screen">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>告警中心</h2>
+          </div>
+          <div class="table compact-table alert-table">
+            <div class="row header">
+              <span>对象</span><span>级别</span><span>事件内容</span><span>处置建议</span>
+            </div>
+            <div v-for="item in alertRows" :key="`${item.target}-${item.message}`" class="row">
+              <span>{{ item.target }}</span>
+              <span><em class="pill bad">{{ item.severity }}</em></span>
+              <span>{{ item.message }}</span>
+              <span>{{ item.remediation }}</span>
+            </div>
+          </div>
+          <p v-if="!alertRows.length" class="empty">暂无告警。</p>
+        </section>
+      </section>
+
+      <section v-if="view === 'tasks'" class="screen">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>任务中心</h2>
+          </div>
+          <div class="table compact-table task-table">
+            <div class="row header">
+              <span>任务类型</span><span>对象</span><span>状态</span><span>开始时间</span><span>结束时间</span>
+            </div>
+            <div v-for="task in tasks" :key="task.id" class="row">
+              <span>{{ taskTypeText(task.task_type) }}</span>
+              <span>{{ task.target || '-' }}</span>
+              <span><em :class="['pill', taskSeverityClass(task.status)]">{{ taskStatusText(task.status) }}</em></span>
+              <span>{{ formatTime(task.started_at) }}</span>
+              <span>{{ formatTime(task.finished_at) }}</span>
+            </div>
+          </div>
+          <p v-if="!tasks.length" class="empty">暂无任务。</p>
+        </section>
+      </section>
+
+      <section v-if="view === 'audit'" class="screen">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>审计日志</h2>
+          </div>
+          <div class="table compact-table audit-table">
+            <div class="row header">
+              <span>时间</span><span>类型</span><span>对象</span><span>级别</span><span>内容</span>
+            </div>
+            <div v-for="event in auditEvents" :key="event.id" class="row">
+              <span>{{ formatTime(event.created_at) }}</span>
+              <span>{{ auditMessage(event) }}</span>
+              <span>{{ event.target || '-' }}</span>
+              <span><em :class="['pill', severityClass(event.severity)]">{{ severityText(event.severity) }}</em></span>
+              <span>{{ event.message || '-' }}</span>
+            </div>
+          </div>
+          <p v-if="!auditEvents.length" class="empty">暂无审计日志。</p>
+        </section>
+      </section>
+
+      <section v-if="view === 'settings'" class="screen">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>系统设置</h2>
+          </div>
+          <div class="info-grid settings-grid">
+            <div><span>服务名称</span><strong>{{ health?.service || 'keylime-openstack' }}</strong></div>
+            <div><span>运行环境</span><strong>{{ health?.environment || '-' }}</strong></div>
+            <div><span>自动刷新</span><strong>10 秒</strong></div>
+          </div>
+        </section>
+      </section>
+
       <div v-if="createDialogOpen" class="modal-backdrop" @click.self="closeCreatePolicy">
         <section class="modal modal-wide policy-create-dialog" role="dialog" aria-modal="true">
           <h2>新增{{ currentPolicyType.label }}</h2>
@@ -162,7 +335,7 @@
             </label>
             <fieldset class="wide target-selector">
               <legend>目标节点</legend>
-              <label v-for="node in nodes" :key="node.id" class="check-option">
+              <label v-for="node in computeInventory" :key="node.id" class="check-option">
                 <input v-model="createForm.targetNodeIds" type="checkbox" :value="node.id">
                 <span>{{ node.hostname }}</span>
                 <small>{{ node.management_ip || node.keylime_agent_ip }}</small>
