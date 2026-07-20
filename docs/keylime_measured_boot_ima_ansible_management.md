@@ -82,6 +82,31 @@ worker 启动策略任务前会检查 `ansible-playbook`、OpenSSH `ssh`、私�
 客户端；即使旧环境文件仍设置为 `false`，当基础镜像缺少 `ssh` 时构建也会尝试
 自动补齐，否则可信启动和 IMA 策略下发无法工作。
 
+如果 Ansible 报 `Permission denied (publickey,password)`，说明 SSH 网络和
+`known_hosts` 已经过了，但 inventory 没有使用正确私钥，或目标节点还没信任该
+公钥。控制面默认使用：
+
+```text
+ANSIBLE_REMOTE_USER=root
+ANSIBLE_SSH_PRIVATE_KEY_FILE=/etc/keylime-openstack/ansible/id_ed25519
+ANSIBLE_KNOWN_HOSTS_FILE=/etc/keylime-openstack/ansible/known_hosts
+```
+
+先在 worker 容器内验证：
+
+```bash
+docker exec keylime_openstack_worker sh -lc \
+  "ssh -i /etc/keylime-openstack/ansible/id_ed25519 \
+    -o IdentitiesOnly=yes \
+    -o UserKnownHostsFile=/etc/keylime-openstack/ansible/known_hosts \
+    -o StrictHostKeyChecking=yes \
+    root@172.31.100.8 hostname"
+```
+
+该命令成功后，策略下发仍报权限错误，就检查
+`/etc/keylime-openstack/keylime-openstack.env` 是否缺少或留空了上述
+`ANSIBLE_*` 配置。
+
 下发策略前还应确认 worker 容器到计算节点管理 IP 的 SSH 出口正常。宿主机能 SSH
 而容器超时，通常是 Docker bridge 子网与 OpenStack 管理网段重叠或容器出口被
 防火墙拦截：

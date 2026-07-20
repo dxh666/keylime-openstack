@@ -137,6 +137,21 @@ prepare() {
     set_env_value OPENTCSM_EVIDENCE_FRESH_SECONDS "300"
   fi
 
+  current_ansible_user="$(get_env_value ANSIBLE_REMOTE_USER)"
+  if [ -z "$current_ansible_user" ]; then
+    set_env_value ANSIBLE_REMOTE_USER "root"
+  fi
+
+  current_ansible_key="$(get_env_value ANSIBLE_SSH_PRIVATE_KEY_FILE)"
+  if [ -z "$current_ansible_key" ]; then
+    set_env_value ANSIBLE_SSH_PRIVATE_KEY_FILE "/etc/keylime-openstack/ansible/id_ed25519"
+  fi
+
+  current_ansible_known_hosts="$(get_env_value ANSIBLE_KNOWN_HOSTS_FILE)"
+  if [ -z "$current_ansible_known_hosts" ]; then
+    set_env_value ANSIBLE_KNOWN_HOSTS_FILE "/etc/keylime-openstack/ansible/known_hosts"
+  fi
+
   chmod 0600 "$ENV_FILE"
 }
 
