@@ -37,6 +37,12 @@ Read the production design first:
 docs/keylime_openstack_production_trust_plane_design.md
 ```
 
+Productization roadmap:
+
+```text
+docs/keylime_openstack_productization_plan.md
+```
+
 Deployment for the new FastAPI/PostgreSQL control plane:
 
 ```text
