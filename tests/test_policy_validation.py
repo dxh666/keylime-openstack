@@ -68,23 +68,48 @@ def test_tpcm_dynamic_policy_defaults_to_opentcsm_guard() -> None:
 
     assert payload["content"]["trust_agent_type"] == "opentcsm_tpcm"
     assert payload["content"]["dynamic_measure_required"] is True
-    assert payload["content"]["require_clean_trust_report"] is True
+    assert payload["content"]["require_clean_trust_report"] is False
+    assert payload["content"]["environment_object_configs"] == {
+        "kernel_section": {"enabled": True, "interval_milli": 60000},
+        "syscall_table": {"enabled": True, "interval_milli": 60000},
+        "idt_table": {"enabled": True, "interval_milli": 60000},
+    }
+    assert payload["content"]["environment_objects"] == [
+        "kernel_section",
+        "syscall_table",
+        "idt_table",
+    ]
     assert payload["content"]["minimum_dynamic_baselines"] == 0
     assert payload["content"]["keylime_artifact"] == "opentcsm_dynamic_measurement_policy"
     assert node_ids == [4]
     assert deploy_now is True
 
 
-def test_tpcm_dynamic_policy_rejects_negative_baseline_count() -> None:
+def test_tpcm_dynamic_policy_accepts_fixed_object_configs() -> None:
     policy = TrustPolicyIn(
-        name="bad-hygon-dynamic",
+        name="hygon-dynamic",
         policy_type="tpcm_dynamic_measurement",
         target_node_ids=[4],
-        content={"minimum_dynamic_baselines": -1},
+        content={
+            "environment_object_configs": {
+                "kernel_section": {"enabled": True, "interval_milli": 30000},
+                "syscall_table": {"enabled": False, "interval_milli": 60000},
+                "idt_table": {"enabled": True, "interval_milli": 120000},
+            }
+        },
     )
 
-    with pytest.raises(HTTPException, match="不能小于 0"):
-        validated_policy_payload(policy)
+    payload, _, _ = validated_policy_payload(policy)
+
+    assert payload["content"]["environment_objects"] == ["kernel_section", "idt_table"]
+    assert payload["content"]["environment_object_configs"]["kernel_section"] == {
+        "enabled": True,
+        "interval_milli": 30000,
+    }
+    assert payload["content"]["environment_object_configs"]["syscall_table"] == {
+        "enabled": False,
+        "interval_milli": 60000,
+    }
 
 
 def test_evm_creation_is_disabled() -> None:

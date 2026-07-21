@@ -36,18 +36,21 @@
         allowed_objects = {"kernel_section", "syscall_table", "idt_table"}
         uid = str(auth["uid"])
         signing_key = str(auth["private_key"]) + str(auth["public_key"])
-        auth_type = str(int(auth.get("auth_type") or 1))
-        desired_objects = []
-        for item in policy.get("environment_objects") or []:
-            name = str(item).strip()
-            if name not in allowed_objects:
-                raise SystemExit(f"unsupported dynamic measurement object: {name}")
-            if name not in desired_objects:
-                desired_objects.append(name)
-        if not desired_objects:
-            raise SystemExit("environment_objects cannot be empty")
-        interval = str(int(policy.get("environment_interval_milli") or 60000))
-        dynamic_on = "1" if policy.get("dynamic_measure_required", True) else "0"
+        default_interval = int(policy.get("environment_interval_milli") or 60000)
+        object_configs = policy.get("environment_object_configs") or {}
+        desired_configs = {}
+        if isinstance(object_configs, dict) and object_configs:
+            for name in sorted(allowed_objects):
+                config = object_configs.get(name) or {}
+                if not config.get("enabled"):
+                    continue
+                desired_configs[name] = int(config.get("interval_milli") or default_interval)
+        else:
+            for item in policy.get("environment_objects") or []:
+                name = str(item).strip()
+                if name not in allowed_objects:
+                    raise SystemExit(f"unsupported dynamic measurement object: {name}")
+                desired_configs[name] = default_interval
 
         def redact(command):
             safe = list(command)
@@ -93,20 +96,7 @@
         commands.append(before)
         current = {item["object"]: item for item in parse_policy(before.get("stdout") or "")}
 
-        commands.append(run(
-            "set_dynamic_measure_switch",
-            [
-                "global_control_policy",
-                "-a", auth_type,
-                "-o", "0",
-                "-p", "7",
-                "-v", dynamic_on,
-                "-u", uid,
-                "-k", signing_key,
-            ],
-        ))
-
-        for name in desired_objects:
+        for name, object_interval in desired_configs.items():
             operation = "3" if name in current else "1"
             commands.append(run(
                 f"update_dmeasure_policy_{name}",
@@ -114,14 +104,14 @@
                     "update_dmeasure_policy",
                     "-o", operation,
                     "-n", name,
-                    "-d", interval,
+                    "-d", str(object_interval),
                     "-u", uid,
                     "-k", signing_key,
                 ],
             ))
 
         if policy.get("delete_unmanaged_objects"):
-            for name in sorted(set(current) - set(desired_objects)):
+            for name in sorted(set(current) - set(desired_configs)):
                 if name in allowed_objects:
                     commands.append(run(
                         f"delete_dmeasure_policy_{name}",
@@ -129,7 +119,7 @@
                             "update_dmeasure_policy",
                             "-o", "2",
                             "-n", name,
-                            "-d", interval,
+                            "-d", str(default_interval),
                             "-u", uid,
                             "-k", signing_key,
                         ],
@@ -147,9 +137,15 @@
             "auth_ref": auth.get("ref", ""),
             "auth_uid": uid,
             "desired": {
-                "dynamic_measure_required": policy.get("dynamic_measure_required", True),
-                "environment_objects": desired_objects,
-                "environment_interval_milli": int(interval),
+                "environment_objects": list(desired_configs),
+                "environment_object_configs": {
+                    name: {
+                        "enabled": True,
+                        "interval_milli": interval,
+                    }
+                    for name, interval in desired_configs.items()
+                },
+                "environment_interval_milli": default_interval,
                 "delete_unmanaged_objects": bool(policy.get("delete_unmanaged_objects")),
             },
             "observed_before": parse_policy(before.get("stdout") or ""),

@@ -12,7 +12,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from keylime_openstack.api.deps import db_session, require_admin, settings_dep
 from keylime_openstack.config import Settings
-from keylime_openstack.constants import DEFAULT_TRUST_TRAITS, TRUST_AGENT_OPENTCSM_TPCM
+from keylime_openstack.constants import (
+    DEFAULT_TRUST_TRAITS,
+    POLICY_TPCM_DYNAMIC_MEASUREMENT,
+    TRUST_AGENT_OPENTCSM_TPCM,
+)
 from keylime_openstack.models import (
     AuditEvent,
     ComputeNode,
@@ -252,7 +256,8 @@ def update_policy(
     policy = load_policy(session, policy_id)
     if not policy:
         raise HTTPException(status_code=404, detail=f"策略不存在：{policy_id}")
-    if any(
+    current_policy_type = canonical_policy_type(policy.policy_type)
+    if current_policy_type != POLICY_TPCM_DYNAMIC_MEASUREMENT and any(
         binding.active and binding.application_status == "applied"
         for binding in policy.bindings
     ):

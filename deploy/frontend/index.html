@@ -250,7 +250,7 @@
       </section>
 
       <section v-if="view === 'policies'" class="screen">
-        <section class="panel">
+        <section v-if="activePolicyType !== 'tpcm_dynamic_measurement'" class="panel">
           <div class="panel-head">
             <h2>{{ currentPolicyType.label }}</h2>
             <button
@@ -264,11 +264,10 @@
           </div>
           <div class="table policy-table">
             <div class="row header">
-              <span>策略名称</span><span>基线来源</span><span>节点范围</span><span>策略下发</span><span>生效版本</span><span>操作</span>
+              <span>策略名称</span><span>节点范围</span><span>生效状态</span><span>生效版本</span><span>操作</span>
             </div>
             <div v-for="policy in filteredPolicies" :key="policy.id" class="row">
               <span>{{ policy.name }}</span>
-              <span>{{ policyBaselineText(policy) }}</span>
               <span>{{ bindingNames(policy) }}</span>
               <span>
                 <em :class="['pill', deploymentClass(bindingState(policy))]">{{ bindingStateText(policy) }}</em>
@@ -282,6 +281,62 @@
             </div>
           </div>
           <p v-if="!filteredPolicies.length" class="empty">暂无策略。</p>
+        </section>
+        <section v-else class="panel dynamic-policy-panel">
+          <div class="panel-head">
+            <h2>{{ currentPolicyType.label }}</h2>
+            <button class="primary" type="button" :disabled="busy" @click="saveDynamicMeasurementConfig">
+              保存并生效
+            </button>
+          </div>
+          <fieldset class="target-selector dynamic-target-selector">
+            <legend>目标节点</legend>
+            <label v-for="node in policyTargetNodes" :key="node.id" class="check-option">
+              <input
+                v-model="dynamicForm.targetNodeIds"
+                type="checkbox"
+                :value="node.id"
+                @change="markDynamicFormDirty"
+              >
+              <span>{{ node.hostname }}</span>
+              <small>{{ node.management_ip || node.keylime_agent_ip }}</small>
+            </label>
+            <p v-if="!policyTargetNodes.length" class="empty">暂无可选目标节点。</p>
+          </fieldset>
+          <div class="table dynamic-object-table">
+            <div class="row header">
+              <span>度量对象</span><span>启用状态</span><span>检测周期</span><span>生效状态</span><span>最近生效时间</span>
+            </div>
+            <div v-for="item in dynamicObjectRows" :key="item.key" class="row">
+              <span>{{ item.label }}</span>
+              <span>
+                <label class="inline-switch">
+                  <input
+                    v-model="dynamicForm.objects[item.key].enabled"
+                    type="checkbox"
+                    @change="markDynamicFormDirty"
+                  >
+                  <em :class="['switch', dynamicForm.objects[item.key].enabled ? 'on' : 'off']"></em>
+                  <strong>{{ dynamicForm.objects[item.key].enabled ? '开启' : '关闭' }}</strong>
+                </label>
+              </span>
+              <span>
+                <input
+                  v-model.number="dynamicForm.objects[item.key].intervalMilli"
+                  class="inline-number"
+                  type="number"
+                  min="1000"
+                  max="86400000"
+                  step="1000"
+                  :disabled="!dynamicForm.objects[item.key].enabled"
+                  @input="markDynamicFormDirty"
+                >
+                <small>毫秒</small>
+              </span>
+              <span><em :class="['pill', item.stateClass]">{{ item.stateText }}</em></span>
+              <span>{{ item.effectiveAt }}</span>
+            </div>
+          </div>
         </section>
       </section>
 
@@ -398,12 +453,6 @@
               </label>
               <p v-if="!policyTargetNodes.length" class="empty">暂无可选目标节点。</p>
             </fieldset>
-            <div class="wide generation-panel">
-              <span>基线来源</span>
-              <strong>{{ policyGenerationTitle }}</strong>
-              <small>{{ policyGenerationSummary }}</small>
-            </div>
-
             <template v-if="activePolicyType === 'measured_boot'">
               <fieldset class="wide pcr-selector">
                 <legend>TPM PCR 范围</legend>
@@ -433,39 +482,6 @@
               </label>
             </template>
 
-            <template v-if="activePolicyType === 'tpcm_dynamic_measurement'">
-              <label class="wide toggle-line">
-                <input v-model="createForm.dynamicMeasureRequired" type="checkbox">
-                <span>开启 TPCM 动态度量</span>
-              </label>
-              <fieldset class="wide pcr-selector">
-                <legend>环境动态度量对象</legend>
-                <label class="check-option compact-option">
-                  <input v-model="createForm.dynamicEnvironmentObjects" type="checkbox" value="kernel_section">
-                  <span>内核代码段</span>
-                </label>
-                <label class="check-option compact-option">
-                  <input v-model="createForm.dynamicEnvironmentObjects" type="checkbox" value="syscall_table">
-                  <span>系统调用表</span>
-                </label>
-                <label class="check-option compact-option">
-                  <input v-model="createForm.dynamicEnvironmentObjects" type="checkbox" value="idt_table">
-                  <span>中断描述符表</span>
-                </label>
-              </fieldset>
-              <label>
-                <span>检测周期（毫秒）</span>
-                <input v-model.number="createForm.dynamicIntervalMilli" type="number" min="1000" step="1000">
-              </label>
-              <label class="wide toggle-line">
-                <input v-model="createForm.dynamicDeleteUnmanagedObjects" type="checkbox">
-                <span>删除未选择的环境度量对象</span>
-              </label>
-              <label class="wide toggle-line">
-                <input v-model="createForm.cleanTrustReportRequired" type="checkbox">
-                <span>下发后要求可信报告无失败项</span>
-              </label>
-            </template>
             <div class="form-actions">
               <button type="button" :disabled="busy" @click="closeCreatePolicy">取消</button>
               <button class="primary" type="submit" :disabled="busy">生成并下发策略</button>
@@ -508,7 +524,6 @@
               <div><span>兼容校验</span><strong>{{ policyFallbackPcrText(detailPolicy) }}</strong></div>
               <div><span>Secure Boot</span><strong>{{ policySecureBootText(detailPolicy) }}</strong></div>
               <div><span>可信代理对象</span><strong>{{ policyArtifactText(detailPolicy) }}</strong></div>
-              <div><span>基线生成</span><strong>{{ policyGenerationModeText(detailPolicy) }}</strong></div>
             </div>
           </section>
           <section v-if="detailPolicy.policy_type === 'ima_runtime'" class="detail-block">
@@ -518,20 +533,9 @@
           <section v-if="detailPolicy.policy_type === 'tpcm_dynamic_measurement'" class="detail-block">
             <h3>动态度量规则</h3>
             <div class="detail-grid">
-              <div><span>动态度量</span><strong>{{ policyDynamicRequiredText(detailPolicy) }}</strong></div>
               <div><span>度量对象</span><strong>{{ policyDynamicObjectsText(detailPolicy) }}</strong></div>
               <div><span>检测周期</span><strong>{{ policyDynamicIntervalText(detailPolicy) }}</strong></div>
-              <div><span>未选择对象</span><strong>{{ policyDynamicDeleteText(detailPolicy) }}</strong></div>
-              <div><span>可信报告</span><strong>{{ policyCleanReportText(detailPolicy) }}</strong></div>
-              <div><span>可信代理对象</span><strong>{{ policyArtifactText(detailPolicy) }}</strong></div>
-            </div>
-          </section>
-          <section class="detail-block">
-            <h3>基线生成</h3>
-            <div class="detail-grid">
-              <div><span>基线来源</span><strong>{{ policyBaselineText(detailPolicy) }}</strong></div>
-              <div><span>生成方式</span><strong>{{ policyGenerationModeText(detailPolicy) }}</strong></div>
-              <div><span>可信代理对象</span><strong>{{ policyArtifactText(detailPolicy) }}</strong></div>
+              <div><span>生效状态</span><strong>{{ bindingStateText(detailPolicy) }}</strong></div>
             </div>
           </section>
           <section class="detail-block">

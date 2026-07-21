@@ -380,16 +380,17 @@ class PolicyDeploymentService:
         )
         with self._workspace() as workspace:
             apply_result_path = workspace / "opentcsm-dynamic-apply.json"
-            environment_objects = list(
-                policy.content.get("environment_objects") or OPEN_TCSM_DMEASURE_OBJECTS
-            )
+            object_configs = _dynamic_object_configs(policy.content)
+            environment_objects = [
+                name for name, config in object_configs.items() if config["enabled"]
+            ]
             dynamic_policy = {
-                "dynamic_measure_required": bool(policy.content.get("dynamic_measure_required", True)),
+                "environment_object_configs": object_configs,
                 "environment_objects": environment_objects,
                 "environment_interval_milli": int(
                     policy.content.get("environment_interval_milli") or 60000
                 ),
-                "delete_unmanaged_objects": bool(policy.content.get("delete_unmanaged_objects", False)),
+                "delete_unmanaged_objects": bool(policy.content.get("delete_unmanaged_objects", True)),
             }
             apply_result = self.ansible.run(
                 playbook="apply-opentcsm-dynamic-policy.yml",
@@ -412,12 +413,18 @@ class PolicyDeploymentService:
         result = OpenTcsmCollector(self.session, self.settings).collect(node)
         raw = result.get("raw") if isinstance(result.get("raw"), dict) else {}
         failures = dict(raw.get("trust_report_failures") or {})
-        minimum_dynamic_baselines = int(policy.content.get("minimum_dynamic_baselines") or 0)
         dynamic_baselines = _safe_int(raw.get("dynamic_measure_ref_number"))
-        dynamic_required = bool(policy.content.get("dynamic_measure_required", True))
-        require_clean_report = bool(policy.content.get("require_clean_trust_report", True))
+        require_clean_report = bool(policy.content.get("require_clean_trust_report", False))
         desired_objects = [str(item) for item in environment_objects]
-        desired_interval = int(policy.content.get("environment_interval_milli") or 60000)
+        desired_intervals = {
+            name: int(config["interval_milli"])
+            for name, config in object_configs.items()
+            if config["enabled"]
+        }
+        disabled_objects = {
+            name for name, config in object_configs.items() if not config["enabled"]
+        }
+        default_interval = int(policy.content.get("environment_interval_milli") or 60000)
         observed_dmeasure_policy = [
             item
             for item in (raw.get("dmeasure_policy") or [])
@@ -431,37 +438,33 @@ class PolicyDeploymentService:
         dynamic_on = raw.get("dynamic_measure_on") is True
         dynamic_status = result.get("dynamic_measurement_status")
         violations: list[str] = []
-        if dynamic_required and not dynamic_on:
-            violations.append("TPCM 动态度量未开启")
-        if dynamic_required and dynamic_status != "pass":
-            violations.append(f"TPCM 动态度量状态未通过：{dynamic_status or 'unknown'}")
         if require_clean_report and failures:
             violations.append("TPCM 可信报告存在失败计数")
-        if dynamic_baselines < minimum_dynamic_baselines:
-            violations.append(
-                f"TPCM 动态基线数量不足：当前 {dynamic_baselines}，要求 {minimum_dynamic_baselines}"
-            )
         for object_name in desired_objects:
             observed = observed_by_object.get(object_name)
             if not observed:
                 violations.append(f"TPCM 动态度量对象未生效：{object_name}")
                 continue
+            desired_interval = desired_intervals[object_name]
             if _safe_int(observed.get("interval_milli")) != desired_interval:
                 violations.append(
                     f"TPCM 动态度量周期不一致：{object_name} 当前 "
                     f"{observed.get('interval_milli')}ms，要求 {desired_interval}ms"
                 )
+        if policy.content.get("delete_unmanaged_objects", True):
+            for object_name in sorted(disabled_objects):
+                if object_name in observed_by_object:
+                    violations.append(f"TPCM 动态度量对象未关闭：{object_name}")
         if violations:
             raise RuntimeError("OpenTCSM 动态度量策略校验未通过：" + "；".join(violations))
 
         rendered_policy = {
             "policy": {
-                "dynamic_measure_required": dynamic_required,
                 "require_clean_trust_report": require_clean_report,
+                "environment_object_configs": object_configs,
                 "environment_objects": desired_objects,
-                "environment_interval_milli": desired_interval,
-                "delete_unmanaged_objects": bool(policy.content.get("delete_unmanaged_objects", False)),
-                "minimum_dynamic_baselines": minimum_dynamic_baselines,
+                "environment_interval_milli": default_interval,
+                "delete_unmanaged_objects": bool(policy.content.get("delete_unmanaged_objects", True)),
             },
             "observed": {
                 "trust_root": result.get("trust_root"),
@@ -516,7 +519,8 @@ class PolicyDeploymentService:
             "dynamic_measure_on": dynamic_on,
             "dynamic_measurement_status": dynamic_status,
             "environment_objects": desired_objects,
-            "environment_interval_milli": desired_interval,
+            "environment_object_configs": object_configs,
+            "environment_interval_milli": default_interval,
             "dynamic_measure_ref_number": dynamic_baselines,
             "trust_report_sha256": raw.get("trust_report_sha256", ""),
             "dmeasure_policy_sha256": raw.get("dmeasure_policy_sha256", ""),
@@ -688,6 +692,29 @@ def _event_log_fallback_mode(policy: TrustPolicy) -> str:
     value = str(policy.content.get("event_log_fallback") or "pcr_quote")
     normalized = value.strip().lower().replace("-", "_")
     return "pcr_quote" if normalized in {"pcr_quote", "tpm_pcr", "tpm_pcr_quote"} else "none"
+
+
+def _dynamic_object_configs(content: dict[str, Any]) -> dict[str, dict[str, int | bool]]:
+    default_interval = int(content.get("environment_interval_milli") or 60000)
+    raw_configs = content.get("environment_object_configs")
+    if isinstance(raw_configs, dict) and raw_configs:
+        return {
+            name: {
+                "enabled": bool((raw_configs.get(name) or {}).get("enabled", False)),
+                "interval_milli": int(
+                    (raw_configs.get(name) or {}).get("interval_milli") or default_interval
+                ),
+            }
+            for name in OPEN_TCSM_DMEASURE_OBJECTS
+        }
+    enabled_objects = set(content.get("environment_objects") or OPEN_TCSM_DMEASURE_OBJECTS)
+    return {
+        name: {
+            "enabled": name in enabled_objects,
+            "interval_milli": default_interval,
+        }
+        for name in OPEN_TCSM_DMEASURE_OBJECTS
+    }
 
 
 def _measured_boot_pcrs(policy: TrustPolicy) -> list[int]:

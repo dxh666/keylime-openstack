@@ -3,7 +3,13 @@ const { createApp } = Vue;
 const POLICY_TYPES = [
   { key: "measured_boot", label: "可信启动", creatable: true },
   { key: "ima_runtime", label: "IMA 运行时策略", creatable: true },
-  { key: "tpcm_dynamic_measurement", label: "动态度量策略", creatable: true }
+  { key: "tpcm_dynamic_measurement", label: "动态度量策略", creatable: false }
+];
+
+const DYNAMIC_MEASUREMENT_OBJECTS = [
+  { key: "kernel_section", label: "内核代码段" },
+  { key: "syscall_table", label: "系统调用表" },
+  { key: "idt_table", label: "中断描述符表" }
 ];
 
 const DEFAULT_IMA_POLICY = `dont_measure fsmagic=0x9fa0
@@ -64,6 +70,16 @@ const emptyPolicyForm = (policyType = "measured_boot") => ({
   policy_type: policyType
 });
 
+const emptyDynamicForm = () => ({
+  targetNodeIds: [],
+  objects: Object.fromEntries(
+    DYNAMIC_MEASUREMENT_OBJECTS.map((item) => [
+      item.key,
+      { enabled: true, intervalMilli: 60000 }
+    ])
+  )
+});
+
 const viewTitles = {
   dashboard: "首页",
   control_nodes: "控制节点",
@@ -103,6 +119,9 @@ createApp({
       opentcsmAccessChecks: {},
       createDialogOpen: false,
       createForm: emptyPolicyForm(),
+      dynamicForm: emptyDynamicForm(),
+      dynamicFormPolicyId: null,
+      dynamicFormDirty: false,
       detailPolicy: null,
       detailNode: null,
       tokenDialog: {
@@ -125,16 +144,6 @@ createApp({
     currentTitle() {
       if (this.view === "policies") return this.currentPolicyType.label;
       return viewTitles[this.view] || "管理控制台";
-    },
-    policyGenerationTitle() {
-      if (this.activePolicyType === "measured_boot") return "自动采集 TPM 启动基线";
-      if (this.activePolicyType === "ima_runtime") return "自动采集 IMA 运行基线";
-      return "OpenTCSM 策略下发与可信报告验收";
-    },
-    policyGenerationSummary() {
-      if (this.activePolicyType === "measured_boot") return "生成可信启动参考状态";
-      if (this.activePolicyType === "ima_runtime") return "生成 IMA 运行时策略";
-      return "下发 TPCM 环境动态度量策略";
     },
     currentTimeText() {
       return this.currentTime.toLocaleString("zh-CN", {
@@ -273,6 +282,26 @@ createApp({
     },
     filteredPolicies() {
       return this.policies.filter((policy) => policy.policy_type === this.activePolicyType);
+    },
+    dynamicMeasurementPolicy() {
+      return this.policies
+        .filter((policy) => policy.policy_type === "tpcm_dynamic_measurement")
+        .sort((a, b) => Number(b.id || 0) - Number(a.id || 0))[0] || null;
+    },
+    dynamicObjectRows() {
+      const policy = this.dynamicMeasurementPolicy;
+      const bindingState = policy ? this.bindingState(policy) : "not_deployed";
+      return DYNAMIC_MEASUREMENT_OBJECTS.map((item) => {
+        const config = this.dynamicForm.objects[item.key] || { enabled: false, intervalMilli: 60000 };
+        return {
+          ...item,
+          enabled: config.enabled,
+          intervalMilli: config.intervalMilli,
+          stateText: config.enabled ? this.dynamicObjectStateText(bindingState) : "未启用",
+          stateClass: config.enabled ? this.deploymentClass(bindingState) : "warn",
+          effectiveAt: policy ? this.policyEffectiveVersion(policy) : "-"
+        };
+      });
     },
     policyTargetNodes() {
       if (this.activePolicyType === "tpcm_dynamic_measurement") {
@@ -445,11 +474,52 @@ createApp({
         if (key === "audit" && value) this.auditEvents = value;
         if (key === "tasks" && value) this.tasks = value;
       }
+      this.syncDynamicFormFromPolicy();
       const failed = entries.filter(([, , error]) => error);
       this.apiError = failed.length ? failed.map(([key, , error]) => `${key}: ${error.message}`).join("；") : "";
       if (showBusy && this.apiError) this.showNotice("bad", this.apiError);
       this.loading = false;
       if (showBusy) this.busy = false;
+    },
+    syncDynamicFormFromPolicy(force = false) {
+      if (this.dynamicFormDirty && !force) return;
+      const policy = this.dynamicMeasurementPolicy;
+      const form = emptyDynamicForm();
+      if (policy) {
+        const content = policy.content || {};
+        const objectConfigs = content.environment_object_configs || {};
+        const legacyObjects = new Set(content.environment_objects || DYNAMIC_MEASUREMENT_OBJECTS.map((item) => item.key));
+        const defaultInterval = Number(content.environment_interval_milli || 60000);
+        for (const item of DYNAMIC_MEASUREMENT_OBJECTS) {
+          const config = objectConfigs[item.key] || {};
+          form.objects[item.key] = {
+            enabled: Object.prototype.hasOwnProperty.call(objectConfigs, item.key)
+              ? config.enabled === true
+              : legacyObjects.has(item.key),
+            intervalMilli: Number(config.interval_milli || config.intervalMilli || defaultInterval || 60000)
+          };
+        }
+        form.targetNodeIds = (policy.bindings || []).map((binding) => Number(binding.target_id)).filter(Boolean);
+        this.dynamicFormPolicyId = policy.id;
+      } else {
+        form.targetNodeIds = this.computeInventory
+          .filter((node) => node.trust_agent_type === "opentcsm_tpcm")
+          .map((node) => Number(node.id))
+          .filter(Boolean);
+        this.dynamicFormPolicyId = null;
+      }
+      this.dynamicForm = form;
+      this.dynamicFormDirty = false;
+    },
+    markDynamicFormDirty() {
+      this.dynamicFormDirty = true;
+    },
+    dynamicObjectStateText(state) {
+      if (state === "applied") return "已生效";
+      if (state === "queued" || state === "applying") return "生效中";
+      if (state === "failed") return "生效失败";
+      if (state === "mixed") return "状态不一致";
+      return "未生效";
     },
     showNotice(kind, text) {
       this.notice = { kind, text };
@@ -979,6 +1049,79 @@ createApp({
     parseLines(text) {
       return String(text || "").split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
     },
+    dynamicMeasurementPayload() {
+      if (!this.dynamicForm.targetNodeIds.length) throw new Error("请至少选择一个目标节点");
+      const objectConfigs = {};
+      for (const item of DYNAMIC_MEASUREMENT_OBJECTS) {
+        const config = this.dynamicForm.objects[item.key] || {};
+        const interval = Number(config.intervalMilli || 60000);
+        if (!Number.isFinite(interval) || interval < 1000 || interval > 86400000) {
+          throw new Error(`${item.label} 的检测周期必须在 1000 到 86400000 毫秒之间`);
+        }
+        objectConfigs[item.key] = {
+          enabled: config.enabled === true,
+          interval_milli: interval
+        };
+      }
+      const enabledObjects = Object.entries(objectConfigs)
+        .filter(([, config]) => config.enabled)
+        .map(([name]) => name);
+      const defaultInterval = enabledObjects.length
+        ? objectConfigs[enabledObjects[0]].interval_milli
+        : 60000;
+      const existing = this.dynamicMeasurementPolicy;
+      return {
+        name: existing?.name || "TPCM 动态度量配置",
+        policy_type: "tpcm_dynamic_measurement",
+        version: existing?.version || 1,
+        status: "active",
+        hash_alg: "sha256",
+        description: existing?.description || "TPCM 环境动态度量对象配置",
+        content: {
+          policy_scope: "tpcm_dynamic_measurement",
+          environment_object_configs: objectConfigs,
+          environment_objects: enabledObjects,
+          environment_interval_milli: defaultInterval,
+          delete_unmanaged_objects: true,
+          keylime_artifact: "opentcsm_dynamic_measurement_policy"
+        },
+        protected_paths: [],
+        excludes: [],
+        source: {
+          executor: "ansible",
+          managed_by: "keylime-openstack"
+        },
+        target_node_ids: this.dynamicForm.targetNodeIds.map(Number),
+        deploy_now: true
+      };
+    },
+    saveDynamicMeasurementConfig() {
+      let payload;
+      try {
+        payload = this.dynamicMeasurementPayload();
+      } catch (error) {
+        this.showNotice("bad", error.message);
+        return;
+      }
+      const existing = this.dynamicMeasurementPolicy;
+      this.requireToken({
+        title: "确认保存动态度量配置",
+        message: "将保存动态度量对象配置，并使配置在目标节点上生效。",
+        confirmText: "保存并生效",
+        action: async (token) => {
+          const path = existing ? `/api/policies/${existing.id}` : "/api/policies";
+          const method = existing ? "PUT" : "POST";
+          await this.requestJson(path, {
+            method,
+            body: JSON.stringify(payload)
+          }, token);
+          this.dynamicFormDirty = false;
+          this.showNotice("ok", "动态度量配置已进入生效流程");
+          await this.refreshAll(false);
+          this.syncDynamicFormFromPolicy(true);
+        }
+      });
+    },
     policyPayload() {
       const name = this.createForm.name.trim();
       if (!name) throw new Error("策略名称不能为空");
@@ -1005,13 +1148,20 @@ createApp({
         };
         excludes = this.parseLines(this.createForm.excludesText);
       } else if (this.activePolicyType === "tpcm_dynamic_measurement") {
+        const objectConfigs = Object.fromEntries(
+          DYNAMIC_MEASUREMENT_OBJECTS.map((item) => [
+            item.key,
+            {
+              enabled: this.createForm.dynamicEnvironmentObjects.includes(item.key),
+              interval_milli: Number(this.createForm.dynamicIntervalMilli || 60000)
+            }
+          ])
+        );
         content = {
-          dynamic_measure_required: this.createForm.dynamicMeasureRequired,
-          require_clean_trust_report: this.createForm.cleanTrustReportRequired,
+          environment_object_configs: objectConfigs,
           environment_objects: [...this.createForm.dynamicEnvironmentObjects],
           environment_interval_milli: Number(this.createForm.dynamicIntervalMilli || 60000),
-          delete_unmanaged_objects: this.createForm.dynamicDeleteUnmanagedObjects,
-          baseline_generation: "opentcsm_policy_apply_and_collect",
+          delete_unmanaged_objects: true,
           keylime_artifact: "opentcsm_dynamic_measurement_policy"
         };
       } else {
@@ -1036,18 +1186,6 @@ createApp({
         deploy_now: true
       };
     },
-    policyBaselineText(policy) {
-      const policyType = String(policy.policy_type || "");
-      if (policyType === "measured_boot") return "TPM 启动基线";
-      if (policyType === "ima_runtime") return "IMA 运行基线";
-      if (policyType === "tpcm_dynamic_measurement") return "TPCM 动态度量报告";
-      return "-";
-    },
-    policyGenerationModeText(policy) {
-      const mode = policy?.source?.generation_mode || policy?.content?.baseline_generation || "";
-      if (String(mode).includes("auto") || String(mode).includes("collect")) return "自动采集";
-      return mode || "-";
-    },
     policyArtifactText(policy) {
       const artifact = policy?.source?.keylime_artifact || policy?.content?.keylime_artifact || "";
       if (artifact === "measured_boot_refstate") return "可信启动参考状态";
@@ -1057,29 +1195,33 @@ createApp({
       if (artifact === "opentcsm_dynamic_measurement_policy") return "TPCM 动态度量策略";
       return artifact || "-";
     },
-    policyDynamicRequiredText(policy) {
-      return policy?.content?.dynamic_measure_required === false ? "不强制" : "要求开启";
-    },
-    policyCleanReportText(policy) {
-      return policy?.content?.require_clean_trust_report === false ? "不强制" : "要求无失败项";
-    },
-    policyMinimumDynamicBaselineText(policy) {
-      return `${policy?.content?.minimum_dynamic_baselines ?? 0}`;
-    },
     policyDynamicObjectsText(policy) {
       const names = {
         kernel_section: "内核代码段",
         syscall_table: "系统调用表",
         idt_table: "中断描述符表"
       };
+      const configs = policy?.content?.environment_object_configs || {};
+      if (Object.keys(configs).length) {
+        return DYNAMIC_MEASUREMENT_OBJECTS.map((item) => {
+          const config = configs[item.key] || {};
+          const state = config.enabled ? "开启" : "关闭";
+          const interval = config.enabled ? ` / ${config.interval_milli || 60000} ms` : "";
+          return `${item.label}：${state}${interval}`;
+        }).join("、");
+      }
       const objects = policy?.content?.environment_objects || ["kernel_section", "syscall_table", "idt_table"];
       return objects.length ? objects.map((item) => names[item] || item).join("、") : "-";
     },
     policyDynamicIntervalText(policy) {
+      const configs = policy?.content?.environment_object_configs || {};
+      const intervals = [...new Set(
+        Object.values(configs)
+          .filter((config) => config?.enabled)
+          .map((config) => `${config.interval_milli || 60000} ms`)
+      )];
+      if (intervals.length) return intervals.join("、");
       return `${policy?.content?.environment_interval_milli ?? 60000} ms`;
-    },
-    policyDynamicDeleteText(policy) {
-      return policy?.content?.delete_unmanaged_objects ? "删除未选择对象" : "保留未选择对象";
     },
     bindingNames(policy) {
       return (policy.bindings || []).map((item) => item.target_name).join("、") || "-";

@@ -706,7 +706,11 @@ h3 {
 }
 
 .policy-table .row {
-  grid-template-columns: minmax(170px, 1.3fr) 130px minmax(190px, 1.6fr) 120px 160px 220px;
+  grid-template-columns: minmax(190px, 1.4fr) minmax(220px, 1.7fr) 120px 160px 220px;
+}
+
+.dynamic-object-table .row {
+  grid-template-columns: minmax(150px, 1.2fr) 150px 190px 130px 170px;
 }
 
 .row-actions {
@@ -802,6 +806,45 @@ h3 {
 
 .switch.on::after {
   left: 23px;
+}
+
+.inline-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  cursor: pointer;
+}
+
+.inline-switch input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.inline-switch strong {
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.inline-number {
+  width: 112px;
+  height: 34px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.inline-number:disabled {
+  color: var(--muted);
+  background: var(--panel-soft);
+}
+
+.dynamic-target-selector {
+  margin-bottom: 16px;
 }
 
 .notice {
@@ -1091,17 +1134,20 @@ h3 {
   }
 
   .compact-table,
-  .policy-table {
+  .policy-table,
+  .dynamic-object-table {
     overflow: visible;
   }
 
   .compact-table .row.header,
-  .policy-table .row.header {
+  .policy-table .row.header,
+  .dynamic-object-table .row.header {
     display: none;
   }
 
   .compact-table .row,
-  .policy-table .row {
+  .policy-table .row,
+  .dynamic-object-table .row {
     grid-template-columns: minmax(0, 1fr);
     gap: 7px;
     min-width: 0;
