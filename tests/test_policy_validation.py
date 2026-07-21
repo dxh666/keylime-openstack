@@ -112,6 +112,18 @@ def test_tpcm_dynamic_policy_accepts_fixed_object_configs() -> None:
     }
 
 
+def test_tpcm_dynamic_policy_requires_single_target_node() -> None:
+    policy = TrustPolicyIn(
+        name="hygon-dynamic",
+        policy_type="tpcm_dynamic_measurement",
+        target_node_ids=[4, 5],
+        content={},
+    )
+
+    with pytest.raises(HTTPException, match="单个节点"):
+        validated_policy_payload(policy)
+
+
 def test_evm_creation_is_disabled() -> None:
     policy = TrustPolicyIn(
         name="evm-later",

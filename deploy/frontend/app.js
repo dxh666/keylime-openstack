@@ -2,8 +2,7 @@ const { createApp } = Vue;
 
 const POLICY_TYPES = [
   { key: "measured_boot", label: "可信启动", creatable: true },
-  { key: "ima_runtime", label: "IMA 运行时策略", creatable: true },
-  { key: "tpcm_dynamic_measurement", label: "动态度量策略", creatable: false }
+  { key: "ima_runtime", label: "IMA 运行时策略", creatable: true }
 ];
 
 const DYNAMIC_MEASUREMENT_OBJECTS = [
@@ -62,16 +61,10 @@ const emptyPolicyForm = (policyType = "measured_boot") => ({
   nodeImaPolicy: DEFAULT_IMA_POLICY,
   excludesText: DEFAULT_IMA_EXCLUDES,
   rebootAfterApply: false,
-  dynamicMeasureRequired: true,
-  cleanTrustReportRequired: true,
-  dynamicEnvironmentObjects: ["kernel_section", "syscall_table", "idt_table"],
-  dynamicIntervalMilli: 60000,
-  dynamicDeleteUnmanagedObjects: false,
   policy_type: policyType
 });
 
 const emptyDynamicForm = () => ({
-  targetNodeIds: [],
   objects: Object.fromEntries(
     DYNAMIC_MEASUREMENT_OBJECTS.map((item) => [
       item.key,
@@ -85,6 +78,7 @@ const viewTitles = {
   control_nodes: "控制节点",
   compute_nodes: "计算节点",
   policies: "策略管理",
+  environment_dynamic_policy: "环境动态度量策略",
   global_policy: "全局策略控制",
   alerts: "告警中心",
   tasks: "任务中心",
@@ -98,10 +92,12 @@ createApp({
       view: "dashboard",
       expandedGroups: {
         nodes: true,
-        policies: true
+        policies: true,
+        dynamic_policies: true
       },
       policyTypes: POLICY_TYPES,
       activePolicyType: "measured_boot",
+      activeDynamicNodeId: null,
       busy: false,
       loading: true,
       apiError: "",
@@ -283,10 +279,61 @@ createApp({
     filteredPolicies() {
       return this.policies.filter((policy) => policy.policy_type === this.activePolicyType);
     },
-    dynamicMeasurementPolicy() {
+    dynamicTargetNodes() {
+      return this.computeInventory.filter((node) => node.trust_agent_type === "opentcsm_tpcm");
+    },
+    selectedDynamicNode() {
+      if (!this.dynamicTargetNodes.length) return null;
+      const selectedId = Number(this.activeDynamicNodeId);
+      return this.dynamicTargetNodes.find((node) => Number(node.id) === selectedId) || this.dynamicTargetNodes[0];
+    },
+    selectedDynamicNodeId() {
+      return this.selectedDynamicNode ? Number(this.selectedDynamicNode.id) : null;
+    },
+    dynamicMeasurementPolicies() {
       return this.policies
         .filter((policy) => policy.policy_type === "tpcm_dynamic_measurement")
-        .sort((a, b) => Number(b.id || 0) - Number(a.id || 0))[0] || null;
+        .sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
+    },
+    dynamicMeasurementPolicy() {
+      const selectedId = this.selectedDynamicNodeId;
+      if (!selectedId) return null;
+      return this.dynamicMeasurementPolicies.find((policy) => {
+        const bindings = policy.bindings || [];
+        return bindings.length === 1 && Number(bindings[0].target_id) === selectedId;
+      }) || null;
+    },
+    dynamicMeasurementSourcePolicy() {
+      const exact = this.dynamicMeasurementPolicy;
+      if (exact) return exact;
+      const selectedId = this.selectedDynamicNodeId;
+      if (!selectedId) return null;
+      return this.dynamicMeasurementPolicies.find((policy) =>
+        (policy.bindings || []).some((binding) => Number(binding.target_id) === selectedId)
+      ) || null;
+    },
+    dynamicNodeRows() {
+      return this.dynamicTargetNodes.map((node) => {
+        const policy = this.dynamicMeasurementPolicies.find((item) => {
+          const bindings = item.bindings || [];
+          return bindings.length === 1 && Number(bindings[0].target_id) === Number(node.id);
+        });
+        const keylimeNode =
+          this.keylimeNodesByHost.get(node.hostname) ||
+          this.keylimeNodesByUuid.get(node.keylime_agent_uuid) ||
+          {};
+        return {
+          id: node.id,
+          hostname: node.hostname,
+          ip: node.management_ip || node.keylime_agent_ip || "-",
+          selected: Number(node.id) === this.selectedDynamicNodeId,
+          trustText: this.trustText(keylimeNode.trusted),
+          trustClass: keylimeNode.trusted === true ? "ok" : keylimeNode.trusted === false ? "bad" : "warn",
+          stateText: policy ? this.bindingStateText(policy) : "未配置",
+          stateClass: policy ? this.deploymentClass(this.bindingState(policy)) : "warn",
+          effectiveAt: policy ? this.policyEffectiveVersion(policy) : "-"
+        };
+      });
     },
     dynamicObjectRows() {
       const policy = this.dynamicMeasurementPolicy;
@@ -304,9 +351,6 @@ createApp({
       });
     },
     policyTargetNodes() {
-      if (this.activePolicyType === "tpcm_dynamic_measurement") {
-        return this.computeInventory.filter((node) => node.trust_agent_type === "opentcsm_tpcm");
-      }
       return this.computeInventory;
     },
     trustCapabilityItems() {
@@ -369,7 +413,7 @@ createApp({
     policyNamePlaceholder() {
       if (this.activePolicyType === "measured_boot") return "例如 compute-trusted-boot-v1";
       if (this.activePolicyType === "ima_runtime") return "例如 compute-ima-runtime-v1";
-      return "例如 hygon-tpcm-dynamic-v1";
+      return "例如 compute-policy-v1";
     },
     keylimeStatusClass() {
       if (this.keylimeError) return "bad";
@@ -412,6 +456,7 @@ createApp({
     groupActive(group) {
       if (group === "nodes") return ["control_nodes", "compute_nodes"].includes(this.view);
       if (group === "policies") return this.view === "policies";
+      if (group === "dynamic_policies") return this.view === "environment_dynamic_policy";
       return false;
     },
     selectPolicyType(policyType) {
@@ -420,6 +465,12 @@ createApp({
       this.detailPolicy = null;
       this.closeNodeDetail();
       this.expandedGroups.policies = true;
+    },
+    selectEnvironmentDynamicPolicy() {
+      this.selectView("environment_dynamic_policy");
+      this.expandedGroups.dynamic_policies = true;
+      this.ensureDynamicNodeSelection();
+      this.syncDynamicFormFromPolicy(true);
     },
     headers(token = "") {
       const headers = { "Content-Type": "application/json" };
@@ -474,6 +525,7 @@ createApp({
         if (key === "audit" && value) this.auditEvents = value;
         if (key === "tasks" && value) this.tasks = value;
       }
+      this.ensureDynamicNodeSelection();
       this.syncDynamicFormFromPolicy();
       const failed = entries.filter(([, , error]) => error);
       this.apiError = failed.length ? failed.map(([key, , error]) => `${key}: ${error.message}`).join("；") : "";
@@ -481,9 +533,30 @@ createApp({
       this.loading = false;
       if (showBusy) this.busy = false;
     },
+    ensureDynamicNodeSelection() {
+      const nodes = this.dynamicTargetNodes;
+      if (!nodes.length) {
+        this.activeDynamicNodeId = null;
+        return;
+      }
+      if (!nodes.some((node) => Number(node.id) === Number(this.activeDynamicNodeId))) {
+        this.activeDynamicNodeId = Number(nodes[0].id);
+      }
+    },
+    selectDynamicNode(row) {
+      const nodeId = Number(row?.id);
+      if (!nodeId || nodeId === Number(this.activeDynamicNodeId)) return;
+      if (this.dynamicFormDirty) {
+        this.showNotice("warn", "当前节点配置尚未保存，请先保存并生效后再切换节点。");
+        return;
+      }
+      this.activeDynamicNodeId = nodeId;
+      this.syncDynamicFormFromPolicy(true);
+    },
     syncDynamicFormFromPolicy(force = false) {
       if (this.dynamicFormDirty && !force) return;
-      const policy = this.dynamicMeasurementPolicy;
+      this.ensureDynamicNodeSelection();
+      const policy = this.dynamicMeasurementSourcePolicy;
       const form = emptyDynamicForm();
       if (policy) {
         const content = policy.content || {};
@@ -499,13 +572,8 @@ createApp({
             intervalMilli: Number(config.interval_milli || config.intervalMilli || defaultInterval || 60000)
           };
         }
-        form.targetNodeIds = (policy.bindings || []).map((binding) => Number(binding.target_id)).filter(Boolean);
-        this.dynamicFormPolicyId = policy.id;
+        this.dynamicFormPolicyId = this.dynamicMeasurementPolicy?.id || null;
       } else {
-        form.targetNodeIds = this.computeInventory
-          .filter((node) => node.trust_agent_type === "opentcsm_tpcm")
-          .map((node) => Number(node.id))
-          .filter(Boolean);
         this.dynamicFormPolicyId = null;
       }
       this.dynamicForm = form;
@@ -1050,7 +1118,8 @@ createApp({
       return String(text || "").split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
     },
     dynamicMeasurementPayload() {
-      if (!this.dynamicForm.targetNodeIds.length) throw new Error("请至少选择一个目标节点");
+      const selectedNode = this.selectedDynamicNode;
+      if (!selectedNode) throw new Error("请先选择一个目标节点");
       const objectConfigs = {};
       for (const item of DYNAMIC_MEASUREMENT_OBJECTS) {
         const config = this.dynamicForm.objects[item.key] || {};
@@ -1071,12 +1140,12 @@ createApp({
         : 60000;
       const existing = this.dynamicMeasurementPolicy;
       return {
-        name: existing?.name || "TPCM 动态度量配置",
+        name: existing?.name || `${selectedNode.hostname} 环境动态度量策略`,
         policy_type: "tpcm_dynamic_measurement",
         version: existing?.version || 1,
         status: "active",
         hash_alg: "sha256",
-        description: existing?.description || "TPCM 环境动态度量对象配置",
+        description: existing?.description || `${selectedNode.hostname} 的 TPCM 环境动态度量对象配置`,
         content: {
           policy_scope: "tpcm_dynamic_measurement",
           environment_object_configs: objectConfigs,
@@ -1089,9 +1158,11 @@ createApp({
         excludes: [],
         source: {
           executor: "ansible",
-          managed_by: "keylime-openstack"
+          managed_by: "keylime-openstack",
+          scope: "node",
+          node: selectedNode.hostname
         },
-        target_node_ids: this.dynamicForm.targetNodeIds.map(Number),
+        target_node_ids: [Number(selectedNode.id)],
         deploy_now: true
       };
     },
@@ -1147,23 +1218,6 @@ createApp({
           reboot_after_apply: this.createForm.rebootAfterApply
         };
         excludes = this.parseLines(this.createForm.excludesText);
-      } else if (this.activePolicyType === "tpcm_dynamic_measurement") {
-        const objectConfigs = Object.fromEntries(
-          DYNAMIC_MEASUREMENT_OBJECTS.map((item) => [
-            item.key,
-            {
-              enabled: this.createForm.dynamicEnvironmentObjects.includes(item.key),
-              interval_milli: Number(this.createForm.dynamicIntervalMilli || 60000)
-            }
-          ])
-        );
-        content = {
-          environment_object_configs: objectConfigs,
-          environment_objects: [...this.createForm.dynamicEnvironmentObjects],
-          environment_interval_milli: Number(this.createForm.dynamicIntervalMilli || 60000),
-          delete_unmanaged_objects: true,
-          keylime_artifact: "opentcsm_dynamic_measurement_policy"
-        };
       } else {
         throw new Error("该策略类型暂未启用");
       }

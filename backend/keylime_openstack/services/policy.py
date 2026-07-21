@@ -43,6 +43,11 @@ def validated_policy_payload(policy_in: TrustPolicyIn) -> tuple[dict[str, Any], 
         raise HTTPException(status_code=422, detail=f"不支持的策略类型：{policy_type}")
     if not target_node_ids:
         raise HTTPException(status_code=422, detail="请至少选择一个目标节点")
+    if policy_type == POLICY_TPCM_DYNAMIC_MEASUREMENT and len(target_node_ids) != 1:
+        raise HTTPException(
+            status_code=422,
+            detail="环境动态度量策略必须按单个节点独立管理",
+        )
 
     content = dict(payload.get("content") or {})
     if policy_type == POLICY_MEASURED_BOOT:

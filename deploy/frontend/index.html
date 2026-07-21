@@ -46,6 +46,22 @@
           </div>
         </div>
 
+        <div class="nav-group" :class="{ active: groupActive('dynamic_policies') }">
+          <button class="nav-parent" type="button" @click="toggleGroup('dynamic_policies')">
+            <span>动态度量策略</span>
+            <span class="chevron">{{ expandedGroups.dynamic_policies ? '收起' : '展开' }}</span>
+          </button>
+          <div v-show="expandedGroups.dynamic_policies" class="nav-children">
+            <button
+              class="nav-subitem"
+              :class="{ active: view === 'environment_dynamic_policy' }"
+              @click="selectEnvironmentDynamicPolicy"
+            >
+              环境动态度量策略
+            </button>
+          </div>
+        </div>
+
         <button class="nav-item" :class="{ active: view === 'global_policy' }" @click="selectView('global_policy')">全局策略控制</button>
         <button class="nav-item" :class="{ active: view === 'alerts' }" @click="selectView('alerts')">告警中心</button>
         <button class="nav-item" :class="{ active: view === 'tasks' }" @click="selectView('tasks')">任务中心</button>
@@ -250,7 +266,7 @@
       </section>
 
       <section v-if="view === 'policies'" class="screen">
-        <section v-if="activePolicyType !== 'tpcm_dynamic_measurement'" class="panel">
+        <section class="panel">
           <div class="panel-head">
             <h2>{{ currentPolicyType.label }}</h2>
             <button
@@ -282,61 +298,81 @@
           </div>
           <p v-if="!filteredPolicies.length" class="empty">暂无策略。</p>
         </section>
-        <section v-else class="panel dynamic-policy-panel">
-          <div class="panel-head">
-            <h2>{{ currentPolicyType.label }}</h2>
-            <button class="primary" type="button" :disabled="busy" @click="saveDynamicMeasurementConfig">
-              保存并生效
-            </button>
-          </div>
-          <fieldset class="target-selector dynamic-target-selector">
-            <legend>目标节点</legend>
-            <label v-for="node in policyTargetNodes" :key="node.id" class="check-option">
-              <input
-                v-model="dynamicForm.targetNodeIds"
-                type="checkbox"
-                :value="node.id"
-                @change="markDynamicFormDirty"
+      </section>
+
+      <section v-if="view === 'environment_dynamic_policy'" class="screen">
+        <section class="dynamic-policy-layout">
+          <aside class="panel dynamic-node-panel">
+            <div class="panel-head">
+              <h2>节点列表</h2>
+            </div>
+            <div class="dynamic-node-list">
+              <button
+                v-for="node in dynamicNodeRows"
+                :key="node.id"
+                type="button"
+                class="dynamic-node-item"
+                :class="{ active: node.selected }"
+                @click="selectDynamicNode(node)"
               >
-              <span>{{ node.hostname }}</span>
-              <small>{{ node.management_ip || node.keylime_agent_ip }}</small>
-            </label>
-            <p v-if="!policyTargetNodes.length" class="empty">暂无可选目标节点。</p>
-          </fieldset>
-          <div class="table dynamic-object-table">
-            <div class="row header">
-              <span>度量对象</span><span>启用状态</span><span>检测周期</span><span>生效状态</span><span>最近生效时间</span>
+                <strong>{{ node.hostname }}</strong>
+                <span>{{ node.ip }}</span>
+                <em :class="['pill', node.trustClass]">{{ node.trustText }}</em>
+                <small>
+                  <span>{{ node.stateText }}</span>
+                  <span>{{ node.effectiveAt }}</span>
+                </small>
+              </button>
             </div>
-            <div v-for="item in dynamicObjectRows" :key="item.key" class="row">
-              <span>{{ item.label }}</span>
-              <span>
-                <label class="inline-switch">
+            <p v-if="!dynamicNodeRows.length" class="empty">暂无 OpenTCSM 节点。</p>
+          </aside>
+
+          <section class="panel dynamic-policy-panel">
+            <div class="panel-head">
+              <div>
+                <h2>环境动态度量策略</h2>
+                <p>{{ selectedDynamicNode ? selectedDynamicNode.hostname : '未选择节点' }}</p>
+              </div>
+              <button class="primary" type="button" :disabled="busy || !selectedDynamicNode" @click="saveDynamicMeasurementConfig">
+                保存并生效
+              </button>
+            </div>
+            <div class="table dynamic-object-table">
+              <div class="row header">
+                <span>度量对象</span><span>启用状态</span><span>检测周期</span><span>生效状态</span><span>最近生效时间</span>
+              </div>
+              <div v-for="item in dynamicObjectRows" :key="item.key" class="row">
+                <span>{{ item.label }}</span>
+                <span>
+                  <label class="inline-switch">
+                    <input
+                      v-model="dynamicForm.objects[item.key].enabled"
+                      type="checkbox"
+                      :disabled="!selectedDynamicNode"
+                      @change="markDynamicFormDirty"
+                    >
+                    <em :class="['switch', dynamicForm.objects[item.key].enabled ? 'on' : 'off']"></em>
+                    <strong>{{ dynamicForm.objects[item.key].enabled ? '开启' : '关闭' }}</strong>
+                  </label>
+                </span>
+                <span>
                   <input
-                    v-model="dynamicForm.objects[item.key].enabled"
-                    type="checkbox"
-                    @change="markDynamicFormDirty"
+                    v-model.number="dynamicForm.objects[item.key].intervalMilli"
+                    class="inline-number"
+                    type="number"
+                    min="1000"
+                    max="86400000"
+                    step="1000"
+                    :disabled="!selectedDynamicNode || !dynamicForm.objects[item.key].enabled"
+                    @input="markDynamicFormDirty"
                   >
-                  <em :class="['switch', dynamicForm.objects[item.key].enabled ? 'on' : 'off']"></em>
-                  <strong>{{ dynamicForm.objects[item.key].enabled ? '开启' : '关闭' }}</strong>
-                </label>
-              </span>
-              <span>
-                <input
-                  v-model.number="dynamicForm.objects[item.key].intervalMilli"
-                  class="inline-number"
-                  type="number"
-                  min="1000"
-                  max="86400000"
-                  step="1000"
-                  :disabled="!dynamicForm.objects[item.key].enabled"
-                  @input="markDynamicFormDirty"
-                >
-                <small>毫秒</small>
-              </span>
-              <span><em :class="['pill', item.stateClass]">{{ item.stateText }}</em></span>
-              <span>{{ item.effectiveAt }}</span>
+                  <small>毫秒</small>
+                </span>
+                <span><em :class="['pill', item.stateClass]">{{ item.stateText }}</em></span>
+                <span>{{ item.effectiveAt }}</span>
+              </div>
             </div>
-          </div>
+          </section>
         </section>
       </section>
 
