@@ -536,6 +536,16 @@ def _remediation(
                 "deploy/scripts/keylime-tpm-evidence-audit.sh",
             ],
         }
+    if "ima_missing" in event or "runtime_missing" in event:
+        return {
+            "category": "ima-runtime-policy",
+            "summary": "No IMA runtime policy is bound in Keylime verifier for this agent.",
+            "next_commands": [
+                "curl -fsS http://127.0.0.1:8088/api/tasks?limit=10",
+                "进入 IMA 运行时策略页面，确认策略绑定状态为已下发；如未下发，重新下发该节点策略。",
+                f"deploy/scripts/keylime-only-attestation-check.sh --strict --hosts {host}",
+            ],
+        }
     if "ima_" in event or "runtime_" in event:
         return {
             "category": "ima-runtime-policy",
