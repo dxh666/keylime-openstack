@@ -52,12 +52,18 @@ def test_tenant_tool_apply_policy_strips_local_mask_from_tpm_policy():
 def test_tenant_tool_replace_existing_deletes_before_add():
     client = KeylimeClient(Settings(keylime_docker_dir="."))
     commands = []
+    verifier_deletes = []
 
     def fake_run(command):
         commands.append(command)
         return {"rc": 0, "stdout": "ok", "stderr": ""}
 
+    def fake_delete(agent_uuid):
+        verifier_deletes.append(agent_uuid)
+        return {"rc": 0, "stdout": "deleted", "stderr": "", "command": ["DELETE", agent_uuid]}
+
     client._run_tenant_tool = fake_run  # type: ignore[method-assign]
+    client.verifier_delete_agent_sync = fake_delete  # type: ignore[method-assign]
 
     client.tenant_tool_apply_policy(
         agent_uuid="11111111-1111-4111-8111-000000000009",
@@ -66,10 +72,10 @@ def test_tenant_tool_replace_existing_deletes_before_add():
         replace_existing=True,
     )
 
-    assert commands[0][commands[0].index("-c") + 1] == "delete"
-    assert commands[1][commands[1].index("-c") + 1] == "add"
-    assert commands[2][commands[2].index("-c") + 1] == "reactivate"
-    tpm_policy_arg = commands[1][commands[1].index("--tpm_policy") + 1]
+    assert verifier_deletes == ["11111111-1111-4111-8111-000000000009"]
+    assert commands[0][commands[0].index("-c") + 1] == "add"
+    assert commands[1][commands[1].index("-c") + 1] == "reactivate"
+    tpm_policy_arg = commands[0][commands[0].index("--tpm_policy") + 1]
     assert json.loads(tpm_policy_arg) == {"7": ["d" * 64]}
 
 
@@ -82,6 +88,9 @@ def test_tenant_tool_can_disable_measured_boot_default():
         return {"rc": 0, "stdout": "ok", "stderr": ""}
 
     client._run_tenant_tool = fake_run  # type: ignore[method-assign]
+    client.verifier_delete_agent_sync = (  # type: ignore[method-assign]
+        lambda agent_uuid: {"rc": 0, "stdout": "deleted", "stderr": "", "command": ["DELETE", agent_uuid]}
+    )
 
     client.tenant_tool_apply_policy(
         agent_uuid="11111111-1111-4111-8111-000000000009",
@@ -91,7 +100,7 @@ def test_tenant_tool_can_disable_measured_boot_default():
         replace_existing=True,
     )
 
-    add_command = commands[1]
+    add_command = commands[0]
     assert "--mb-policy" in add_command
     assert add_command[add_command.index("--mb-policy") + 1].endswith(
         "/empty-measured-boot-policy.json"

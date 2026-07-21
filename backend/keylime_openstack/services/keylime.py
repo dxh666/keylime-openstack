@@ -51,6 +51,37 @@ class KeylimeClient:
                 errors.append(f"{url}: {_exception_summary(exc)}")
         raise RuntimeError("; ".join(errors))
 
+    def verifier_delete_agent_sync(self, agent_uuid: str) -> dict[str, Any]:
+        """Delete an agent enrollment from the Keylime verifier only."""
+
+        errors: list[str] = []
+        for url in self._verifier_agent_urls(agent_uuid):
+            try:
+                with httpx.Client(**self._http_client_kwargs(url)) as client:
+                    response = client.delete(url)
+                    if response.status_code == 404:
+                        return {
+                            "rc": 0,
+                            "stdout": f"verifier enrollment already absent: {agent_uuid}",
+                            "stderr": "",
+                            "command": ["DELETE", url],
+                        }
+                    response.raise_for_status()
+                    return {
+                        "rc": 0,
+                        "stdout": f"deleted verifier enrollment: {agent_uuid}",
+                        "stderr": "",
+                        "command": ["DELETE", url],
+                    }
+            except Exception as exc:  # pragma: no cover - deployment-specific API boundary
+                errors.append(f"{url}: {_exception_summary(exc)}")
+        return {
+            "rc": 1,
+            "stdout": "",
+            "stderr": "; ".join(errors),
+            "command": ["DELETE", self._verifier_agent_urls(agent_uuid)[0]],
+        }
+
     def read_agent_status(self, agent_uuid: str) -> dict[str, Any]:
         """Read and normalize one agent status from Keylime.
 
@@ -162,20 +193,9 @@ class KeylimeClient:
 
             delete = {"rc": 0, "stdout": "", "stderr": ""}
             if replace_existing:
-                delete = self._run_tenant_tool(
-                    [
-                        "docker",
-                        "compose",
-                        "run",
-                        "--rm",
-                        self.settings.keylime_tenant_service,
-                        "-c",
-                        "delete",
-                        "-u",
-                        agent_uuid,
-                        *self._tenant_service_endpoints(),
-                    ]
-                )
+                delete = self.verifier_delete_agent_sync(agent_uuid)
+                if delete["rc"] != 0:
+                    return delete
                 applied = self._run_tenant_tool(
                     [
                         *compose_args,
