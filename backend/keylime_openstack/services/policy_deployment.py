@@ -390,7 +390,7 @@ class PolicyDeploymentService:
                 "environment_interval_milli": int(
                     policy.content.get("environment_interval_milli") or 60000
                 ),
-                "delete_unmanaged_objects": bool(policy.content.get("delete_unmanaged_objects", True)),
+                "delete_unmanaged_objects": bool(policy.content.get("delete_unmanaged_objects", False)),
             }
             apply_result = self.ansible.run(
                 playbook="apply-opentcsm-dynamic-policy.yml",
@@ -466,7 +466,7 @@ class PolicyDeploymentService:
                     f"TPCM 动态度量周期不一致：{object_name} 当前 "
                     f"{observed.get('interval_milli')}ms，要求 {desired_interval}ms"
                 )
-        if policy.content.get("delete_unmanaged_objects", True):
+        if policy.content.get("delete_unmanaged_objects", False):
             for object_name in sorted(disabled_objects):
                 if object_name in observed_by_object:
                     violations.append(f"TPCM 动态度量对象未关闭：{object_name}")
@@ -479,7 +479,7 @@ class PolicyDeploymentService:
                 "environment_object_configs": object_configs,
                 "environment_objects": desired_objects,
                 "environment_interval_milli": default_interval,
-                "delete_unmanaged_objects": bool(policy.content.get("delete_unmanaged_objects", True)),
+                "delete_unmanaged_objects": bool(policy.content.get("delete_unmanaged_objects", False)),
             },
             "observed": {
                 "trust_root": result.get("trust_root"),

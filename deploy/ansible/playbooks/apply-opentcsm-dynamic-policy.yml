@@ -97,7 +97,18 @@
         current = {item["object"]: item for item in parse_policy(before.get("stdout") or "")}
 
         for name, object_interval in desired_configs.items():
-            operation = "3" if name in current else "1"
+            existing = current.get(name)
+            current_interval = int(existing.get("interval_milli") or 0) if existing else None
+            if existing and current_interval == object_interval:
+                commands.append({
+                    "name": f"noop_dmeasure_policy_{name}",
+                    "command": ["noop", name],
+                    "rc": 0,
+                    "stdout": f"{name} already enabled with interval {object_interval}",
+                    "stderr": "",
+                })
+                continue
+            operation = "3" if existing else "1"
             commands.append(run(
                 f"update_dmeasure_policy_{name}",
                 [

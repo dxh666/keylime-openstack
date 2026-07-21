@@ -270,7 +270,7 @@ def _validate_tpcm_dynamic_measurement(content: dict[str, Any]) -> dict[str, Any
         "environment_object_configs": environment_object_configs,
         "environment_objects": environment_objects,
         "environment_interval_milli": environment_interval_milli,
-        "delete_unmanaged_objects": bool(content.get("delete_unmanaged_objects", True)),
+        "delete_unmanaged_objects": bool(content.get("delete_unmanaged_objects", False)),
         "minimum_dynamic_baselines": 0,
         "auth_material_ref": auth_material_ref,
         "keylime_artifact": "opentcsm_dynamic_measurement_policy",

@@ -1152,7 +1152,7 @@ createApp({
           environment_object_configs: objectConfigs,
           environment_objects: enabledObjects,
           environment_interval_milli: defaultInterval,
-          delete_unmanaged_objects: true,
+          delete_unmanaged_objects: false,
           keylime_artifact: "opentcsm_dynamic_measurement_policy"
         },
         protected_paths: [],

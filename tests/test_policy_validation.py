@@ -79,6 +79,7 @@ def test_tpcm_dynamic_policy_defaults_to_opentcsm_guard() -> None:
         "syscall_table",
         "idt_table",
     ]
+    assert payload["content"]["delete_unmanaged_objects"] is False
     assert payload["content"]["minimum_dynamic_baselines"] == 0
     assert payload["content"]["keylime_artifact"] == "opentcsm_dynamic_measurement_policy"
     assert node_ids == [4]

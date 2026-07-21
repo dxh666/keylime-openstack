@@ -30,6 +30,20 @@ def test_trusted_tpcm_report_eval_is_not_a_failure_counter() -> None:
                     "[1].name: /EFI/anolis/shim.efi\n"
                 ),
                 "tpcm_info": _command("dmeasure_times: 22\n"),
+                "dmeasure_policy": _command(
+                    "item index: 0\n"
+                    "[0].be_type: 0\n"
+                    "[0].be_interval_milli: 60000\n"
+                    "[0].object: kernel_section\n\n"
+                    "item index: 1\n"
+                    "[1].be_type: 0\n"
+                    "[1].be_interval_milli: 60000\n"
+                    "[1].object: syscall_table\n\n"
+                    "item index: 2\n"
+                    "[2].be_type: 0\n"
+                    "[2].be_interval_milli: 60000\n"
+                    "[2].object: idt_table\n"
+                ),
                 "trust_report": _command(
                     "policy->be_boot_measure_on: ON\n"
                     "policy->be_dynamic_measure_on: ON\n"
@@ -55,3 +69,8 @@ def test_trusted_tpcm_report_eval_is_not_a_failure_counter() -> None:
     assert report["dynamic_measurement_status"] == "pass"
     assert report["raw"]["trust_report_eval"] == 100
     assert report["raw"]["trust_report_failures"] == {}
+    assert report["raw"]["dmeasure_policy"] == [
+        {"index": 0, "be_type": 0, "interval_milli": 60000, "object": "kernel_section"},
+        {"index": 1, "be_type": 0, "interval_milli": 60000, "object": "syscall_table"},
+        {"index": 2, "be_type": 0, "interval_milli": 60000, "object": "idt_table"},
+    ]
