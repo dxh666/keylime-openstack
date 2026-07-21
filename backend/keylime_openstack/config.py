@@ -56,6 +56,7 @@ class Settings(BaseSettings):
     ansible_binary: str = "ansible-playbook"
     ansible_playbook_dir: str = "/app/deploy/ansible/playbooks"
     ansible_remote_user: str = "root"
+    ansible_python_interpreter: str = "auto_silent"
     ansible_ssh_private_key_file: str = "/etc/keylime-openstack/ansible/id_ed25519"
     ansible_known_hosts_file: str = "/etc/keylime-openstack/ansible/known_hosts"
     ansible_timeout_seconds: int = 900

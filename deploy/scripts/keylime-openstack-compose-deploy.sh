@@ -177,6 +177,11 @@ prepare() {
     set_env_value ANSIBLE_REMOTE_USER "root"
   fi
 
+  current_ansible_python="$(get_env_value ANSIBLE_PYTHON_INTERPRETER)"
+  if [ -z "$current_ansible_python" ]; then
+    set_env_value ANSIBLE_PYTHON_INTERPRETER "auto_silent"
+  fi
+
   current_ansible_key="$(get_env_value ANSIBLE_SSH_PRIVATE_KEY_FILE)"
   if [ -z "$current_ansible_key" ]; then
     set_env_value ANSIBLE_SSH_PRIVATE_KEY_FILE "/etc/keylime-openstack/ansible/id_ed25519"

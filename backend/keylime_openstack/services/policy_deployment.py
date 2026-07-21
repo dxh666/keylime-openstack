@@ -475,7 +475,12 @@ class PolicyDeploymentService:
     def _require_ansible_success(rc: int, stdout: str, stderr: str) -> None:
         if rc == 0:
             return
-        detail = (stderr.strip() or stdout.strip() or f"Ansible returned {rc}")[-4000:]
+        parts = [f"Ansible returned {rc}"]
+        if stdout.strip():
+            parts.append(f"stdout:\n{stdout.strip()}")
+        if stderr.strip():
+            parts.append(f"stderr:\n{stderr.strip()}")
+        detail = "\n\n".join(parts)[-4000:]
         raise RuntimeError(detail)
 
     @staticmethod

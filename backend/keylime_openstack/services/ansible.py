@@ -113,6 +113,7 @@ class AnsibleExecutor:
             node.hostname,
             f"ansible_host={address}",
             f"ansible_user={self.settings.ansible_remote_user}",
+            f"ansible_python_interpreter={self.settings.ansible_python_interpreter}",
         ]
         if self.settings.ansible_ssh_private_key_file:
             fields.append(
