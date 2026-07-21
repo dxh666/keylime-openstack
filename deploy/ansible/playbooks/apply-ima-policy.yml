@@ -4,10 +4,20 @@
   become: true
   gather_facts: true
   tasks:
+    - name: Check systemd runtime directory
+      ansible.builtin.command:
+        argv:
+          - test
+          - -d
+          - /run/systemd/system
+      register: systemd_runtime
+      changed_when: false
+      failed_when: false
+
     - name: Require a systemd-based managed node
       ansible.builtin.assert:
         that:
-          - ansible_service_mgr == "systemd"
+          - (ansible_facts.service_mgr | default(ansible_service_mgr | default(''))) == "systemd" or systemd_runtime.rc == 0
         fail_msg: The managed IMA policy requires systemd to load /etc/ima/ima-policy.
 
     - name: Ensure IMA configuration directory exists
