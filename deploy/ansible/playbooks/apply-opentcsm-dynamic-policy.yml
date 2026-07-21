@@ -38,6 +38,7 @@
         signing_key = str(auth["private_key"]) + str(auth["public_key"])
         default_interval = int(policy.get("environment_interval_milli") or 60000)
         object_configs = policy.get("environment_object_configs") or {}
+        delete_unmanaged_objects = False
         desired_configs = {}
         if isinstance(object_configs, dict) and object_configs:
             for name in sorted(allowed_objects):
@@ -121,7 +122,7 @@
                 ],
             ))
 
-        if policy.get("delete_unmanaged_objects"):
+        if delete_unmanaged_objects:
             for name in sorted(set(current) - set(desired_configs)):
                 if name in allowed_objects:
                     commands.append(run(
@@ -157,7 +158,7 @@
                     for name, interval in desired_configs.items()
                 },
                 "environment_interval_milli": default_interval,
-                "delete_unmanaged_objects": bool(policy.get("delete_unmanaged_objects")),
+                "delete_unmanaged_objects": delete_unmanaged_objects,
             },
             "observed_before": parse_policy(before.get("stdout") or ""),
             "observed_after": parse_policy(after.get("stdout") or ""),

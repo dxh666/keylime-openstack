@@ -96,7 +96,8 @@ def test_tpcm_dynamic_policy_accepts_fixed_object_configs() -> None:
                 "kernel_section": {"enabled": True, "interval_milli": 30000},
                 "syscall_table": {"enabled": False, "interval_milli": 60000},
                 "idt_table": {"enabled": True, "interval_milli": 120000},
-            }
+            },
+            "delete_unmanaged_objects": True,
         },
     )
 
@@ -111,6 +112,7 @@ def test_tpcm_dynamic_policy_accepts_fixed_object_configs() -> None:
         "enabled": False,
         "interval_milli": 60000,
     }
+    assert payload["content"]["delete_unmanaged_objects"] is False
 
 
 def test_tpcm_dynamic_policy_requires_single_target_node() -> None:
