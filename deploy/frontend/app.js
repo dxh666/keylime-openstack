@@ -98,6 +98,8 @@ createApp({
       policyTypes: POLICY_TYPES,
       activePolicyType: "measured_boot",
       activeDynamicNodeId: null,
+      dynamicNodeSearch: "",
+      dynamicNodeStatusFilter: "all",
       busy: false,
       loading: true,
       apiError: "",
@@ -344,7 +346,7 @@ createApp({
       const policy = this.dynamicMeasurementPolicy;
       const selectedId = this.selectedDynamicNodeId;
       if (!policy || !selectedId) return null;
-      return (policy.bindings || []).find((binding) => Number(binding.target_id) === selectedId) || null;
+      return this.dynamicPolicyBinding(policy, selectedId);
     },
     dynamicPolicySourceText() {
       if (this.dynamicMeasurementAppliedPolicy) return "节点策略";
@@ -357,17 +359,7 @@ createApp({
       return "warn";
     },
     dynamicApplyAuthorization() {
-      const binding = this.dynamicSelectedPolicyBinding;
-      if (!binding) return { text: "未检测", state: "warn" };
-      const status = binding.application_status;
-      if (status === "applied") return { text: "正常", state: "ok" };
-      if (status === "queued" || status === "applying") return { text: "检测中", state: "warn" };
-      if (status === "failed") {
-        const error = String(binding.last_error || "");
-        const rejected = error.includes("ret: 152") || error.includes("0x98");
-        return { text: rejected ? "授权异常" : "生效异常", state: "bad" };
-      }
-      return { text: "未检测", state: "warn" };
+      return this.dynamicBindingAuthorization(this.dynamicSelectedPolicyBinding);
     },
     dynamicStatusItems() {
       const report = this.selectedDynamicReport;
@@ -401,17 +393,34 @@ createApp({
           const bindings = item.bindings || [];
           return bindings.length === 1 && Number(bindings[0].target_id) === Number(node.id);
         });
+        const binding = policy ? this.dynamicPolicyBinding(policy, node.id) : null;
+        const auth = this.dynamicBindingAuthorization(binding);
+        const state = policy ? this.bindingState(policy) : "not_configured";
         return {
           id: node.id,
           hostname: node.hostname,
           ip: node.management_ip || node.keylime_agent_ip || "-",
           selected: Number(node.id) === this.selectedDynamicNodeId,
           sourceText: policy ? this.dynamicNodePolicySourceText(policy) : "未配置",
-          sourceClass: policy ? this.deploymentClass(this.bindingState(policy)) : "warn",
-          stateText: policy ? this.bindingStateText(policy) : "未配置",
-          stateClass: policy ? this.deploymentClass(this.bindingState(policy)) : "warn",
+          sourceClass: policy ? this.dynamicPolicyStateClass(state) : "warn",
+          stateText: policy ? this.dynamicPolicyStateText(state) : "未配置",
+          stateClass: policy ? this.dynamicPolicyStateClass(state) : "warn",
+          stateKey: state,
+          authText: auth.text,
+          authClass: auth.state,
+          authKey: auth.key,
           effectiveAt: policy ? this.policyEffectiveVersion(policy) : "-"
         };
+      });
+    },
+    filteredDynamicNodeRows() {
+      const keyword = this.dynamicNodeSearch.trim().toLowerCase();
+      return this.dynamicNodeRows.filter((node) => {
+        const searchable = `${node.hostname} ${node.ip}`.toLowerCase();
+        if (keyword && !searchable.includes(keyword)) return false;
+        if (this.dynamicNodeStatusFilter === "all") return true;
+        if (this.dynamicNodeStatusFilter === "auth_error") return node.authKey === "rejected" || node.authKey === "invalid" || node.authKey === "missing";
+        return node.stateKey === this.dynamicNodeStatusFilter;
       });
     },
     dynamicObjectRows() {
@@ -676,6 +685,47 @@ createApp({
     },
     markDynamicFormDirty() {
       this.dynamicFormDirty = true;
+    },
+    dynamicPolicyBinding(policy, nodeId) {
+      if (!policy || !nodeId) return null;
+      return (policy.bindings || []).find((binding) => Number(binding.target_id) === Number(nodeId)) || null;
+    },
+    dynamicPolicyStateText(state) {
+      const names = {
+        applied: "一致",
+        queued: "待生效",
+        applying: "生效中",
+        failed: "生效失败",
+        not_deployed: "待生效",
+        not_configured: "未配置",
+        superseded: "已替换",
+        mixed: "状态不一致"
+      };
+      return names[state] || state || "-";
+    },
+    dynamicPolicyStateClass(state) {
+      if (state === "applied") return "ok";
+      if (state === "failed") return "bad";
+      return "warn";
+    },
+    dynamicBindingAuthorization(binding) {
+      if (!binding) return { text: "未检测", state: "warn", key: "unknown" };
+      const details = binding.binding_details || {};
+      const status = details.policy_apply_authorization_status || "";
+      if (status === "normal") return { text: "正常", state: "ok", key: "normal" };
+      if (status === "missing") return { text: "未配置", state: "bad", key: "missing" };
+      if (status === "invalid") return { text: "材料异常", state: "bad", key: "invalid" };
+      if (status === "rejected") return { text: "授权异常", state: "bad", key: "rejected" };
+      if (binding.application_status === "applied") return { text: "正常", state: "ok", key: "normal" };
+      if (binding.application_status === "queued" || binding.application_status === "applying") {
+        return { text: "检测中", state: "warn", key: "checking" };
+      }
+      if (binding.application_status === "failed") {
+        const error = String(binding.last_error || "");
+        const rejected = error.includes("ret: 152") || error.includes("0x98");
+        return { text: rejected ? "授权异常" : "生效异常", state: "bad", key: rejected ? "rejected" : "failed" };
+      }
+      return { text: "未检测", state: "warn", key: "unknown" };
     },
     dynamicNodePolicySourceText(policy) {
       if (!policy) return "未配置";
@@ -1186,11 +1236,55 @@ createApp({
         policy_update: "更新策略",
         policy_delete: "删除策略",
         policy_deploy_queued: "策略下发已入队",
+        tpcm_dynamic_policy_save: "动态度量策略保存",
+        tpcm_dynamic_policy_apply_queued: "动态度量策略生效已入队",
+        tpcm_dynamic_policy_apply: "动态度量策略生效",
         host_integrity_evidence_collect: "采集节点完整性证据",
         opentcsm_evidence_collect: "采集 TPCM 可信报告",
         opentcsm_access_check: "OpenTCSM 接入检查"
       };
       return names[event.event_type] || event.message || event.event_type || "-";
+    },
+    auditDetails(event) {
+      return event?.event_details || {};
+    },
+    auditType(event) {
+      const details = this.auditDetails(event);
+      if (details.log_type === "dynamic_measurement") return "动态度量日志";
+      return this.auditMessage(event);
+    },
+    auditSubject(event) {
+      const details = this.auditDetails(event);
+      return details.subject_name || details.provider || "-";
+    },
+    auditObject(event) {
+      const details = this.auditDetails(event);
+      return details.object_name || event.target || "-";
+    },
+    auditHash(event) {
+      const details = this.auditDetails(event);
+      return details.hash || details.report_hash || details.evidence_sha256 || details.rendered_policy_sha256 || "";
+    },
+    auditHashText(event) {
+      const value = this.auditHash(event);
+      return value ? value.slice(0, 24) : "-";
+    },
+    auditOperation(event) {
+      const details = this.auditDetails(event);
+      return details.operation || this.auditMessage(event);
+    },
+    auditResult(event) {
+      const details = this.auditDetails(event);
+      if (details.result) return details.result;
+      if (event.severity === "info") return "成功";
+      if (event.severity === "warning") return "异常";
+      return "失败";
+    },
+    auditResultClass(event) {
+      const result = this.auditResult(event);
+      if (["失败", "异常", "授权异常"].includes(result)) return "bad";
+      if (["已入队", "处理中"].includes(result)) return "warn";
+      return this.severityClass(event.severity);
     },
     taskTypeText(value) {
       const names = {

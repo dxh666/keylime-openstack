@@ -724,11 +724,15 @@ h3 {
 }
 
 .audit-table .row {
-  grid-template-columns: 170px 150px 140px 80px minmax(260px, 1fr);
+  grid-template-columns: 170px 120px 100px minmax(150px, 1fr) 190px 120px 90px;
 }
 
 .policy-table .row {
   grid-template-columns: minmax(190px, 1.4fr) minmax(220px, 1.7fr) 120px 160px 220px;
+}
+
+.dynamic-node-table .row {
+  grid-template-columns: minmax(150px, 1.2fr) 150px 120px 120px 170px;
 }
 
 .dynamic-object-table .row {
@@ -754,50 +758,58 @@ h3 {
 
 .dynamic-policy-layout {
   display: grid;
-  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
   gap: 16px;
-  align-items: start;
 }
 
-.dynamic-node-list {
-  display: grid;
+.dynamic-node-tools {
+  display: flex;
   gap: 8px;
-}
-
-.dynamic-node-item {
-  width: 100%;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 5px 10px;
   align-items: center;
-  min-height: 76px;
-  padding: 11px;
-  text-align: left;
-  background: var(--panel-soft);
+  justify-content: flex-end;
+  min-width: min(100%, 420px);
 }
 
-.dynamic-node-item.active {
+.dynamic-node-tools input,
+.dynamic-node-tools select {
+  min-height: 34px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--text);
+}
+
+.dynamic-node-tools input {
+  width: min(100%, 230px);
+}
+
+.dynamic-node-tools select {
+  width: 128px;
+}
+
+.dynamic-node-row {
+  width: 100%;
+  text-align: left;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.dynamic-node-row.active {
   border-color: var(--blue);
   background: #eef5ff;
 }
 
-.dynamic-node-item strong,
-.dynamic-node-item span,
-.dynamic-node-item small {
+.dynamic-node-row strong,
+.dynamic-node-row span {
   min-width: 0;
 }
 
-.dynamic-node-item > span,
-.dynamic-node-item small {
+.audit-hash {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
   color: var(--muted);
-  font-size: 12px;
-}
-
-.dynamic-node-item small {
-  grid-column: 1 / -1;
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
 }
 
 .row-actions {
@@ -1227,18 +1239,21 @@ h3 {
 
   .compact-table,
   .policy-table,
+  .dynamic-node-table,
   .dynamic-object-table {
     overflow: visible;
   }
 
   .compact-table .row.header,
   .policy-table .row.header,
+  .dynamic-node-table .row.header,
   .dynamic-object-table .row.header {
     display: none;
   }
 
   .compact-table .row,
   .policy-table .row,
+  .dynamic-node-table .row,
   .dynamic-object-table .row {
     grid-template-columns: minmax(0, 1fr);
     gap: 7px;

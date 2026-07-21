@@ -299,30 +299,43 @@
 
       <section v-if="view === 'environment_dynamic_policy'" class="screen">
         <section class="dynamic-policy-layout">
-          <aside class="panel dynamic-node-panel">
+          <section class="panel dynamic-node-panel">
             <div class="panel-head">
-              <h2>节点列表</h2>
+              <h2>节点策略列表</h2>
+              <div class="dynamic-node-tools">
+                <input v-model="dynamicNodeSearch" type="search" placeholder="搜索节点或 IP">
+                <select v-model="dynamicNodeStatusFilter">
+                  <option value="all">全部状态</option>
+                  <option value="applied">一致</option>
+                  <option value="queued">待生效</option>
+                  <option value="applying">生效中</option>
+                  <option value="failed">生效失败</option>
+                  <option value="not_configured">未配置</option>
+                  <option value="auth_error">授权异常</option>
+                </select>
+              </div>
             </div>
-            <div class="dynamic-node-list">
+            <div class="table compact-table dynamic-node-table">
+              <div class="row header">
+                <span>节点名称</span><span>管理 IP</span><span>策略状态</span><span>授权状态</span><span>最近生效时间</span>
+              </div>
               <button
-                v-for="node in dynamicNodeRows"
+                v-for="node in filteredDynamicNodeRows"
                 :key="node.id"
                 type="button"
-                class="dynamic-node-item"
+                class="row dynamic-node-row"
                 :class="{ active: node.selected }"
                 @click="selectDynamicNode(node)"
               >
                 <strong>{{ node.hostname }}</strong>
                 <span>{{ node.ip }}</span>
-                <em :class="['pill', node.sourceClass]">{{ node.sourceText }}</em>
-                <small>
-                  <span>{{ node.stateText }}</span>
-                  <span>{{ node.effectiveAt }}</span>
-                </small>
+                <span><em :class="['pill', node.stateClass]">{{ node.stateText }}</em></span>
+                <span><em :class="['pill', node.authClass]">{{ node.authText }}</em></span>
+                <span>{{ node.effectiveAt }}</span>
               </button>
             </div>
-            <p v-if="!dynamicNodeRows.length" class="empty">暂无 OpenTCSM 节点。</p>
-          </aside>
+            <p v-if="!filteredDynamicNodeRows.length" class="empty">暂无匹配节点。</p>
+          </section>
 
           <section class="panel dynamic-policy-panel">
             <div class="panel-head">
@@ -453,14 +466,16 @@
           </div>
           <div class="table compact-table audit-table">
             <div class="row header">
-              <span>时间</span><span>类型</span><span>对象</span><span>级别</span><span>内容</span>
+              <span>时间</span><span>日志类型</span><span>主体名称</span><span>客体名称</span><span>hash</span><span>操作</span><span>结果</span>
             </div>
             <div v-for="event in auditEvents" :key="event.id" class="row">
               <span>{{ formatTime(event.created_at) }}</span>
-              <span>{{ auditMessage(event) }}</span>
-              <span>{{ event.target || '-' }}</span>
-              <span><em :class="['pill', severityClass(event.severity)]">{{ severityText(event.severity) }}</em></span>
-              <span>{{ event.message || '-' }}</span>
+              <span>{{ auditType(event) }}</span>
+              <span>{{ auditSubject(event) }}</span>
+              <span>{{ auditObject(event) }}</span>
+              <span class="audit-hash" :title="auditHash(event)">{{ auditHashText(event) }}</span>
+              <span>{{ auditOperation(event) }}</span>
+              <span><em :class="['pill', auditResultClass(event)]">{{ auditResult(event) }}</em></span>
             </div>
           </div>
           <p v-if="!auditEvents.length" class="empty">暂无审计日志。</p>

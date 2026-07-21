@@ -783,19 +783,61 @@ def _record_policy_audit(
     policy: TrustPolicy,
     message: str,
 ) -> None:
+    policy_type = canonical_policy_type(policy.policy_type)
+    details: dict[str, Any] = {
+        "policy_id": policy.id,
+        "policy_type": policy.policy_type,
+        "status": policy.status,
+    }
+    if policy_type == POLICY_TPCM_DYNAMIC_MEASUREMENT:
+        mapped_events = {
+            "policy_create": "tpcm_dynamic_policy_save",
+            "policy_update": "tpcm_dynamic_policy_save",
+            "policy_deploy_queued": "tpcm_dynamic_policy_apply_queued",
+        }
+        event_type = mapped_events.get(event_type, event_type)
+        details.update(_dynamic_policy_audit_details(policy, event_type))
+        if event_type == "tpcm_dynamic_policy_apply_queued":
+            message = "dynamic measurement policy apply queued"
+        else:
+            message = "dynamic measurement policy saved"
     session.add(
         AuditEvent(
             event_type=event_type,
             target=policy.name,
             severity="info",
             message=message,
-            event_details={
-                "policy_id": policy.id,
-                "policy_type": policy.policy_type,
-                "status": policy.status,
-            },
+            event_details=details,
         )
     )
+
+
+def _dynamic_policy_audit_details(policy: TrustPolicy, event_type: str) -> dict[str, Any]:
+    content = dict(policy.content or {})
+    configs = content.get("environment_object_configs") if isinstance(content.get("environment_object_configs"), dict) else {}
+    enabled_objects = [
+        name
+        for name, config in configs.items()
+        if isinstance(config, dict) and config.get("enabled") is True
+    ]
+    if not enabled_objects:
+        enabled_objects = [str(item) for item in content.get("environment_objects") or []]
+    target_names = [
+        str(dict(binding.binding_details or {}).get("hostname") or binding.target_id)
+        for binding in policy.bindings
+        if binding.active
+    ]
+    return {
+        "log_type": "dynamic_measurement",
+        "subject_name": "TPCM",
+        "object_name": ",".join(enabled_objects) if enabled_objects else "none",
+        "operation": "策略生效" if event_type == "tpcm_dynamic_policy_apply_queued" else "策略保存",
+        "result": "已入队" if event_type == "tpcm_dynamic_policy_apply_queued" else "成功",
+        "target_nodes": target_names,
+        "environment_object_configs": configs,
+        "environment_interval_milli": content.get("environment_interval_milli"),
+        "hash": "",
+    }
 
 
 def _dashboard_control_node(node: ComputeNode) -> dict[str, object]:

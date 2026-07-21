@@ -70,6 +70,11 @@ class OpenTcsmCollector:
         for record in records:
             self.session.add(record)
         self.session.flush()
+        dynamic_objects = [
+            str(item.get("object"))
+            for item in report["raw"].get("dmeasure_policy", [])
+            if isinstance(item, dict) and item.get("object")
+        ]
         self.session.add(
             AuditEvent(
                 event_type="opentcsm_evidence_collect",
@@ -83,6 +88,16 @@ class OpenTcsmCollector:
                     "evidence_ids": [record.id for record in records],
                     "tpcm_id": report["raw"].get("tpcm_id", ""),
                     "report_hash": report["raw"].get("trust_report_sha256", ""),
+                    "log_type": "dynamic_measurement",
+                    "subject_name": "TPCM",
+                    "object_name": ",".join(dynamic_objects) if dynamic_objects else "-",
+                    "operation": "状态刷新",
+                    "result": "成功" if report.get("dynamic_measurement_status") == "pass" else "异常",
+                    "hash": (
+                        report["raw"].get("dmeasure_policy_sha256")
+                        or report["raw"].get("trust_report_sha256")
+                        or ""
+                    ),
                 },
             )
         )

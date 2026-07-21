@@ -70,9 +70,9 @@ class PolicyDeploymentService:
             binding.application_status = POLICY_DEPLOY_APPLYING
             binding.last_error = ""
             self.session.flush()
+            policy_type = canonical_policy_type(policy.policy_type)
+            agent_type = node_trust_agent_type(node, self.settings)
             try:
-                policy_type = canonical_policy_type(policy.policy_type)
-                agent_type = node_trust_agent_type(node, self.settings)
                 if agent_type == TRUST_AGENT_OPENTCSM_TPCM and policy_type == POLICY_TPCM_DYNAMIC_MEASUREMENT:
                     details = self._deploy_opentcsm_dynamic_measurement(policy, binding, node)
                 elif agent_type != TRUST_AGENT_KEYLIME:
@@ -90,9 +90,16 @@ class PolicyDeploymentService:
                 binding.last_error = str(exc)
                 details = {"reason": str(exc)}
             except Exception as exc:  # pragma: no cover - remote execution boundary
-                self._failed(binding, str(exc))
-                details = {"error": str(exc)}
-            self._audit(policy.name, node.hostname, binding, details)
+                error = str(exc)
+                failure_details = (
+                    _opentcsm_dynamic_failure_details(error)
+                    if agent_type == TRUST_AGENT_OPENTCSM_TPCM
+                    and policy_type == POLICY_TPCM_DYNAMIC_MEASUREMENT
+                    else {}
+                )
+                self._failed(binding, error, failure_details)
+                details = {"error": error, **failure_details}
+            self._audit(policy.name, policy_type, node.hostname, binding, details)
             results.append(self._binding_result(binding, binding.application_status))
             self.session.flush()
         if binding_id is not None and not results:
@@ -523,6 +530,10 @@ class PolicyDeploymentService:
                 "auth_material_ref": auth.ref,
                 "auth_uid": auth.uid,
                 "auth_public_key_sha256": auth.public_fingerprint,
+                "policy_apply_status": "consistent",
+                "policy_apply_authorization_status": "normal",
+                "policy_apply_error_code": "",
+                "policy_apply_error_summary": "",
                 "dynamic_measure_on": dynamic_on,
                 "dmeasure_policy_sha256": raw.get("dmeasure_policy_sha256", ""),
                 "dynamic_measure_ref_number": dynamic_baselines,
@@ -541,6 +552,8 @@ class PolicyDeploymentService:
             "trust_report_sha256": raw.get("trust_report_sha256", ""),
             "dmeasure_policy_sha256": raw.get("dmeasure_policy_sha256", ""),
             "policy_sha256": _content_hash(rendered_policy),
+            "policy_apply_status": "consistent",
+            "policy_apply_authorization_status": "normal",
         }
 
     def _applied(
@@ -618,32 +631,69 @@ class PolicyDeploymentService:
         return {}
 
     @staticmethod
-    def _failed(binding: PolicyBinding, error: str) -> None:
+    def _failed(
+        binding: PolicyBinding,
+        error: str,
+        extra_details: dict[str, Any] | None = None,
+    ) -> None:
         binding.application_status = POLICY_DEPLOY_FAILED
         binding.last_error = error[:4000]
+        details = {
+            **dict(binding.binding_details or {}),
+            "policy_apply_status": POLICY_DEPLOY_FAILED,
+            "policy_apply_error_summary": error[:500],
+        }
+        if extra_details:
+            details.update(extra_details)
+        binding.binding_details = details
 
     def _audit(
         self,
         policy_name: str,
+        policy_type: str,
         hostname: str,
         binding: PolicyBinding,
         details: dict[str, Any],
     ) -> None:
+        is_dynamic = policy_type == POLICY_TPCM_DYNAMIC_MEASUREMENT
+        event_details = {
+            "binding_id": binding.id,
+            "executor": binding.executor,
+            **details,
+        }
+        if is_dynamic:
+            event_details = {
+                **event_details,
+                "log_type": "dynamic_measurement",
+                "policy_type": policy_type,
+                "subject_name": "TPCM",
+                "object_name": _dynamic_audit_object_name(details),
+                "operation": "策略生效",
+                "result": "成功"
+                if binding.application_status == POLICY_DEPLOY_APPLIED
+                else "失败",
+                "hash": (
+                    details.get("dmeasure_policy_sha256")
+                    or details.get("policy_sha256")
+                    or details.get("rendered_policy_sha256")
+                    or ""
+                ),
+            }
         self.session.add(
             AuditEvent(
-                event_type="policy_deploy",
+                event_type="tpcm_dynamic_policy_apply" if is_dynamic else "policy_deploy",
                 target=f"{policy_name}:{hostname}",
                 severity=(
                     "info"
                     if binding.application_status == POLICY_DEPLOY_APPLIED
                     else "warning"
                 ),
-                message=f"policy deployment {binding.application_status}",
-                event_details={
-                    "binding_id": binding.id,
-                    "executor": binding.executor,
-                    **details,
-                },
+                message=(
+                    details.get("policy_apply_error_summary")
+                    if is_dynamic and binding.application_status != POLICY_DEPLOY_APPLIED
+                    else f"policy deployment {binding.application_status}"
+                ),
+                event_details=event_details,
             )
         )
 
@@ -733,6 +783,68 @@ def _opentcsm_dynamic_apply_error(result: dict[str, Any]) -> str:
             detail += f"; stdout={stdout[-800:]}"
         details.append(detail)
     return "OpenTCSM 动态度量策略生效失败：" + " | ".join(details)
+
+
+def _opentcsm_dynamic_failure_details(error: str) -> dict[str, Any]:
+    text = str(error or "")
+    status = "unknown"
+    code = "TPCM_DYNAMIC_APPLY_FAILED"
+    summary = "TPCM 动态度量策略生效失败。"
+
+    if "authorization material is not configured" in text:
+        status = "missing"
+        code = "TPCM_AUTH_MISSING"
+        summary = "TPCM 策略生效授权材料未配置。"
+    elif (
+        "invalid OpenTCSM auth" in text
+        or ("auth material" in text and "missing" in text)
+        or "must be a hex string" in text
+    ):
+        status = "invalid"
+        code = "TPCM_AUTH_INVALID"
+        summary = "TPCM 策略生效授权材料格式无效。"
+    elif _looks_like_tpcm_auth_rejected(text):
+        status = "rejected"
+        code = "TPCM_AUTH_REJECTED"
+        summary = "TPCM 拒绝了策略生效授权，请检查 UID 和授权证书/密钥是否已在节点注册。"
+    elif "校验未通过" in text or "validation" in text.lower():
+        status = "normal"
+        code = "TPCM_DYNAMIC_POLICY_NOT_CONSISTENT"
+        summary = "TPCM 动态度量策略已执行，但节点当前状态与目标配置不一致。"
+    elif "Ansible returned" in text or "OpenTCSM dynamic policy apply result" in text:
+        status = "unknown"
+        code = "TPCM_COMMAND_FAILED"
+        summary = "OpenTCSM 策略生效命令执行异常。"
+
+    return {
+        "policy_apply_status": POLICY_DEPLOY_FAILED,
+        "policy_apply_authorization_status": status,
+        "policy_apply_error_code": code,
+        "policy_apply_error_summary": summary,
+    }
+
+
+def _looks_like_tpcm_auth_rejected(text: str) -> bool:
+    if re.search(r"\b(?:ret|rc)\s*[:=]\s*(?:0x0*98|152)\b", text, re.IGNORECASE):
+        return True
+    if "0x00000098" in text or "ret:0x98" in text or "ret: 0x98" in text:
+        return True
+    return False
+
+
+def _dynamic_audit_object_name(details: dict[str, Any]) -> str:
+    configs = details.get("environment_object_configs")
+    if isinstance(configs, dict) and configs:
+        enabled = [
+            name
+            for name, config in configs.items()
+            if isinstance(config, dict) and config.get("enabled") is True
+        ]
+        return ",".join(enabled) if enabled else "none"
+    objects = details.get("environment_objects")
+    if isinstance(objects, list) and objects:
+        return ",".join(str(item) for item in objects)
+    return "环境动态度量策略"
 
 
 def _dynamic_object_configs(content: dict[str, Any]) -> dict[str, dict[str, int | bool]]:
