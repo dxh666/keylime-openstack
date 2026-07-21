@@ -43,22 +43,19 @@
             >
               {{ item.label }}
             </button>
-          </div>
-        </div>
-
-        <div class="nav-group" :class="{ active: groupActive('dynamic_policies') }">
-          <button class="nav-parent" type="button" @click="toggleGroup('dynamic_policies')">
-            <span>动态度量策略</span>
-            <span class="chevron">{{ expandedGroups.dynamic_policies ? '收起' : '展开' }}</span>
-          </button>
-          <div v-show="expandedGroups.dynamic_policies" class="nav-children">
-            <button
-              class="nav-subitem"
-              :class="{ active: view === 'environment_dynamic_policy' }"
-              @click="selectEnvironmentDynamicPolicy"
-            >
-              环境动态度量策略
+            <button class="nav-subitem nav-subparent" type="button" @click="toggleGroup('dynamic_policies')">
+              <span>动态度量策略</span>
+              <span class="chevron">{{ expandedGroups.dynamic_policies ? '收起' : '展开' }}</span>
             </button>
+            <div v-show="expandedGroups.dynamic_policies" class="nav-grandchildren">
+              <button
+                class="nav-thirditem"
+                :class="{ active: view === 'environment_dynamic_policy' }"
+                @click="selectEnvironmentDynamicPolicy"
+              >
+                环境动态度量策略
+              </button>
+            </div>
           </div>
         </div>
 

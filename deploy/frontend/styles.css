@@ -184,6 +184,28 @@ textarea {
   font-size: 13px;
 }
 
+.nav-subparent {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.nav-grandchildren {
+  display: grid;
+  gap: 2px;
+  padding: 2px 0 4px 14px;
+  margin-left: 12px;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.nav button.nav-thirditem {
+  min-height: 32px;
+  padding-left: 14px;
+  font-size: 12px;
+  color: #b8c4d8;
+}
+
 .sidebar-footer {
   margin-top: auto;
   display: flex;

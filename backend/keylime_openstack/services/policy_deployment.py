@@ -402,13 +402,28 @@ class PolicyDeploymentService:
                     "opentcsm_dynamic_auth": auth.playbook_vars(),
                 },
             )
-            self._require_ansible_success(apply_result.rc, apply_result.stdout, apply_result.stderr)
+            opentcsm_apply: dict[str, Any] | None = None
+            if apply_result_path.is_file():
+                try:
+                    opentcsm_apply = json.loads(apply_result_path.read_text(encoding="utf-8"))
+                except json.JSONDecodeError as exc:
+                    if apply_result.rc == 0:
+                        raise RuntimeError(
+                            "OpenTCSM dynamic policy apply result is not valid JSON"
+                        ) from exc
+            if apply_result.rc != 0:
+                if opentcsm_apply:
+                    raise RuntimeError(_opentcsm_dynamic_apply_error(opentcsm_apply))
+                self._require_ansible_success(apply_result.rc, apply_result.stdout, apply_result.stderr)
             if not apply_result_path.is_file():
                 raise RuntimeError("OpenTCSM dynamic policy apply result was not produced")
-            try:
-                opentcsm_apply = json.loads(apply_result_path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError as exc:
-                raise RuntimeError("OpenTCSM dynamic policy apply result is not valid JSON") from exc
+            if opentcsm_apply is None:
+                try:
+                    opentcsm_apply = json.loads(apply_result_path.read_text(encoding="utf-8"))
+                except json.JSONDecodeError as exc:
+                    raise RuntimeError(
+                        "OpenTCSM dynamic policy apply result is not valid JSON"
+                    ) from exc
 
         result = OpenTcsmCollector(self.session, self.settings).collect(node)
         raw = result.get("raw") if isinstance(result.get("raw"), dict) else {}
@@ -692,6 +707,31 @@ def _event_log_fallback_mode(policy: TrustPolicy) -> str:
     value = str(policy.content.get("event_log_fallback") or "pcr_quote")
     normalized = value.strip().lower().replace("-", "_")
     return "pcr_quote" if normalized in {"pcr_quote", "tpm_pcr", "tpm_pcr_quote"} else "none"
+
+
+def _opentcsm_dynamic_apply_error(result: dict[str, Any]) -> str:
+    failed = [
+        item
+        for item in result.get("commands", [])
+        if isinstance(item, dict) and int(item.get("rc") or 0) != 0
+    ]
+    if not failed:
+        return str(result.get("error") or "OpenTCSM 动态度量策略生效失败")
+    details: list[str] = []
+    for item in failed[:5]:
+        command = item.get("command")
+        command_text = " ".join(str(part) for part in command) if isinstance(command, list) else ""
+        stdout = str(item.get("stdout") or "").strip()
+        stderr = str(item.get("stderr") or "").strip()
+        detail = f"{item.get('name') or 'command'} rc={item.get('rc')}"
+        if command_text:
+            detail += f"; command={command_text}"
+        if stderr:
+            detail += f"; stderr={stderr[-800:]}"
+        if stdout:
+            detail += f"; stdout={stdout[-800:]}"
+        details.append(detail)
+    return "OpenTCSM 动态度量策略生效失败：" + " | ".join(details)
 
 
 def _dynamic_object_configs(content: dict[str, Any]) -> dict[str, dict[str, int | bool]]:

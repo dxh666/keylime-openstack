@@ -455,7 +455,7 @@ createApp({
     },
     groupActive(group) {
       if (group === "nodes") return ["control_nodes", "compute_nodes"].includes(this.view);
-      if (group === "policies") return this.view === "policies";
+      if (group === "policies") return ["policies", "environment_dynamic_policy"].includes(this.view);
       if (group === "dynamic_policies") return this.view === "environment_dynamic_policy";
       return false;
     },
@@ -468,6 +468,7 @@ createApp({
     },
     selectEnvironmentDynamicPolicy() {
       this.selectView("environment_dynamic_policy");
+      this.expandedGroups.policies = true;
       this.expandedGroups.dynamic_policies = true;
       this.ensureDynamicNodeSelection();
       this.syncDynamicFormFromPolicy(true);
