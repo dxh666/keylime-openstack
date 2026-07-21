@@ -164,12 +164,8 @@ class KeylimeClient:
                 )
                 runtime_policy_path = "/keylime-openstack-tmp/runtime-policy.json"
                 mount_tmp = True
-            measured_boot_policy_path = ""
             if disable_measured_boot:
-                empty_mb_policy = Path(tmp) / "empty-measured-boot-policy.json"
-                empty_mb_policy.write_text("{}\n", encoding="utf-8")
-                measured_boot_policy_path = "/keylime-openstack-tmp/empty-measured-boot-policy.json"
-                mount_tmp = True
+                compose_args.extend(["-e", "KEYLIME_TENANT_MB_REFSTATE="])
             if mount_tmp:
                 compose_args.extend(["-v", f"{tmp}:/keylime-openstack-tmp:ro"])
             tenant_args = ["-u", agent_uuid]
@@ -186,9 +182,7 @@ class KeylimeClient:
                 tenant_args.extend(["--runtime-policy-name", runtime_policy_name])
             if runtime_policy_path:
                 tenant_args.extend(["--runtime-policy", runtime_policy_path])
-            if measured_boot_policy_path:
-                tenant_args.extend(["--mb-policy", measured_boot_policy_path])
-            elif measured_boot_policy_name:
+            if measured_boot_policy_name and not disable_measured_boot:
                 tenant_args.extend(["--mb-policy-name", measured_boot_policy_name])
 
             delete = {"rc": 0, "stdout": "", "stderr": ""}

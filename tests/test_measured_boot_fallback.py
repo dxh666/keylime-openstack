@@ -101,7 +101,7 @@ def test_tenant_tool_can_disable_measured_boot_default():
     )
 
     add_command = commands[0]
-    assert "--mb-policy" in add_command
-    assert add_command[add_command.index("--mb-policy") + 1].endswith(
-        "/empty-measured-boot-policy.json"
-    )
+    assert "--mb-policy" not in add_command
+    assert "--mb-policy-name" not in add_command
+    assert "-e" in add_command
+    assert "KEYLIME_TENANT_MB_REFSTATE=" in add_command
