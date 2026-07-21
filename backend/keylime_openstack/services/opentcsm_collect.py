@@ -149,6 +149,7 @@ def normalize_opentcsm_collection(node: ComputeNode, collected: dict[str, Any]) 
         "boot_measure_on": boot_on,
         "dynamic_measure_on": dynamic_on,
         "trust_report_clean": trust_report_clean,
+        "trust_report_eval": _trust_report_eval(trust_report),
         "trust_report_failures": _trust_report_failures(trust_report),
         "boot_records": boot_records,
         "boot_measure_records_sha256": _sha256(boot_records_text),
@@ -191,10 +192,12 @@ def _trust_report_failures(text: str) -> dict[str, str]:
         match = re.search(rf"\b{re.escape(field)}:\s*(0x[0-9a-fA-F]+|\d+)", text)
         if match and int(match.group(1), 0) != 0:
             failures[field] = match.group(1)
-    eval_match = re.search(r"\bbe_eval:\s*(0x[0-9a-fA-F]+|\d+)", text)
-    if eval_match and int(eval_match.group(1), 0) != 0:
-        failures["be_eval"] = eval_match.group(1)
     return failures
+
+
+def _trust_report_eval(text: str) -> int | None:
+    match = re.search(r"\bbe_eval:\s*(0x[0-9a-fA-F]+|\d+)", text)
+    return int(match.group(1), 0) if match else None
 
 
 def _status_from_signals(*, trusted: bool, untrusted: bool, enabled: bool, clean: bool) -> str:
