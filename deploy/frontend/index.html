@@ -314,7 +314,7 @@
               >
                 <strong>{{ node.hostname }}</strong>
                 <span>{{ node.ip }}</span>
-                <em :class="['pill', node.trustClass]">{{ node.trustText }}</em>
+                <em :class="['pill', node.sourceClass]">{{ node.sourceText }}</em>
                 <small>
                   <span>{{ node.stateText }}</span>
                   <span>{{ node.effectiveAt }}</span>
@@ -330,16 +330,32 @@
                 <h2>环境动态度量策略</h2>
                 <p>{{ selectedDynamicNode ? selectedDynamicNode.hostname : '未选择节点' }}</p>
               </div>
-              <button class="primary" type="button" :disabled="busy || !selectedDynamicNode" @click="saveDynamicMeasurementConfig">
-                保存并生效
-              </button>
+              <div class="dynamic-actions">
+                <button type="button" :disabled="busy || !selectedDynamicNode" @click="refreshSelectedDynamicNode">
+                  刷新状态
+                </button>
+                <button class="primary" type="button" :disabled="busy || !selectedDynamicNode" @click="saveDynamicMeasurementConfig">
+                  保存并生效
+                </button>
+              </div>
+            </div>
+            <div class="info-grid dynamic-status-grid">
+              <div v-for="item in dynamicStatusItems" :key="item.label">
+                <span>{{ item.label }}</span>
+                <strong>
+                  <em v-if="item.state" :class="['pill', item.state]">{{ item.value }}</em>
+                  <template v-else>{{ item.value }}</template>
+                </strong>
+              </div>
             </div>
             <div class="table dynamic-object-table">
               <div class="row header">
-                <span>度量对象</span><span>启用状态</span><span>检测周期</span><span>生效状态</span><span>最近生效时间</span>
+                <span>度量对象</span><span>当前状态</span><span>当前周期</span><span>目标状态</span><span>目标周期</span><span>生效状态</span>
               </div>
               <div v-for="item in dynamicObjectRows" :key="item.key" class="row">
                 <span>{{ item.label }}</span>
+                <span><em :class="['pill', item.currentClass]">{{ item.currentText }}</em></span>
+                <span>{{ item.currentIntervalText }}</span>
                 <span>
                   <label class="inline-switch">
                     <input
@@ -366,7 +382,6 @@
                   <small>毫秒</small>
                 </span>
                 <span><em :class="['pill', item.stateClass]">{{ item.stateText }}</em></span>
-                <span>{{ item.effectiveAt }}</span>
               </div>
             </div>
           </section>

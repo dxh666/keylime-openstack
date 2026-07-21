@@ -732,7 +732,24 @@ h3 {
 }
 
 .dynamic-object-table .row {
-  grid-template-columns: minmax(150px, 1.2fr) 150px 190px 130px 170px;
+  grid-template-columns: minmax(150px, 1.2fr) 120px 130px 150px 190px 130px;
+}
+
+.dynamic-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.dynamic-status-grid {
+  margin-bottom: 14px;
+}
+
+.dynamic-status-grid strong {
+  display: flex;
+  align-items: center;
+  min-height: 24px;
 }
 
 .dynamic-policy-layout {

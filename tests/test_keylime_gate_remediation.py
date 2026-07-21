@@ -41,6 +41,10 @@ def test_opentcsm_report_summary_exposes_product_fields_without_command_output()
                 "trust_report_eval": 100,
                 "trust_report_failures": {},
                 "boot_records": ["BIOS/U-BOOT", "/EFI/anolis/shim.efi"],
+                "dmeasure_policy": [
+                    {"object": "kernel_section", "interval_milli": 60000},
+                    {"object": "syscall_table", "interval_milli": 60000},
+                ],
                 "trust_report_sha256": "a" * 64,
                 "commands": {"trust_report": {"stdout": "large output"}},
             },
@@ -55,5 +59,9 @@ def test_opentcsm_report_summary_exposes_product_fields_without_command_output()
     assert summary["dynamic_measure_on"] is True
     assert summary["failure_count"] == 0
     assert summary["boot_record_count"] == 2
+    assert summary["dmeasure_policy"] == [
+        {"object": "kernel_section", "interval_milli": 60000},
+        {"object": "syscall_table", "interval_milli": 60000},
+    ]
     assert summary["trust_report_sha256"] == "a" * 64
     assert "commands" not in summary

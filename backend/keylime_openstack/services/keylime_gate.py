@@ -362,6 +362,7 @@ def _external_report_summary(record) -> dict[str, object]:
     failures = raw.get("trust_report_failures") if isinstance(raw.get("trust_report_failures"), dict) else {}
     errors = payload.get("errors") if isinstance(payload.get("errors"), list) else []
     boot_records = raw.get("boot_records") if isinstance(raw.get("boot_records"), list) else []
+    dmeasure_policy = raw.get("dmeasure_policy") if isinstance(raw.get("dmeasure_policy"), list) else []
     return {
         "provider": record.provider,
         "agent_name": payload.get("agent_name") or "",
@@ -384,6 +385,7 @@ def _external_report_summary(record) -> dict[str, object]:
         "dmeasure_times": raw.get("dmeasure_times"),
         "boot_measure_ref_number": raw.get("boot_measure_ref_number"),
         "dynamic_measure_ref_number": raw.get("dynamic_measure_ref_number"),
+        "dmeasure_policy": dmeasure_policy,
         "trust_report_sha256": raw.get("trust_report_sha256") or "",
         "policy_report_sha256": raw.get("policy_report_sha256") or "",
         "global_control_policy_sha256": raw.get("global_control_policy_sha256") or "",

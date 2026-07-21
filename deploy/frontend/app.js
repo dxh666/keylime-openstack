@@ -290,6 +290,29 @@ createApp({
     selectedDynamicNodeId() {
       return this.selectedDynamicNode ? Number(this.selectedDynamicNode.id) : null;
     },
+    selectedDynamicComputeRow() {
+      const selectedId = this.selectedDynamicNodeId;
+      if (!selectedId) return null;
+      return this.computeRows.find((row) => Number(row.id) === selectedId) || null;
+    },
+    selectedDynamicKeylimeNode() {
+      const node = this.selectedDynamicNode || {};
+      return (
+        this.keylimeNodesByHost.get(node.hostname) ||
+        this.keylimeNodesByUuid.get(node.keylime_agent_uuid) ||
+        {}
+      );
+    },
+    selectedDynamicReport() {
+      return this.selectedDynamicKeylimeNode.trust_report || {};
+    },
+    dynamicCurrentObjects() {
+      const items = new Map();
+      for (const item of this.selectedDynamicReport.dmeasure_policy || []) {
+        if (item?.object) items.set(item.object, item);
+      }
+      return items;
+    },
     dynamicMeasurementPolicies() {
       return this.policies
         .filter((policy) => policy.policy_type === "tpcm_dynamic_measurement")
@@ -317,23 +340,74 @@ createApp({
     dynamicMeasurementSourcePolicy() {
       return this.dynamicMeasurementAppliedPolicy;
     },
+    dynamicSelectedPolicyBinding() {
+      const policy = this.dynamicMeasurementPolicy;
+      const selectedId = this.selectedDynamicNodeId;
+      if (!policy || !selectedId) return null;
+      return (policy.bindings || []).find((binding) => Number(binding.target_id) === selectedId) || null;
+    },
+    dynamicPolicySourceText() {
+      if (this.dynamicMeasurementAppliedPolicy) return "节点策略";
+      if (this.dynamicMeasurementPolicy) return "节点策略（未生效）";
+      return "未配置";
+    },
+    dynamicPolicySourceClass() {
+      if (this.dynamicMeasurementAppliedPolicy) return "ok";
+      if (this.dynamicMeasurementPolicy) return "warn";
+      return "warn";
+    },
+    dynamicApplyAuthorization() {
+      const binding = this.dynamicSelectedPolicyBinding;
+      if (!binding) return { text: "未检测", state: "warn" };
+      const status = binding.application_status;
+      if (status === "applied") return { text: "正常", state: "ok" };
+      if (status === "queued" || status === "applying") return { text: "检测中", state: "warn" };
+      if (status === "failed") {
+        const error = String(binding.last_error || "");
+        const rejected = error.includes("ret: 152") || error.includes("0x98");
+        return { text: rejected ? "授权异常" : "生效异常", state: "bad" };
+      }
+      return { text: "未检测", state: "warn" };
+    },
+    dynamicStatusItems() {
+      const report = this.selectedDynamicReport;
+      const auth = this.dynamicApplyAuthorization;
+      const dynamicOn = report.dynamic_measure_on;
+      return [
+        {
+          label: "动态度量总开关",
+          value: this.enabledText(dynamicOn),
+          state: dynamicOn === true ? "ok" : dynamicOn === false ? "bad" : "warn"
+        },
+        {
+          label: "策略生效授权状态",
+          value: auth.text,
+          state: auth.state
+        },
+        {
+          label: "策略来源",
+          value: this.dynamicPolicySourceText,
+          state: this.dynamicPolicySourceClass
+        },
+        {
+          label: "最近采集时间",
+          value: this.formatTime(report.collected_at)
+        }
+      ];
+    },
     dynamicNodeRows() {
       return this.dynamicTargetNodes.map((node) => {
         const policy = this.dynamicMeasurementPolicies.find((item) => {
           const bindings = item.bindings || [];
           return bindings.length === 1 && Number(bindings[0].target_id) === Number(node.id);
         });
-        const keylimeNode =
-          this.keylimeNodesByHost.get(node.hostname) ||
-          this.keylimeNodesByUuid.get(node.keylime_agent_uuid) ||
-          {};
         return {
           id: node.id,
           hostname: node.hostname,
           ip: node.management_ip || node.keylime_agent_ip || "-",
           selected: Number(node.id) === this.selectedDynamicNodeId,
-          trustText: this.trustText(keylimeNode.trusted),
-          trustClass: keylimeNode.trusted === true ? "ok" : keylimeNode.trusted === false ? "bad" : "warn",
+          sourceText: policy ? this.dynamicNodePolicySourceText(policy) : "未配置",
+          sourceClass: policy ? this.deploymentClass(this.bindingState(policy)) : "warn",
           stateText: policy ? this.bindingStateText(policy) : "未配置",
           stateClass: policy ? this.deploymentClass(this.bindingState(policy)) : "warn",
           effectiveAt: policy ? this.policyEffectiveVersion(policy) : "-"
@@ -343,14 +417,29 @@ createApp({
     dynamicObjectRows() {
       const policy = this.dynamicMeasurementPolicy;
       const bindingState = policy ? this.bindingState(policy) : "not_deployed";
+      const currentObjects = this.dynamicCurrentObjects;
       return DYNAMIC_MEASUREMENT_OBJECTS.map((item) => {
         const config = this.dynamicForm.objects[item.key] || { enabled: false, intervalMilli: 60000 };
+        const current = currentObjects.get(item.key);
+        const targetEnabled = config.enabled === true;
+        const targetInterval = Number(config.intervalMilli || 60000);
+        const state = this.dynamicObjectApplyState({
+          current,
+          targetEnabled,
+          targetInterval,
+          bindingState
+        });
         return {
           ...item,
           enabled: config.enabled,
           intervalMilli: config.intervalMilli,
-          stateText: config.enabled ? this.dynamicObjectStateText(bindingState) : "未启用",
-          stateClass: config.enabled ? this.deploymentClass(bindingState) : "warn",
+          currentText: current ? "已开启" : "未开启",
+          currentClass: current ? "ok" : "warn",
+          currentIntervalText: current ? `${current.interval_milli ?? "-"} ms` : "-",
+          targetText: targetEnabled ? "开启" : "关闭",
+          targetClass: targetEnabled ? "ok" : "warn",
+          stateText: state.text,
+          stateClass: state.state,
           effectiveAt: policy ? this.policyEffectiveVersion(policy) : "-"
         };
       });
@@ -588,6 +677,25 @@ createApp({
     markDynamicFormDirty() {
       this.dynamicFormDirty = true;
     },
+    dynamicNodePolicySourceText(policy) {
+      if (!policy) return "未配置";
+      const state = this.bindingState(policy);
+      return state === "applied" ? "节点策略" : "节点策略（未生效）";
+    },
+    dynamicObjectApplyState({ current, targetEnabled, targetInterval, bindingState }) {
+      if (this.dynamicFormDirty) return { text: "待保存", state: "warn" };
+      if (!targetEnabled) {
+        if (!current) return { text: "一致", state: "ok" };
+        if (bindingState === "failed") return { text: "生效失败", state: "bad" };
+        return { text: "待生效", state: "warn" };
+      }
+      if (current && Number(current.interval_milli || 0) === Number(targetInterval)) {
+        return { text: "一致", state: "ok" };
+      }
+      if (bindingState === "failed") return { text: "生效失败", state: "bad" };
+      if (bindingState === "queued" || bindingState === "applying") return { text: "生效中", state: "warn" };
+      return { text: "待生效", state: "warn" };
+    },
     dynamicObjectStateText(state) {
       if (state === "applied") return "已生效";
       if (state === "queued" || state === "applying") return "生效中";
@@ -617,6 +725,11 @@ createApp({
         return;
       }
       await this.refreshNodeStatus();
+    },
+    async refreshSelectedDynamicNode() {
+      const row = this.selectedDynamicComputeRow;
+      if (!row) return this.showNotice("bad", "请先选择节点。");
+      await this.collectOpenTcsmStatus(row);
     },
     async collectOpenTcsmStatus(row) {
       const host = encodeURIComponent(row?.host || row?.rawNode?.hostname || "");
