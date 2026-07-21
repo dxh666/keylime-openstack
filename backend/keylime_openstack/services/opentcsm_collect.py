@@ -16,6 +16,7 @@ from keylime_openstack.constants import TRUST_AGENT_OPENTCSM_TPCM
 from keylime_openstack.models import AuditEvent, ComputeNode
 from keylime_openstack.services.ansible import AnsibleExecutor, AnsibleResult
 from keylime_openstack.services.opentcsm import opentcsm_report_to_evidence
+from keylime_openstack.services.opentcsm_policy import parse_dmeasure_policy
 from keylime_openstack.services.trust_agents import node_trust_agent_type
 
 
@@ -114,6 +115,7 @@ def normalize_opentcsm_collection(node: ComputeNode, collected: dict[str, Any]) 
     trust_status = _stdout(commands, "trust_status")
     trust_report = _stdout(commands, "trust_report")
     global_policy = _stdout(commands, "global_control_policy")
+    dmeasure_policy_text = _stdout(commands, "dmeasure_policy")
     boot_records_text = _stdout(commands, "boot_measure_records")
     tpcm_info = _stdout(commands, "tpcm_info")
     tpcm_id_text = _stdout(commands, "tpcm_id")
@@ -156,6 +158,10 @@ def normalize_opentcsm_collection(node: ComputeNode, collected: dict[str, Any]) 
         "trust_report_sha256": _sha256(trust_report),
         "policy_report_sha256": _sha256(_stdout(commands, "policy_report")),
         "global_control_policy_sha256": _sha256(global_policy),
+        "dmeasure_policy": parse_dmeasure_policy(dmeasure_policy_text),
+        "dmeasure_policy_sha256": _sha256(dmeasure_policy_text),
+        "dmeasure_process_policy_sha256": _sha256(_stdout(commands, "dmeasure_process_policy")),
+        "admin_cert_list_sha256": _sha256(_stdout(commands, "admin_cert_list")),
         "dmeasure_times": _first_int(tpcm_info, "dmeasure_times"),
         "boot_measure_ref_number": _first_int(tpcm_info, "boot_measure_ref_number"),
         "dynamic_measure_ref_number": _first_int(tpcm_info, "dynamic_measure_ref_number"),

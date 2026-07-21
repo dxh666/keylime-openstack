@@ -33,6 +33,8 @@ TRUST_AGENT_TYPE_MAP=csri8=keylime,csri9=keylime,hygon22=opentcsm_tpcm,hygon23=o
 OPENTCSM_EVIDENCE_FRESH_SECONDS=300
 OPENTCSM_ACTIVE_COLLECT_ENABLED=true
 OPENTCSM_COLLECT_INTERVAL_SECONDS=60
+OPENTCSM_KEY_DIR=/etc/keylime-openstack/opentcsm/keys
+OPENTCSM_DEFAULT_DYNAMIC_AUTH_REF=dmeasure-uid
 ```
 
 OpenTCSM/TPCM nodes must not be added to the Keylime verifier inventory:
@@ -118,25 +120,60 @@ the OpenTCSM evidence collector described below.
 
 ## TPCM Dynamic Measurement Policy
 
-The management plane now supports a first productized `tpcm_dynamic_measurement`
-policy type for OpenTCSM/TPCM nodes. This policy type is intentionally scoped to
+The management plane supports a productized `tpcm_dynamic_measurement` policy
+type for OpenTCSM/TPCM nodes. This policy type is intentionally scoped to
 OpenTCSM nodes and is not offered for Keylime-agent nodes.
 
-The first implementation is a verify-and-bind workflow:
+Policy deployment is a write-and-verify workflow:
 
-1. The worker actively collects the current OpenTCSM trust report from the node.
-2. The policy checks whether TPCM dynamic measurement is enabled.
-3. The policy checks whether the trust report has zero failure counters when
-   `require_clean_trust_report=true`.
-4. The policy checks whether the observed dynamic baseline count is greater
-   than or equal to `minimum_dynamic_baselines`.
-5. If the checks pass, the binding is marked `applied` and stores the observed
-   trust report hash, global control policy hash, dynamic baseline count, and
-   generated policy hash.
+1. The backend loads an OpenTCSM authorization material file from
+   `OPENTCSM_KEY_DIR`.
+2. The worker runs `global_control_policy` to set the dynamic measurement
+   switch according to the policy.
+3. The worker runs `update_dmeasure_policy` for the selected environment
+   measurement objects: `kernel_section`, `syscall_table`, and `idt_table`.
+4. The worker collects the OpenTCSM trust report and `get_dmeasure_policy`
+   output after the update.
+5. The binding is marked `applied` only when the OpenTCSM commands succeeded,
+   selected objects are present with the configured interval, and the trust
+   report passes the policy's post-deployment checks.
 
-This does not yet write new dynamic measurement reference rules into OpenTCSM.
-That write path needs the exact production-safe OpenTCSM command/API contract
-for the installed OpenTCSM version. Until that adapter is implemented, the
-management plane treats dynamic measurement policy deployment as controlled
-verification of the node's active TPCM state, backed by stored evidence and
-periodic refresh.
+### Authorization Material
+
+Private keys are not stored in PostgreSQL or exposed to the frontend. Each key
+is a root-owned JSON file mounted read-only into the API and worker containers.
+
+Example lab file:
+
+```bash
+install -d -m 0700 /etc/keylime-openstack/opentcsm/keys
+cat >/etc/keylime-openstack/opentcsm/keys/dmeasure-uid.json <<'JSON'
+{
+  "uid": "dmeasure-uid",
+  "auth_type": 1,
+  "private_key": "REPLACE_WITH_DMEASURE_PRIVATE_KEY_HEX",
+  "public_key": "REPLACE_WITH_DMEASURE_PUBLIC_KEY_HEX"
+}
+JSON
+chown root:root /etc/keylime-openstack/opentcsm/keys/dmeasure-uid.json
+chmod 0600 /etc/keylime-openstack/opentcsm/keys/dmeasure-uid.json
+```
+
+The corresponding `uid` must already be registered and authorized in OpenTCSM.
+For a lab, the OpenTCSM `tcs-test.sh` script demonstrates the root certificate
+and dynamic-measurement role grant flow. In production, generate and protect a
+dedicated dynamic-measurement management certificate instead of using lab keys.
+
+### Managed Fields
+
+The first managed dynamic-measurement scope covers environment measurement:
+
+- dynamic measurement switch, through global policy `dynamic_measure_on`
+- selected objects: `kernel_section`, `syscall_table`, `idt_table`
+- object interval in milliseconds
+- optional deletion of unmanaged environment objects
+
+Process dynamic measurement is exposed by OpenTCSM
+`get_dmeasure_process_policy` / `update_dmeasure_process_policy`, but it is not
+enabled in the UI until the process object-number model is mapped into product
+terms.

@@ -20,6 +20,7 @@ from keylime_openstack.constants import (
     SUPPORTED_POLICY_TYPES,
 )
 from keylime_openstack.models import ComputeNode, PolicyBinding, TrustPolicy
+from keylime_openstack.services.opentcsm_policy import normalize_dmeasure_objects
 from keylime_openstack.schemas import PolicyBindingOut, TrustPolicyIn, TrustPolicyOut
 
 
@@ -236,18 +237,35 @@ def _validate_ima_runtime(content: dict[str, Any]) -> dict[str, Any]:
 
 
 def _validate_tpcm_dynamic_measurement(content: dict[str, Any]) -> dict[str, Any]:
+    try:
+        environment_objects = normalize_dmeasure_objects(content.get("environment_objects"))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    environment_interval_milli = _bounded_int(
+        content.get("environment_interval_milli", content.get("interval_milli", 60000)),
+        "动态度量周期",
+        minimum=1000,
+        maximum=86_400_000,
+    )
     minimum_dynamic_baselines = _non_negative_int(
         content.get("minimum_dynamic_baselines", 0),
         "动态基线最小数量",
     )
+    auth_material_ref = str(content.get("auth_material_ref") or "dmeasure-uid").strip()
+    if not auth_material_ref:
+        raise HTTPException(status_code=422, detail="OpenTCSM 授权材料不能为空")
     return {
         **content,
         "trust_agent_type": "opentcsm_tpcm",
         "policy_scope": "tpcm_dynamic_measurement",
         "dynamic_measure_required": bool(content.get("dynamic_measure_required", True)),
         "require_clean_trust_report": bool(content.get("require_clean_trust_report", True)),
+        "environment_objects": environment_objects,
+        "environment_interval_milli": environment_interval_milli,
+        "delete_unmanaged_objects": bool(content.get("delete_unmanaged_objects", False)),
         "minimum_dynamic_baselines": minimum_dynamic_baselines,
-        "baseline_generation": "active_opentcsm_collect",
+        "auth_material_ref": auth_material_ref,
+        "baseline_generation": "opentcsm_policy_apply_and_collect",
         "keylime_artifact": "opentcsm_dynamic_measurement_policy",
     }
 
@@ -259,6 +277,16 @@ def _non_negative_int(value: Any, label: str) -> int:
         raise HTTPException(status_code=422, detail=f"{label}必须是整数") from exc
     if normalized < 0:
         raise HTTPException(status_code=422, detail=f"{label}不能小于 0")
+    return normalized
+
+
+def _bounded_int(value: Any, label: str, *, minimum: int, maximum: int) -> int:
+    try:
+        normalized = int(value)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"{label}必须是整数") from exc
+    if normalized < minimum or normalized > maximum:
+        raise HTTPException(status_code=422, detail=f"{label}必须在 {minimum} 到 {maximum} 之间")
     return normalized
 
 

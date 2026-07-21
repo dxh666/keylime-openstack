@@ -22,6 +22,7 @@
             + env.get("PATH", "")
         )
         env["LD_LIBRARY_PATH"] = (
+            "/usr/local/opentcsm/lib:"
             "/usr/local/opentcsm/tcsm/user:"
             "/usr/local/opentcsm/tsb:"
             + env.get("LD_LIBRARY_PATH", "")
@@ -36,6 +37,9 @@
             "policy_report": "get_policy_report",
             "boot_measure_records": "get_bmeasure_records",
             "global_control_policy": "get_global_control_policy",
+            "dmeasure_policy": "get_dmeasure_policy",
+            "dmeasure_process_policy": "get_dmeasure_process_policy",
+            "admin_cert_list": "get_admin_cert_list",
             "tsb_log_tail": "tail -120 /usr/local/opentcsm/log/tsb.log",
         }
 

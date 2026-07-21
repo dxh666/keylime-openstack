@@ -32,6 +32,10 @@ from keylime_openstack.models import AuditEvent, ComputeNode, PolicyBinding, Tru
 from keylime_openstack.services.ansible import AnsibleExecutor
 from keylime_openstack.services.keylime import KeylimeClient
 from keylime_openstack.services.opentcsm_collect import OpenTcsmCollector
+from keylime_openstack.services.opentcsm_policy import (
+    OPEN_TCSM_DMEASURE_OBJECTS,
+    load_opentcsm_auth_material,
+)
 from keylime_openstack.services.policy import canonical_policy_type, load_policy
 from keylime_openstack.services.trust_agents import (
     node_trust_agent_name,
@@ -370,6 +374,41 @@ class PolicyDeploymentService:
         binding: PolicyBinding,
         node: ComputeNode,
     ) -> dict[str, Any]:
+        auth = load_opentcsm_auth_material(
+            self.settings,
+            str(policy.content.get("auth_material_ref") or ""),
+        )
+        with self._workspace() as workspace:
+            apply_result_path = workspace / "opentcsm-dynamic-apply.json"
+            environment_objects = list(
+                policy.content.get("environment_objects") or OPEN_TCSM_DMEASURE_OBJECTS
+            )
+            dynamic_policy = {
+                "dynamic_measure_required": bool(policy.content.get("dynamic_measure_required", True)),
+                "environment_objects": environment_objects,
+                "environment_interval_milli": int(
+                    policy.content.get("environment_interval_milli") or 60000
+                ),
+                "delete_unmanaged_objects": bool(policy.content.get("delete_unmanaged_objects", False)),
+            }
+            apply_result = self.ansible.run(
+                playbook="apply-opentcsm-dynamic-policy.yml",
+                node=node,
+                workspace=workspace,
+                extra_vars={
+                    "result_output_path": str(apply_result_path),
+                    "opentcsm_dynamic_policy": dynamic_policy,
+                    "opentcsm_dynamic_auth": auth.playbook_vars(),
+                },
+            )
+            self._require_ansible_success(apply_result.rc, apply_result.stdout, apply_result.stderr)
+            if not apply_result_path.is_file():
+                raise RuntimeError("OpenTCSM dynamic policy apply result was not produced")
+            try:
+                opentcsm_apply = json.loads(apply_result_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as exc:
+                raise RuntimeError("OpenTCSM dynamic policy apply result is not valid JSON") from exc
+
         result = OpenTcsmCollector(self.session, self.settings).collect(node)
         raw = result.get("raw") if isinstance(result.get("raw"), dict) else {}
         failures = dict(raw.get("trust_report_failures") or {})
@@ -377,6 +416,18 @@ class PolicyDeploymentService:
         dynamic_baselines = _safe_int(raw.get("dynamic_measure_ref_number"))
         dynamic_required = bool(policy.content.get("dynamic_measure_required", True))
         require_clean_report = bool(policy.content.get("require_clean_trust_report", True))
+        desired_objects = [str(item) for item in environment_objects]
+        desired_interval = int(policy.content.get("environment_interval_milli") or 60000)
+        observed_dmeasure_policy = [
+            item
+            for item in (raw.get("dmeasure_policy") or [])
+            if isinstance(item, dict)
+        ]
+        observed_by_object = {
+            str(item.get("object")): item
+            for item in observed_dmeasure_policy
+            if item.get("object")
+        }
         dynamic_on = raw.get("dynamic_measure_on") is True
         dynamic_status = result.get("dynamic_measurement_status")
         violations: list[str] = []
@@ -390,6 +441,16 @@ class PolicyDeploymentService:
             violations.append(
                 f"TPCM 动态基线数量不足：当前 {dynamic_baselines}，要求 {minimum_dynamic_baselines}"
             )
+        for object_name in desired_objects:
+            observed = observed_by_object.get(object_name)
+            if not observed:
+                violations.append(f"TPCM 动态度量对象未生效：{object_name}")
+                continue
+            if _safe_int(observed.get("interval_milli")) != desired_interval:
+                violations.append(
+                    f"TPCM 动态度量周期不一致：{object_name} 当前 "
+                    f"{observed.get('interval_milli')}ms，要求 {desired_interval}ms"
+                )
         if violations:
             raise RuntimeError("OpenTCSM 动态度量策略校验未通过：" + "；".join(violations))
 
@@ -397,6 +458,9 @@ class PolicyDeploymentService:
             "policy": {
                 "dynamic_measure_required": dynamic_required,
                 "require_clean_trust_report": require_clean_report,
+                "environment_objects": desired_objects,
+                "environment_interval_milli": desired_interval,
+                "delete_unmanaged_objects": bool(policy.content.get("delete_unmanaged_objects", False)),
                 "minimum_dynamic_baselines": minimum_dynamic_baselines,
             },
             "observed": {
@@ -405,13 +469,22 @@ class PolicyDeploymentService:
                 "trusted": result.get("trusted"),
                 "dynamic_measure_on": dynamic_on,
                 "dynamic_measurement_status": dynamic_status,
+                "dmeasure_policy": observed_dmeasure_policy,
                 "dynamic_measure_ref_number": dynamic_baselines,
                 "dmeasure_times": raw.get("dmeasure_times"),
                 "trust_report_sha256": raw.get("trust_report_sha256", ""),
                 "policy_report_sha256": raw.get("policy_report_sha256", ""),
                 "global_control_policy_sha256": raw.get("global_control_policy_sha256", ""),
+                "dmeasure_policy_sha256": raw.get("dmeasure_policy_sha256", ""),
                 "trust_report_failures": failures,
             },
+            "apply_result": {
+                "applied_at": opentcsm_apply.get("applied_at"),
+                "observed_before": opentcsm_apply.get("observed_before", []),
+                "observed_after": opentcsm_apply.get("observed_after", []),
+                "ok": opentcsm_apply.get("ok"),
+            },
+            "auth": auth.metadata(),
         }
         external_name = _external_name("tpcm-dyn", policy.name, node.hostname, rendered_policy)
         self._applied(
@@ -425,10 +498,14 @@ class PolicyDeploymentService:
                 "evidence_sha256": raw.get("trust_report_sha256", ""),
                 "rendered_policy_sha256": _content_hash(rendered_policy),
                 "generated_at": datetime.now(timezone.utc).isoformat(),
-                "deployed_by": "opentcsm-collector",
+                "deployed_by": "opentcsm-policy-executor",
                 "trust_agent_type": TRUST_AGENT_OPENTCSM_TPCM,
                 "trusted_root": node_trusted_root(node, self.settings),
+                "auth_material_ref": auth.ref,
+                "auth_uid": auth.uid,
+                "auth_public_key_sha256": auth.public_fingerprint,
                 "dynamic_measure_on": dynamic_on,
+                "dmeasure_policy_sha256": raw.get("dmeasure_policy_sha256", ""),
                 "dynamic_measure_ref_number": dynamic_baselines,
                 "trust_report_clean": not failures,
             },
@@ -438,8 +515,11 @@ class PolicyDeploymentService:
             "keylime_artifact": "opentcsm_dynamic_measurement_policy",
             "dynamic_measure_on": dynamic_on,
             "dynamic_measurement_status": dynamic_status,
+            "environment_objects": desired_objects,
+            "environment_interval_milli": desired_interval,
             "dynamic_measure_ref_number": dynamic_baselines,
             "trust_report_sha256": raw.get("trust_report_sha256", ""),
+            "dmeasure_policy_sha256": raw.get("dmeasure_policy_sha256", ""),
             "policy_sha256": _content_hash(rendered_policy),
         }
 

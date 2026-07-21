@@ -276,7 +276,7 @@
               <span>{{ policyEffectiveVersion(policy) }}</span>
               <span class="row-actions">
                 <button type="button" @click="viewPolicy(policy)">查看</button>
-                <button type="button" @click="deployPolicy(policy)">更新基线</button>
+                <button type="button" @click="deployPolicy(policy)">{{ deployActionText(policy) }}</button>
                 <button class="danger" type="button" @click="deletePolicy(policy)">删除</button>
               </span>
             </div>
@@ -436,15 +436,34 @@
             <template v-if="activePolicyType === 'tpcm_dynamic_measurement'">
               <label class="wide toggle-line">
                 <input v-model="createForm.dynamicMeasureRequired" type="checkbox">
-                <span>要求 TPCM 动态度量已开启</span>
+                <span>开启 TPCM 动态度量</span>
+              </label>
+              <fieldset class="wide pcr-selector">
+                <legend>环境动态度量对象</legend>
+                <label class="check-option compact-option">
+                  <input v-model="createForm.dynamicEnvironmentObjects" type="checkbox" value="kernel_section">
+                  <span>内核代码段</span>
+                </label>
+                <label class="check-option compact-option">
+                  <input v-model="createForm.dynamicEnvironmentObjects" type="checkbox" value="syscall_table">
+                  <span>系统调用表</span>
+                </label>
+                <label class="check-option compact-option">
+                  <input v-model="createForm.dynamicEnvironmentObjects" type="checkbox" value="idt_table">
+                  <span>中断描述符表</span>
+                </label>
+              </fieldset>
+              <label>
+                <span>检测周期（毫秒）</span>
+                <input v-model.number="createForm.dynamicIntervalMilli" type="number" min="1000" step="1000">
+              </label>
+              <label class="wide toggle-line">
+                <input v-model="createForm.dynamicDeleteUnmanagedObjects" type="checkbox">
+                <span>删除未选择的环境度量对象</span>
               </label>
               <label class="wide toggle-line">
                 <input v-model="createForm.cleanTrustReportRequired" type="checkbox">
-                <span>要求可信报告无失败项</span>
-              </label>
-              <label>
-                <span>动态基线最小数量</span>
-                <input v-model.number="createForm.minimumDynamicBaselines" type="number" min="0">
+                <span>下发后要求可信报告无失败项</span>
               </label>
             </template>
             <div class="form-actions">
@@ -478,7 +497,7 @@
                 <small>生效时间：{{ formatTime(binding.applied_at) }}</small>
                 <small>证据：{{ bindingEvidenceText(binding) }}</small>
                 <small v-if="binding.last_error" class="error-text">{{ binding.last_error }}</small>
-                <button type="button" class="small" @click="deployPolicy(detailPolicy, binding)">更新此节点基线</button>
+                <button type="button" class="small" @click="deployPolicy(detailPolicy, binding)">{{ deployActionText(detailPolicy, 'node') }}</button>
               </div>
             </div>
           </section>
@@ -500,8 +519,10 @@
             <h3>动态度量规则</h3>
             <div class="detail-grid">
               <div><span>动态度量</span><strong>{{ policyDynamicRequiredText(detailPolicy) }}</strong></div>
+              <div><span>度量对象</span><strong>{{ policyDynamicObjectsText(detailPolicy) }}</strong></div>
+              <div><span>检测周期</span><strong>{{ policyDynamicIntervalText(detailPolicy) }}</strong></div>
+              <div><span>未选择对象</span><strong>{{ policyDynamicDeleteText(detailPolicy) }}</strong></div>
               <div><span>可信报告</span><strong>{{ policyCleanReportText(detailPolicy) }}</strong></div>
-              <div><span>动态基线最小数量</span><strong>{{ policyMinimumDynamicBaselineText(detailPolicy) }}</strong></div>
               <div><span>可信代理对象</span><strong>{{ policyArtifactText(detailPolicy) }}</strong></div>
             </div>
           </section>
@@ -524,7 +545,7 @@
               type="button"
               @click="deployPolicy(detailPolicy)"
             >
-              更新全部节点基线
+              {{ deployActionText(detailPolicy, 'all') }}
             </button>
           </div>
         </section>

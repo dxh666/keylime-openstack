@@ -48,6 +48,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - /tmp/keylime-openstack:/tmp/keylime-openstack:rw
       - /etc/keylime-openstack/ansible:/etc/keylime-openstack/ansible:ro
+      - /etc/keylime-openstack/opentcsm:/etc/keylime-openstack/opentcsm:ro
     networks:
       - trust_plane
 
@@ -71,6 +72,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - /tmp/keylime-openstack:/tmp/keylime-openstack:rw
       - /etc/keylime-openstack/ansible:/etc/keylime-openstack/ansible:ro
+      - /etc/keylime-openstack/opentcsm:/etc/keylime-openstack/opentcsm:ro
     networks:
       - trust_plane
 

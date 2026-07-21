@@ -1,0 +1,180 @@
+---
+- name: Apply OpenTCSM TPCM dynamic measurement policy
+  hosts: keylime_managed
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Apply OpenTCSM dynamic measurement commands
+      ansible.builtin.shell: |
+        python3 - <<'PY'
+        import datetime
+        import json
+        import os
+        import re
+        import socket
+        import subprocess
+        import sys
+
+        auth = json.loads(r'''{{ opentcsm_dynamic_auth | to_json }}''')
+        policy = json.loads(r'''{{ opentcsm_dynamic_policy | to_json }}''')
+
+        env = os.environ.copy()
+        env["LC_ALL"] = "C"
+        env["PATH"] = (
+            "/usr/local/opentcsm/tcsm/user/test/tcs:"
+            "/usr/local/opentcsm/tcsm/user/utils/tcs:"
+            "/usr/local/opentcsm/tcsm/user/test/tcm:"
+            + env.get("PATH", "")
+        )
+        env["LD_LIBRARY_PATH"] = (
+            "/usr/local/opentcsm/lib:"
+            "/usr/local/opentcsm/tcsm/user:"
+            "/usr/local/opentcsm/tsb:"
+            + env.get("LD_LIBRARY_PATH", "")
+        )
+
+        allowed_objects = {"kernel_section", "syscall_table", "idt_table"}
+        uid = str(auth["uid"])
+        signing_key = str(auth["private_key"]) + str(auth["public_key"])
+        auth_type = str(int(auth.get("auth_type") or 1))
+        desired_objects = []
+        for item in policy.get("environment_objects") or []:
+            name = str(item).strip()
+            if name not in allowed_objects:
+                raise SystemExit(f"unsupported dynamic measurement object: {name}")
+            if name not in desired_objects:
+                desired_objects.append(name)
+        if not desired_objects:
+            raise SystemExit("environment_objects cannot be empty")
+        interval = str(int(policy.get("environment_interval_milli") or 60000))
+        dynamic_on = "1" if policy.get("dynamic_measure_required", True) else "0"
+
+        def redact(command):
+            safe = list(command)
+            if "-k" in safe:
+                index = safe.index("-k")
+                if index + 1 < len(safe):
+                    safe[index + 1] = "***"
+            return safe
+
+        def run(name, command):
+            completed = subprocess.run(
+                command,
+                shell=False,
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=120,
+                env=env,
+            )
+            return {
+                "name": name,
+                "command": redact(command),
+                "rc": completed.returncode,
+                "stdout": completed.stdout,
+                "stderr": completed.stderr,
+            }
+
+        def parse_policy(text):
+            rows = {}
+            for match in re.finditer(r"item index:\s*(\d+)", text):
+                index = int(match.group(1))
+                rows.setdefault(index, {"index": index})
+            for match in re.finditer(r"\[(\d+)\]\.be_interval_milli:\s*(0x[0-9A-Fa-f]+|\d+)", text):
+                rows.setdefault(int(match.group(1)), {"index": int(match.group(1))})["interval_milli"] = int(match.group(2), 0)
+            for match in re.finditer(r"\[(\d+)\]\.object:\s*(.+)", text):
+                rows.setdefault(int(match.group(1)), {"index": int(match.group(1))})["object"] = match.group(2).strip()
+            return [item for _, item in sorted(rows.items()) if item.get("object")]
+
+        commands = []
+        before = run("get_dmeasure_policy_before", ["get_dmeasure_policy"])
+        commands.append(before)
+        current = {item["object"]: item for item in parse_policy(before.get("stdout") or "")}
+
+        commands.append(run(
+            "set_dynamic_measure_switch",
+            [
+                "global_control_policy",
+                "-a", auth_type,
+                "-o", "0",
+                "-p", "7",
+                "-v", dynamic_on,
+                "-u", uid,
+                "-k", signing_key,
+            ],
+        ))
+
+        for name in desired_objects:
+            operation = "3" if name in current else "1"
+            commands.append(run(
+                f"update_dmeasure_policy_{name}",
+                [
+                    "update_dmeasure_policy",
+                    "-o", operation,
+                    "-n", name,
+                    "-d", interval,
+                    "-u", uid,
+                    "-k", signing_key,
+                ],
+            ))
+
+        if policy.get("delete_unmanaged_objects"):
+            for name in sorted(set(current) - set(desired_objects)):
+                if name in allowed_objects:
+                    commands.append(run(
+                        f"delete_dmeasure_policy_{name}",
+                        [
+                            "update_dmeasure_policy",
+                            "-o", "2",
+                            "-n", name,
+                            "-d", interval,
+                            "-u", uid,
+                            "-k", signing_key,
+                        ],
+                    ))
+
+        after = run("get_dmeasure_policy_after", ["get_dmeasure_policy"])
+        commands.append(after)
+        global_policy = run("get_global_control_policy_after", ["get_global_control_policy"])
+        commands.append(global_policy)
+
+        failed = [item for item in commands if int(item.get("rc") or 0) != 0]
+        result = {
+            "hostname": socket.gethostname(),
+            "applied_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "auth_ref": auth.get("ref", ""),
+            "auth_uid": uid,
+            "desired": {
+                "dynamic_measure_required": policy.get("dynamic_measure_required", True),
+                "environment_objects": desired_objects,
+                "environment_interval_milli": int(interval),
+                "delete_unmanaged_objects": bool(policy.get("delete_unmanaged_objects")),
+            },
+            "observed_before": parse_policy(before.get("stdout") or ""),
+            "observed_after": parse_policy(after.get("stdout") or ""),
+            "commands": commands,
+            "ok": not failed,
+            "error": "; ".join(f"{item['name']} rc={item['rc']}" for item in failed),
+        }
+        print(json.dumps(result, ensure_ascii=False))
+        if failed:
+            sys.exit(1)
+        PY
+      register: opentcsm_dynamic_apply
+      ignore_errors: true
+      changed_when: opentcsm_dynamic_apply.rc == 0
+
+    - name: Store OpenTCSM dynamic policy result on controller workspace
+      ansible.builtin.copy:
+        content: "{{ opentcsm_dynamic_apply.stdout }}\n"
+        dest: "{{ result_output_path }}"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+
+    - name: Fail when OpenTCSM dynamic policy command failed
+      ansible.builtin.fail:
+        msg: "{{ opentcsm_dynamic_apply.stdout | default(opentcsm_dynamic_apply.stderr, true) }}"
+      when: opentcsm_dynamic_apply.rc != 0

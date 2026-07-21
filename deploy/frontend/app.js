@@ -58,7 +58,9 @@ const emptyPolicyForm = (policyType = "measured_boot") => ({
   rebootAfterApply: false,
   dynamicMeasureRequired: true,
   cleanTrustReportRequired: true,
-  minimumDynamicBaselines: 0,
+  dynamicEnvironmentObjects: ["kernel_section", "syscall_table", "idt_table"],
+  dynamicIntervalMilli: 60000,
+  dynamicDeleteUnmanagedObjects: false,
   policy_type: policyType
 });
 
@@ -127,12 +129,12 @@ createApp({
     policyGenerationTitle() {
       if (this.activePolicyType === "measured_boot") return "自动采集 TPM 启动基线";
       if (this.activePolicyType === "ima_runtime") return "自动采集 IMA 运行基线";
-      return "自动采集 TPCM 可信报告";
+      return "OpenTCSM 策略下发与可信报告验收";
     },
     policyGenerationSummary() {
       if (this.activePolicyType === "measured_boot") return "生成可信启动参考状态";
       if (this.activePolicyType === "ima_runtime") return "生成 IMA 运行时策略";
-      return "校验动态度量状态并绑定策略";
+      return "下发 TPCM 环境动态度量策略";
     },
     currentTimeText() {
       return this.currentTime.toLocaleString("zh-CN", {
@@ -1006,8 +1008,10 @@ createApp({
         content = {
           dynamic_measure_required: this.createForm.dynamicMeasureRequired,
           require_clean_trust_report: this.createForm.cleanTrustReportRequired,
-          minimum_dynamic_baselines: Number(this.createForm.minimumDynamicBaselines || 0),
-          baseline_generation: "active_opentcsm_collect",
+          environment_objects: [...this.createForm.dynamicEnvironmentObjects],
+          environment_interval_milli: Number(this.createForm.dynamicIntervalMilli || 60000),
+          delete_unmanaged_objects: this.createForm.dynamicDeleteUnmanagedObjects,
+          baseline_generation: "opentcsm_policy_apply_and_collect",
           keylime_artifact: "opentcsm_dynamic_measurement_policy"
         };
       } else {
@@ -1062,6 +1066,21 @@ createApp({
     policyMinimumDynamicBaselineText(policy) {
       return `${policy?.content?.minimum_dynamic_baselines ?? 0}`;
     },
+    policyDynamicObjectsText(policy) {
+      const names = {
+        kernel_section: "内核代码段",
+        syscall_table: "系统调用表",
+        idt_table: "中断描述符表"
+      };
+      const objects = policy?.content?.environment_objects || ["kernel_section", "syscall_table", "idt_table"];
+      return objects.length ? objects.map((item) => names[item] || item).join("、") : "-";
+    },
+    policyDynamicIntervalText(policy) {
+      return `${policy?.content?.environment_interval_milli ?? 60000} ms`;
+    },
+    policyDynamicDeleteText(policy) {
+      return policy?.content?.delete_unmanaged_objects ? "删除未选择对象" : "保留未选择对象";
+    },
     bindingNames(policy) {
       return (policy.bindings || []).map((item) => item.target_name).join("、") || "-";
     },
@@ -1115,6 +1134,12 @@ createApp({
     canDeployPolicy(policy) {
       const retryable = new Set(["not_deployed", "failed", "awaiting_reboot"]);
       return (policy.bindings || []).some((binding) => retryable.has(binding.application_status));
+    },
+    deployActionText(policy, scope = "") {
+      if (policy?.policy_type === "tpcm_dynamic_measurement") {
+        return scope === "node" ? "下发此节点策略" : scope === "all" ? "下发全部节点策略" : "下发策略";
+      }
+      return scope === "node" ? "更新此节点基线" : scope === "all" ? "更新全部节点基线" : "更新基线";
     },
     requireToken({ title, message, confirmText, action }) {
       this.tokenDialog = { open: true, title, message, confirmText, token: "", action };
