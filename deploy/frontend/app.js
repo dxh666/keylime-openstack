@@ -303,14 +303,19 @@ createApp({
         return bindings.length === 1 && Number(bindings[0].target_id) === selectedId;
       }) || null;
     },
-    dynamicMeasurementSourcePolicy() {
-      const exact = this.dynamicMeasurementPolicy;
-      if (exact) return exact;
+    dynamicMeasurementAppliedPolicy() {
       const selectedId = this.selectedDynamicNodeId;
       if (!selectedId) return null;
       return this.dynamicMeasurementPolicies.find((policy) =>
-        (policy.bindings || []).some((binding) => Number(binding.target_id) === selectedId)
+        (policy.bindings || []).some((binding) =>
+          Number(binding.target_id) === selectedId &&
+          binding.active !== false &&
+          binding.application_status === "applied"
+        )
       ) || null;
+    },
+    dynamicMeasurementSourcePolicy() {
+      return this.dynamicMeasurementAppliedPolicy;
     },
     dynamicNodeRows() {
       return this.dynamicTargetNodes.map((node) => {
