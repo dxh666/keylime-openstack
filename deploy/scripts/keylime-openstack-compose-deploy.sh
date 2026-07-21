@@ -12,6 +12,8 @@ Default action:
 Environment:
   KEYLIME_OPENSTACK_ENV_FILE   /etc/keylime-openstack/keylime-openstack.env
   KEYLIME_OPENSTACK_API_URL    http://127.0.0.1:8088
+  KEYLIME_OPENSTACK_HEALTH_RETRIES 30
+  KEYLIME_OPENSTACK_HEALTH_INTERVAL_SECONDS 2
 
 The deploy action prepares local directories, creates an env file when missing,
 builds the image, starts PostgreSQL, runs Alembic migrations, bootstraps the
@@ -31,6 +33,8 @@ ENV_FILE="${KEYLIME_OPENSTACK_ENV_FILE:-/etc/keylime-openstack/keylime-openstack
 ENV_TEMPLATE="$REPO_ROOT/deploy/env/keylime-openstack.env.example"
 COMPOSE_FILE="$REPO_ROOT/deploy/compose/keylime-openstack-control-plane.yml"
 API_URL="${KEYLIME_OPENSTACK_API_URL:-http://127.0.0.1:8088}"
+HEALTH_RETRIES="${KEYLIME_OPENSTACK_HEALTH_RETRIES:-30}"
+HEALTH_INTERVAL_SECONDS="${KEYLIME_OPENSTACK_HEALTH_INTERVAL_SECONDS:-2}"
 
 compose() {
   KEYLIME_OPENSTACK_ENV_FILE="$ENV_FILE" \
@@ -227,10 +231,31 @@ up_services() {
 }
 
 health() {
-  curl -fsS "$API_URL/api/health"
+  health_endpoint "/api/health" "API health"
   echo
-  curl -fsS "$API_URL/api/overview"
+  health_endpoint "/api/overview" "API overview"
   echo
+}
+
+health_endpoint() {
+  local path="$1"
+  local label="$2"
+  local attempt
+  local output
+
+  for attempt in $(seq 1 "$HEALTH_RETRIES"); do
+    if output="$(curl -fsS "$API_URL$path" 2>&1)"; then
+      printf '%s\n' "$output"
+      return 0
+    fi
+    if [ "$attempt" -eq "$HEALTH_RETRIES" ]; then
+      echo "ERROR: $label failed after $attempt attempts: $output" >&2
+      compose ps api worker >&2 || true
+      compose logs --tail=80 api worker >&2 || true
+      return 1
+    fi
+    sleep "$HEALTH_INTERVAL_SECONDS"
+  done
 }
 
 case "$ACTION" in
