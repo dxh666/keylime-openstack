@@ -477,7 +477,15 @@ class PolicyDeploymentService:
     def _require_keylime_success(result: dict[str, Any]) -> None:
         if result.get("rc") == 0:
             return
-        raise RuntimeError(str(result.get("stderr") or result.get("stdout") or "Keylime failed"))
+        command = result.get("command")
+        command_text = " ".join(str(item) for item in command) if isinstance(command, list) else ""
+        detail = str(result.get("stderr") or result.get("stdout") or "Keylime failed")
+        parts = [
+            f"Keylime tenant command failed rc={result.get('rc')}",
+            f"command={command_text}" if command_text else "",
+            f"detail={detail}",
+        ]
+        raise RuntimeError("; ".join(part for part in parts if part)[-4000:])
 
     @contextmanager
     def _workspace(self):

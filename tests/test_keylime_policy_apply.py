@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from keylime_openstack.services.keylime import KeylimeClient
+from keylime_openstack.services.policy_deployment import PolicyDeploymentService
 
 
 def _client(tmp_path) -> KeylimeClient:
@@ -60,3 +61,23 @@ def test_missing_verifier_enrollment_falls_back_to_add(tmp_path, monkeypatch) ->
 
     assert result["rc"] == 0
     assert operations == ["update", "add", "reactivate"]
+
+
+def test_keylime_failure_includes_command_context() -> None:
+    result = {
+        "rc": 2,
+        "stdout": "INFO:keylime.config:Reading configuration",
+        "stderr": "",
+        "command": ["docker", "compose", "run", "--rm", "keylime-tenant", "-c", "add"],
+    }
+
+    try:
+        PolicyDeploymentService._require_keylime_success(result)
+    except RuntimeError as exc:
+        message = str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("expected keylime failure")
+
+    assert "rc=2" in message
+    assert "keylime-tenant -c add" in message
+    assert "INFO:keylime.config" in message

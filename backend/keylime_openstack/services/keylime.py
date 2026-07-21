@@ -517,7 +517,12 @@ class KeylimeClient:
 
     def _run_tenant_tool(self, command: list[str]) -> dict[str, Any]:
         if not self.settings.keylime_tenant_tool_enabled:
-            return {"rc": 1, "stdout": "", "stderr": "tenant tool fallback disabled"}
+            return {
+                "rc": 1,
+                "stdout": "",
+                "stderr": "tenant tool fallback disabled",
+                "command": command,
+            }
         if command and command[0] == "docker" and shutil.which("docker") is None:
             return {
                 "rc": 127,
@@ -528,6 +533,7 @@ class KeylimeClient:
                     "/var/run/docker.sock, or disable KEYLIME_TENANT_TOOL_ENABLED "
                     "when tenant-tool policy operations are not required."
                 ),
+                "command": command,
             }
         try:
             completed = subprocess.run(
@@ -539,13 +545,19 @@ class KeylimeClient:
                 timeout=240,
             )
         except FileNotFoundError as exc:
-            return {"rc": 127, "stdout": "", "stderr": _exception_summary(exc)}
+            return {"rc": 127, "stdout": "", "stderr": _exception_summary(exc), "command": command}
         except subprocess.TimeoutExpired as exc:
-            return {"rc": 124, "stdout": exc.stdout or "", "stderr": _exception_summary(exc)}
+            return {
+                "rc": 124,
+                "stdout": exc.stdout or "",
+                "stderr": _exception_summary(exc),
+                "command": command,
+            }
         return {
             "rc": completed.returncode,
             "stdout": completed.stdout.strip(),
             "stderr": completed.stderr.strip(),
+            "command": command,
         }
 
 
