@@ -169,21 +169,8 @@ def effective_policies_for_node(session: Session, node: ComputeNode) -> list[Tru
 
 
 def _validate_measured_boot(content: dict[str, Any]) -> dict[str, Any]:
-    pcrs = content.get("pcrs", list(range(8)))
-    if not isinstance(pcrs, list) or not pcrs:
-        raise HTTPException(status_code=422, detail="可信启动 PCR 范围不能为空")
-    try:
-        normalized_pcrs = sorted({int(value) for value in pcrs})
-    except (TypeError, ValueError) as exc:
-        raise HTTPException(
-            status_code=422,
-            detail="可信启动 PCR 编号必须是整数",
-        ) from exc
-    if normalized_pcrs[0] < 0 or normalized_pcrs[-1] > 23:
-        raise HTTPException(
-            status_code=422,
-            detail="可信启动 PCR 编号必须在 0 到 23 之间",
-        )
+    normalized_pcrs = _normalize_pcr_list(content.get("pcrs", list(range(8))))
+    fallback_pcrs = _normalize_pcr_list(content.get("fallback_pcrs", [7]))
     policy_engine = str(content.get("policy_engine") or "").strip()
     if policy_engine == "accept-all":
         raise HTTPException(
@@ -200,10 +187,29 @@ def _validate_measured_boot(content: dict[str, Any]) -> dict[str, Any]:
         **content,
         "policy_engine": policy_engine or "configured",
         "pcrs": normalized_pcrs,
+        "fallback_pcrs": fallback_pcrs,
         "reference_state_mode": "provided" if reference_state else "collect_from_node",
         "event_log_fallback": str(content.get("event_log_fallback") or "pcr_quote"),
         "secure_boot_required": bool(content.get("secure_boot_required", True)),
     }
+
+
+def _normalize_pcr_list(value: Any) -> list[int]:
+    if not isinstance(value, list) or not value:
+        raise HTTPException(status_code=422, detail="可信启动 PCR 范围不能为空")
+    try:
+        normalized = sorted({int(item) for item in value})
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="可信启动 PCR 编号必须是整数",
+        ) from exc
+    if normalized[0] < 0 or normalized[-1] > 23:
+        raise HTTPException(
+            status_code=422,
+            detail="可信启动 PCR 编号必须在 0 到 23 之间",
+        )
+    return normalized
 
 
 def _validate_ima_runtime(content: dict[str, Any]) -> dict[str, Any]:

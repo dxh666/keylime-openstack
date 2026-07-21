@@ -461,6 +461,7 @@
             <h3>可信启动规则</h3>
             <div class="detail-grid">
               <div><span>PCR 范围</span><strong>{{ policyPcrText(detailPolicy) }}</strong></div>
+              <div><span>兼容校验</span><strong>{{ policyFallbackPcrText(detailPolicy) }}</strong></div>
               <div><span>Secure Boot</span><strong>{{ policySecureBootText(detailPolicy) }}</strong></div>
               <div><span>可信代理对象</span><strong>{{ policyArtifactText(detailPolicy) }}</strong></div>
               <div><span>基线生成</span><strong>{{ policyGenerationModeText(detailPolicy) }}</strong></div>

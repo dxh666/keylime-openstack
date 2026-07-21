@@ -230,7 +230,8 @@ class PolicyDeploymentService:
         measured_boot_error: str,
     ) -> dict[str, Any]:
         pcr_output_path = workspace / "tpm-pcr-sha256.txt"
-        selected_pcrs = [int(item) for item in policy.content.get("pcrs") or list(range(8))]
+        measured_boot_pcrs = _measured_boot_pcrs(policy)
+        selected_pcrs = _fallback_pcrs(policy)
         result = self.ansible.run(
             playbook="collect-tpm-pcrs.yml",
             node=node,
@@ -275,6 +276,8 @@ class PolicyDeploymentService:
                 "measured_boot_refstate_error": measured_boot_error[:2000],
                 "pcr_bank": "sha256",
                 "pcrs": sorted(pcr_values),
+                "measured_boot_pcrs": measured_boot_pcrs,
+                "fallback_pcrs": selected_pcrs,
             },
         )
         return {
@@ -282,6 +285,8 @@ class PolicyDeploymentService:
             "keylime_artifact": "tpm_pcr_quote_policy",
             "measured_boot_fallback": "pcr_quote",
             "pcrs": sorted(pcr_values),
+            "measured_boot_pcrs": measured_boot_pcrs,
+            "fallback_pcrs": selected_pcrs,
             "event_log_sha256": event_log_sha256,
             "pcr_policy_sha256": _content_hash(tpm_policy),
         }
@@ -512,6 +517,28 @@ def _event_log_fallback_mode(policy: TrustPolicy) -> str:
     value = str(policy.content.get("event_log_fallback") or "pcr_quote")
     normalized = value.strip().lower().replace("-", "_")
     return "pcr_quote" if normalized in {"pcr_quote", "tpm_pcr", "tpm_pcr_quote"} else "none"
+
+
+def _measured_boot_pcrs(policy: TrustPolicy) -> list[int]:
+    raw = policy.content.get("pcrs") or list(range(8))
+    try:
+        selected = sorted({int(item) for item in raw})
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("invalid measured boot PCR selection") from exc
+    if not selected or selected[0] < 0 or selected[-1] > 23:
+        raise RuntimeError("measured boot PCR selection must be between 0 and 23")
+    return selected
+
+
+def _fallback_pcrs(policy: TrustPolicy) -> list[int]:
+    raw = policy.content.get("fallback_pcrs") or [7]
+    try:
+        selected = sorted({int(item) for item in raw})
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("invalid fallback PCR selection for trusted boot policy") from exc
+    if not selected or selected[0] < 0 or selected[-1] > 23:
+        raise RuntimeError("fallback PCR selection must be between 0 and 23")
+    return selected
 
 
 def _parse_tpm2_pcrread_sha256(output: str, selected_pcrs: list[int]) -> dict[int, str]:

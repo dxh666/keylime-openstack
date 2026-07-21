@@ -1,8 +1,10 @@
 import json
+from types import SimpleNamespace
 
 from keylime_openstack.config import Settings
 from keylime_openstack.services.keylime import KeylimeClient
 from keylime_openstack.services.policy_deployment import (
+    _fallback_pcrs,
     _parse_tpm2_pcrread_sha256,
     _tpm_policy_from_pcrs,
 )
@@ -27,6 +29,18 @@ def test_parse_tpm2_pcrread_sha256_and_render_policy():
         "7": ["b" * 64],
         "mask": "0x81",
     }
+
+
+def test_measured_boot_fallback_defaults_to_pcr7_for_legacy_policies():
+    policy = SimpleNamespace(content={"pcrs": list(range(8))})
+
+    assert _fallback_pcrs(policy) == [7]
+
+
+def test_measured_boot_fallback_uses_explicit_pcr_selection():
+    policy = SimpleNamespace(content={"fallback_pcrs": [7, 0, "7"]})
+
+    assert _fallback_pcrs(policy) == [0, 7]
 
 
 def test_tenant_tool_apply_policy_strips_local_mask_from_tpm_policy():

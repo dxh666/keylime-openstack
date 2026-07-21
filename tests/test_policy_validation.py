@@ -22,6 +22,7 @@ def test_measured_boot_defaults_to_pcr_zero_through_seven() -> None:
     payload, node_ids, deploy_now = validated_policy_payload(policy)
 
     assert payload["content"]["pcrs"] == list(range(8))
+    assert payload["content"]["fallback_pcrs"] == [7]
     assert payload["content"]["reference_state_mode"] == "collect_from_node"
     assert node_ids == [1, 3]
     assert deploy_now is True

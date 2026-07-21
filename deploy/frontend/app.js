@@ -768,6 +768,7 @@ createApp({
       if (this.activePolicyType === "measured_boot") {
         content = {
           pcrs: this.createForm.pcrs.map(Number).sort((a, b) => a - b),
+          fallback_pcrs: [7],
           secure_boot_required: this.createForm.secureBootRequired,
           reference_state_mode: "collect_from_node",
           event_log_fallback: "pcr_quote",
@@ -845,6 +846,10 @@ createApp({
     policyPcrText(policy) {
       const pcrs = policy?.content?.pcrs || [];
       return pcrs.length ? pcrs.map((pcr) => `PCR${pcr}`).join("、") : "PCR0-7";
+    },
+    policyFallbackPcrText(policy) {
+      const pcrs = policy?.content?.fallback_pcrs || [7];
+      return pcrs.length ? pcrs.map((pcr) => `PCR${pcr}`).join("、") : "PCR7";
     },
     policySecureBootText(policy) {
       return policy?.content?.secure_boot_required === false ? "不强制" : "要求启用";
