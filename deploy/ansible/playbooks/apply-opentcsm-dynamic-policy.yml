@@ -92,6 +92,20 @@
                 rows.setdefault(int(match.group(1)), {"index": int(match.group(1))})["object"] = match.group(2).strip()
             return [item for _, item in sorted(rows.items()) if item.get("object")]
 
+        def desired_state_satisfied(observed):
+            by_object = {item.get("object"): item for item in observed if item.get("object")}
+            for name, expected_interval in desired_configs.items():
+                item = by_object.get(name)
+                if not item:
+                    return False
+                if int(item.get("interval_milli") or 0) != expected_interval:
+                    return False
+            if delete_unmanaged_objects:
+                for name in set(by_object) - set(desired_configs):
+                    if name in allowed_objects:
+                        return False
+            return True
+
         commands = []
         before = run("get_dmeasure_policy_before", ["get_dmeasure_policy"])
         commands.append(before)
@@ -139,10 +153,22 @@
 
         after = run("get_dmeasure_policy_after", ["get_dmeasure_policy"])
         commands.append(after)
+        observed_after = parse_policy(after.get("stdout") or "")
         global_policy = run("get_global_control_policy_after", ["get_global_control_policy"])
         commands.append(global_policy)
 
         failed = [item for item in commands if int(item.get("rc") or 0) != 0]
+        effective_failed = failed
+        ignored_failures = []
+        if failed and after.get("rc") == 0 and desired_state_satisfied(observed_after):
+            effective_failed = [
+                item
+                for item in failed
+                if item.get("name") in {"get_dmeasure_policy_before", "get_dmeasure_policy_after"}
+            ]
+            ignored_failures = [
+                item.get("name") for item in failed if item not in effective_failed
+            ]
         result = {
             "hostname": socket.gethostname(),
             "applied_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -161,13 +187,14 @@
                 "delete_unmanaged_objects": delete_unmanaged_objects,
             },
             "observed_before": parse_policy(before.get("stdout") or ""),
-            "observed_after": parse_policy(after.get("stdout") or ""),
+            "observed_after": observed_after,
             "commands": commands,
-            "ok": not failed,
-            "error": "; ".join(f"{item['name']} rc={item['rc']}" for item in failed),
+            "command_failures_ignored": ignored_failures,
+            "ok": not effective_failed,
+            "error": "; ".join(f"{item['name']} rc={item['rc']}" for item in effective_failed),
         }
         print(json.dumps(result, ensure_ascii=False))
-        if failed:
+        if effective_failed:
             sys.exit(1)
         PY
       register: opentcsm_dynamic_apply
