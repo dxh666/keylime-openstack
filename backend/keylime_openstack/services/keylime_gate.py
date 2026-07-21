@@ -15,7 +15,7 @@ from keylime_openstack.constants import (
 )
 from keylime_openstack.config import get_settings
 from keylime_openstack.database import SessionLocal
-from keylime_openstack.models import ComputeNode
+from keylime_openstack.models import ComputeNode, EvidenceRecord
 from keylime_openstack.seed import ensure_default_environment
 from keylime_openstack.services.keylime import KeylimeClient
 from keylime_openstack.services.sync import keylime_status_to_evidence, latest_evidence_for_decision
@@ -310,6 +310,7 @@ def _external_trust_agent_node_check(
         "evidence_fresh": evidence_fresh,
         "evidence_valid_until": evidence_valid_until,
         "trust_report": _external_report_summary(report_record),
+        "trust_report_history": _external_report_history(session, node),
         "trust_capabilities": capabilities,
         "capability_status": capability_status,
         "remediation": _remediation(
@@ -319,6 +320,38 @@ def _external_trust_agent_node_check(
             trust_agent_type=agent_type,
         ),
     }
+
+
+def _external_report_history(
+    session,
+    node: ComputeNode,
+    *,
+    limit: int = 5,
+) -> list[dict[str, object]]:
+    records = session.scalars(
+        select(EvidenceRecord)
+        .where(EvidenceRecord.node_id == node.id)
+        .where(EvidenceRecord.provider == PROVIDER_OPENTCSM)
+        .order_by(EvidenceRecord.collected_at.desc(), EvidenceRecord.id.desc())
+        .limit(limit * 4)
+    ).all()
+    grouped: dict[tuple[str, str], dict[str, object]] = {}
+    for record in records:
+        payload = record.payload or {}
+        raw = payload.get("raw") if isinstance(payload.get("raw"), dict) else {}
+        key = (
+            record.collected_at.isoformat() if record.collected_at else "",
+            str(raw.get("trust_report_sha256") or ""),
+        )
+        if key not in grouped:
+            grouped[key] = _external_report_summary(record)
+        if record.evidence_type == "boot":
+            grouped[key]["boot_status"] = record.status
+        if record.evidence_type == "runtime":
+            grouped[key]["dynamic_measurement_status"] = record.status
+        if record.evidence_type == "evm":
+            grouped[key]["evm_status"] = record.status
+    return list(grouped.values())[:limit]
 
 
 def _external_report_summary(record) -> dict[str, object]:

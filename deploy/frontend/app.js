@@ -555,6 +555,7 @@ createApp({
       ];
       if (this.isOpenTcsmNode(row, node, keylimeNode)) {
         const report = keylimeNode.trust_report || {};
+        const history = keylimeNode.trust_report_history || [];
         sections.push({
           title: "TPCM 可信报告",
           items: [
@@ -578,6 +579,15 @@ createApp({
             { label: "失败项", value: this.failureText(report.trust_report_failures) },
             { label: "采集错误", value: this.listText(report.errors || []) }
           ]
+        });
+        sections.push({
+          title: "TPCM 可信报告历史",
+          items: history.length
+            ? history.map((item, index) => ({
+                label: `${index + 1}. ${this.formatTime(item.collected_at)}`,
+                value: this.tpcmHistoryText(item)
+              }))
+            : [{ label: "历史记录", value: "暂无" }]
         });
       }
       if (remediation.summary) {
@@ -649,6 +659,21 @@ createApp({
       const entries = Object.entries(value || {});
       if (!entries.length) return "无";
       return entries.map(([key, item]) => `${key}: ${item}`).join("\n");
+    },
+    tpcmHistoryText(item) {
+      const parts = [
+        `可信状态：${this.trustResultText(item.trusted)}`,
+        `启动度量：${this.stateText(item.boot_status || item.status)}`,
+        `动态度量：${this.stateText(item.dynamic_measurement_status)}`,
+        `失败计数：${item.failure_count ?? "-"}`,
+        `报告哈希：${this.shortHash(item.trust_report_sha256)}`
+      ];
+      return parts.join("\n");
+    },
+    trustResultText(value) {
+      if (value === true) return "可信";
+      if (value === false) return "不可信";
+      return "未知";
     },
     trustText(value) {
       if (value === true) return "可信";
