@@ -234,6 +234,15 @@
               <span class="row-actions">
                 <button type="button" class="small" @click="openComputeDetail(node)">查看详情</button>
                 <button type="button" class="small" :disabled="busy" @click="refreshComputeNodeStatus(node)">刷新状态</button>
+                <button
+                  v-if="node.trustAgentType === 'opentcsm_tpcm'"
+                  type="button"
+                  class="small"
+                  :disabled="busy"
+                  @click="runOpenTcsmAccessCheck(node)"
+                >
+                  接入检查
+                </button>
               </span>
             </div>
           </div>

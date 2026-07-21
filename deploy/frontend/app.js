@@ -94,6 +94,7 @@ createApp({
       policies: [],
       auditEvents: [],
       tasks: [],
+      opentcsmAccessChecks: {},
       createDialogOpen: false,
       createForm: emptyPolicyForm(),
       detailPolicy: null,
@@ -475,6 +476,27 @@ createApp({
         this.busy = false;
       }
     },
+    async runOpenTcsmAccessCheck(row) {
+      const hostname = row?.host || row?.rawNode?.hostname || "";
+      const host = encodeURIComponent(hostname);
+      if (!host) return this.showNotice("bad", "节点名称不能为空。");
+      this.busy = true;
+      try {
+        const result = await this.requestJson(`/api/nodes/${host}/opentcsm-access-check`, { method: "POST" });
+        this.opentcsmAccessChecks = {
+          ...this.opentcsmAccessChecks,
+          [hostname]: result
+        };
+        await this.refreshAll(false);
+        const freshRow = this.computeRows.find((item) => item.host === hostname) || row;
+        this.openComputeDetail(freshRow);
+        this.showNotice(result.ok ? "ok" : "bad", result.summary || "OpenTCSM 接入检查已完成。");
+      } catch (error) {
+        this.showNotice("bad", error.message);
+      } finally {
+        this.busy = false;
+      }
+    },
     openControllerDetail(node) {
       this.detailNode = {
         title: node.hostname || "控制节点",
@@ -566,6 +588,13 @@ createApp({
             { label: "异常信息", value: this.collectionErrorText(keylimeNode, report) }
           ]
         });
+        const accessCheck = this.opentcsmAccessChecks[row.host || node.hostname];
+        if (accessCheck) {
+          sections.push({
+            title: "OpenTCSM 接入检查",
+            items: this.opentcsmAccessCheckItems(accessCheck)
+          });
+        }
         sections.push({
           title: "TPCM 能力状态",
           items: [
@@ -714,6 +743,34 @@ createApp({
       ];
       return parts.join("\n");
     },
+    opentcsmAccessCheckItems(result) {
+      const items = [
+        {
+          label: "检查结论",
+          value: result?.ok ? "通过" : "未通过",
+          state: result?.ok ? "ok" : "bad"
+        },
+        { label: "检查时间", value: this.formatTime(result?.checked_at_utc) }
+      ];
+      for (const check of result?.checks || []) {
+        const parts = [
+          this.accessStatusText(check.status),
+          check.summary,
+          check.detail
+        ].filter(Boolean);
+        items.push({
+          label: check.name || "检查项",
+          value: parts.join("\n")
+        });
+      }
+      return items;
+    },
+    accessStatusText(value) {
+      const normalized = String(value || "").toLowerCase();
+      if (normalized === "pass") return "通过";
+      if (normalized === "fail") return "失败";
+      return "未知";
+    },
     trustResultText(value) {
       if (value === true) return "可信";
       if (value === false) return "不可信";
@@ -861,7 +918,8 @@ createApp({
         policy_delete: "删除策略",
         policy_deploy_queued: "策略下发已入队",
         host_integrity_evidence_collect: "采集节点完整性证据",
-        opentcsm_evidence_collect: "采集 TPCM 可信报告"
+        opentcsm_evidence_collect: "采集 TPCM 可信报告",
+        opentcsm_access_check: "OpenTCSM 接入检查"
       };
       return names[event.event_type] || event.message || event.event_type || "-";
     },
