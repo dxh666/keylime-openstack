@@ -78,6 +78,8 @@ class Settings(BaseSettings):
 
     trust_agent_type_map: str = ""
     opentcsm_evidence_fresh_seconds: int = 300
+    opentcsm_active_collect_enabled: bool = True
+    opentcsm_collect_interval_seconds: int = 60
 
     dim_provider_enabled: bool = False
 

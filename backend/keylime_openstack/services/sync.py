@@ -9,7 +9,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from keylime_openstack.config import Settings
-from keylime_openstack.constants import TRUST_AGENT_KEYLIME
+from keylime_openstack.constants import (
+    PROVIDER_OPENTCSM,
+    TRUST_AGENT_KEYLIME,
+    TRUST_AGENT_OPENTCSM_TPCM,
+)
 from keylime_openstack.models import (
     AuditEvent,
     ComputeNode,
@@ -21,6 +25,7 @@ from keylime_openstack.seed import ensure_default_environment
 from keylime_openstack.services.decision import evaluate_trust
 from keylime_openstack.services.keylime import KeylimeClient
 from keylime_openstack.services.openstack import OpenStackClient
+from keylime_openstack.services.opentcsm_collect import OpenTcsmCollector
 from keylime_openstack.services.trust_agents import (
     node_trust_agent_name,
     node_trust_agent_type,
@@ -151,9 +156,22 @@ class TrustSyncService:
         }
 
     def collect_external_trust_agent_evidence(self, node: ComputeNode) -> dict[str, object]:
+        agent_type = node_trust_agent_type(node, self.settings)
+        active_collection = None
+        latest_opentcsm = latest_evidence_record(
+            self.session,
+            node,
+            provider=PROVIDER_OPENTCSM,
+        )
+        if (
+            agent_type == TRUST_AGENT_OPENTCSM_TPCM
+            and self.settings.opentcsm_active_collect_enabled
+            and _opentcsm_collection_due(latest_opentcsm, self.settings)
+        ):
+            active_collection = self._collect_opentcsm_evidence(node)
+
         records = latest_evidence_for_decision(self.session, node)
         evidence = {record.evidence_type: record.status for record in records}
-        agent_type = node_trust_agent_type(node, self.settings)
         if not records:
             self.session.add(
                 AuditEvent(
@@ -168,17 +186,83 @@ class TrustSyncService:
                     },
                 )
             )
-            return {
+            result = {
                 "status": "pending",
                 "source": agent_type,
                 "reason": "waiting-for-external-trust-agent-evidence",
                 "evidence": {},
             }
-        return {
+            if active_collection is not None:
+                result["active_collection"] = active_collection
+            return result
+
+        result = {
             "status": "collected",
             "source": agent_type,
             "evidence": evidence,
         }
+        if active_collection is not None:
+            result["active_collection"] = active_collection
+        return result
+
+    def _collect_opentcsm_evidence(self, node: ComputeNode) -> dict[str, object]:
+        try:
+            result = OpenTcsmCollector(self.session, self.settings).collect(node)
+            return {
+                "status": "collected",
+                "source": TRUST_AGENT_OPENTCSM_TPCM,
+                "trusted": result.get("trusted"),
+                "boot_status": result.get("boot_status"),
+                "runtime_status": result.get("dynamic_measurement_status"),
+            }
+        except Exception as exc:  # pragma: no cover - remote execution boundary
+            now = datetime.now(timezone.utc)
+            valid_until = now + timedelta(
+                seconds=max(self.settings.opentcsm_collect_interval_seconds, 5)
+            )
+            error = str(exc)
+            payload = {
+                "trust_agent": TRUST_AGENT_OPENTCSM_TPCM,
+                "trust_root": node_trusted_root(node, self.settings),
+                "agent_name": node_trust_agent_name(node, self.settings),
+                "communication": "error",
+                "error": error,
+            }
+            for evidence_type, label in (
+                ("boot", "TPCM trusted boot"),
+                ("runtime", "TPCM dynamic measurement"),
+            ):
+                self.session.add(
+                    EvidenceRecord(
+                        node_id=node.id,
+                        provider=PROVIDER_OPENTCSM,
+                        evidence_type=evidence_type,
+                        collected_at=now,
+                        valid_until=valid_until,
+                        status="unknown",
+                        summary=f"{label} unknown: {error}",
+                        payload=payload,
+                    )
+                )
+            self.session.add(
+                AuditEvent(
+                    event_type="opentcsm_evidence_collect",
+                    target=node.hostname,
+                    severity="error",
+                    message=error,
+                    event_details={
+                        "provider": "opentcsm",
+                        "source": "ansible",
+                        "communication": "error",
+                    },
+                )
+            )
+            self.session.flush()
+            return {
+                "status": "error",
+                "source": TRUST_AGENT_OPENTCSM_TPCM,
+                "reason": error,
+            }
 
     def collect_keylime_evidence(self, node: ComputeNode) -> dict[str, object]:
         if not node.keylime_agent_uuid:
@@ -241,6 +325,31 @@ def latest_evidence_for_decision(session: Session, node: ComputeNode) -> list[Ev
         if record:
             records.append(record)
     return records
+
+
+def latest_evidence_record(
+    session: Session,
+    node: ComputeNode,
+    *,
+    provider: str,
+) -> EvidenceRecord | None:
+    return session.scalars(
+        select(EvidenceRecord)
+        .where(EvidenceRecord.node_id == node.id)
+        .where(EvidenceRecord.provider == provider)
+        .order_by(EvidenceRecord.collected_at.desc(), EvidenceRecord.id.desc())
+        .limit(1)
+    ).first()
+
+
+def _opentcsm_collection_due(record: EvidenceRecord | None, settings: Settings) -> bool:
+    if not record:
+        return True
+    collected_at = record.collected_at
+    if collected_at.tzinfo is None:
+        collected_at = collected_at.replace(tzinfo=timezone.utc)
+    interval = max(settings.opentcsm_collect_interval_seconds, 5)
+    return collected_at + timedelta(seconds=interval) <= datetime.now(timezone.utc)
 
 
 def _json_safe(value: Any) -> Any:

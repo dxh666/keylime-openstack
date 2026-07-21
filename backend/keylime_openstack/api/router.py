@@ -517,7 +517,7 @@ def ingest_opentcsm_evidence(
     }
 
 
-@router.post("/nodes/{hostname}/opentcsm-collect", dependencies=[Depends(require_admin)])
+@router.post("/nodes/{hostname}/opentcsm-collect")
 def collect_opentcsm_evidence(
     hostname: str,
     session: Session = Depends(db_session),

@@ -31,6 +31,8 @@ Set the node trust-agent map in `/etc/keylime-openstack/keylime-openstack.env`:
 DEFAULT_COMPUTE_HOSTS=csri8,csri9,hygon22,hygon23
 TRUST_AGENT_TYPE_MAP=csri8=keylime,csri9=keylime,hygon22=opentcsm_tpcm,hygon23=opentcsm_tpcm
 OPENTCSM_EVIDENCE_FRESH_SECONDS=300
+OPENTCSM_ACTIVE_COLLECT_ENABLED=true
+OPENTCSM_COLLECT_INTERVAL_SECONDS=60
 ```
 
 OpenTCSM/TPCM nodes must not be added to the Keylime verifier inventory:
@@ -94,6 +96,17 @@ This runs the OpenTCSM utilities on the node, captures the trust report,
 global control policy, boot measurement records, TPCM ID, and TSB log tail, and
 stores normalized `boot` and `runtime` evidence records in the management
 database.
+
+The API also exposes an operator refresh endpoint:
+
+```text
+POST /api/nodes/{hostname}/opentcsm-collect
+```
+
+This endpoint actively collects the current OpenTCSM trusted report and does
+not require an admin token because it is treated as a status refresh operation.
+The worker performs the same active collection periodically for
+`opentcsm_tpcm` nodes when `OPENTCSM_ACTIVE_COLLECT_ENABLED=true`.
 
 ## Policy Deployment Boundary
 

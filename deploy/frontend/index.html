@@ -233,7 +233,7 @@
               <span>{{ node.attestationTime }}</span>
               <span class="row-actions">
                 <button type="button" class="small" @click="openComputeDetail(node)">查看详情</button>
-                <button type="button" class="small" :disabled="busy" @click="refreshNodeStatus">刷新状态</button>
+                <button type="button" class="small" :disabled="busy" @click="refreshComputeNodeStatus(node)">刷新状态</button>
               </span>
             </div>
           </div>

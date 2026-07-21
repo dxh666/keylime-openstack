@@ -172,6 +172,16 @@ prepare() {
     set_env_value OPENTCSM_EVIDENCE_FRESH_SECONDS "300"
   fi
 
+  current_opentcsm_active_collect="$(get_env_value OPENTCSM_ACTIVE_COLLECT_ENABLED)"
+  if [ -z "$current_opentcsm_active_collect" ]; then
+    set_env_value OPENTCSM_ACTIVE_COLLECT_ENABLED "true"
+  fi
+
+  current_opentcsm_collect_interval="$(get_env_value OPENTCSM_COLLECT_INTERVAL_SECONDS)"
+  if [ -z "$current_opentcsm_collect_interval" ]; then
+    set_env_value OPENTCSM_COLLECT_INTERVAL_SECONDS "60"
+  fi
+
   current_ansible_user="$(get_env_value ANSIBLE_REMOTE_USER)"
   if [ -z "$current_ansible_user" ]; then
     set_env_value ANSIBLE_REMOTE_USER "root"

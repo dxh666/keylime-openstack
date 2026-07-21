@@ -454,6 +454,27 @@ createApp({
       await this.refreshAll(true);
       if (!this.apiError) this.showNotice("ok", "节点状态已刷新。");
     },
+    async refreshComputeNodeStatus(row) {
+      if (row?.trustAgentType === "opentcsm_tpcm") {
+        await this.collectOpenTcsmStatus(row);
+        return;
+      }
+      await this.refreshNodeStatus();
+    },
+    async collectOpenTcsmStatus(row) {
+      const host = encodeURIComponent(row?.host || row?.rawNode?.hostname || "");
+      if (!host) return this.showNotice("bad", "节点名称不能为空。");
+      this.busy = true;
+      try {
+        await this.requestJson(`/api/nodes/${host}/opentcsm-collect`, { method: "POST" });
+        await this.refreshAll(false);
+        this.showNotice("ok", "可信状态已刷新。");
+      } catch (error) {
+        this.showNotice("bad", error.message);
+      } finally {
+        this.busy = false;
+      }
+    },
     openControllerDetail(node) {
       this.detailNode = {
         title: node.hostname || "控制节点",
@@ -712,14 +733,16 @@ createApp({
         policy_update: "更新策略",
         policy_delete: "删除策略",
         policy_deploy_queued: "策略下发已入队",
-        host_integrity_evidence_collect: "采集节点完整性证据"
+        host_integrity_evidence_collect: "采集节点完整性证据",
+        opentcsm_evidence_collect: "采集 TPCM 可信报告"
       };
       return names[event.event_type] || event.message || event.event_type || "-";
     },
     taskTypeText(value) {
       const names = {
         sync: "可信状态同步",
-        policy_deploy: "策略下发"
+        policy_deploy: "策略下发",
+        opentcsm_collect: "采集 TPCM 可信报告"
       };
       return names[value] || value || "任务";
     },

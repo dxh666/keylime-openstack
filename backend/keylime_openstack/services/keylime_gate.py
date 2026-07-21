@@ -277,6 +277,7 @@ def _external_trust_agent_node_check(
         else _external_agent_reason(evidence, evidence_fresh, capabilities, agent_type)
     )
     latest_record = max(records, key=lambda item: item.collected_at, default=None)
+    latest_record_epoch = _external_record_epoch(latest_record)
     return {
         "host": node.hostname,
         "agent_uuid": "",
@@ -292,8 +293,8 @@ def _external_trust_agent_node_check(
         "operational_state": "external",
         "last_event_id": None if trusted else reason,
         "has_runtime_policy": bool(records),
-        "last_received_quote": None,
-        "last_successful_attestation": None,
+        "last_received_quote": latest_record_epoch,
+        "last_successful_attestation": latest_record_epoch if trusted else None,
         "attestation_age_seconds": _external_evidence_age_seconds(latest_record),
         "tpm_policy": {},
         "evidence": evidence,
@@ -360,6 +361,15 @@ def _external_evidence_age_seconds(record) -> int | None:
     if not record:
         return None
     return max(0, int((datetime.now(timezone.utc) - record.collected_at).total_seconds()))
+
+
+def _external_record_epoch(record) -> int | None:
+    if not record:
+        return None
+    collected_at = record.collected_at
+    if collected_at.tzinfo is None:
+        collected_at = collected_at.replace(tzinfo=timezone.utc)
+    return int(collected_at.timestamp())
 
 
 def _keylime_only_reason(
@@ -441,16 +451,18 @@ def _remediation(
         if "stale" in event:
             return {
                 "category": "opentcsm-tpcm",
-                "summary": "OpenTCSM/TPCM evidence is no longer fresh.",
+                "summary": "OpenTCSM/TPCM 可信报告已过期。",
                 "next_commands": [
-                    f"POST /api/nodes/{host}/opentcsm-evidence with a fresh TPCM report",
+                    f"进入节点管理页面，刷新 {host} 的可信状态。",
+                    f"cd /opt/keylime-openstack && bash deploy/scripts/opentcsm-evidence-collect.sh {host}",
                 ],
             }
         return {
             "category": "opentcsm-tpcm",
-            "summary": "Waiting for OpenTCSM/Hygon TPCM evidence for this node.",
+            "summary": "等待 OpenTCSM/Hygon TPCM 可信报告。",
             "next_commands": [
-                f"POST /api/nodes/{host}/opentcsm-evidence with boot and dynamic measurement status",
+                f"进入节点管理页面，刷新 {host} 的可信状态。",
+                f"cd /opt/keylime-openstack && bash deploy/scripts/opentcsm-evidence-collect.sh {host}",
             ],
         }
 
