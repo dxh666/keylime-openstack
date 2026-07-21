@@ -45,7 +45,6 @@
                 completed = subprocess.run(
                     command,
                     shell=True,
-                    executable="/bin/bash",
                     check=False,
                     capture_output=True,
                     text=True,
@@ -77,8 +76,6 @@
             "commands": results,
         }, ensure_ascii=False))
         PY
-      args:
-        executable: /bin/bash
       changed_when: false
       register: opentcsm_collect
 
