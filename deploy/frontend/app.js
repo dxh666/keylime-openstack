@@ -2,7 +2,8 @@ const { createApp } = Vue;
 
 const POLICY_TYPES = [
   { key: "measured_boot", label: "可信启动", creatable: true },
-  { key: "ima_runtime", label: "IMA 运行时策略", creatable: true }
+  { key: "ima_runtime", label: "IMA 运行时策略", creatable: true },
+  { key: "tpcm_dynamic_measurement", label: "动态度量策略", creatable: true }
 ];
 
 const DEFAULT_IMA_POLICY = `dont_measure fsmagic=0x9fa0
@@ -55,6 +56,9 @@ const emptyPolicyForm = (policyType = "measured_boot") => ({
   nodeImaPolicy: DEFAULT_IMA_POLICY,
   excludesText: DEFAULT_IMA_EXCLUDES,
   rebootAfterApply: false,
+  dynamicMeasureRequired: true,
+  cleanTrustReportRequired: true,
+  minimumDynamicBaselines: 0,
   policy_type: policyType
 });
 
@@ -121,14 +125,14 @@ createApp({
       return viewTitles[this.view] || "管理控制台";
     },
     policyGenerationTitle() {
-      return this.activePolicyType === "measured_boot"
-        ? "自动采集 TPM 启动基线"
-        : "自动采集 IMA 运行基线";
+      if (this.activePolicyType === "measured_boot") return "自动采集 TPM 启动基线";
+      if (this.activePolicyType === "ima_runtime") return "自动采集 IMA 运行基线";
+      return "自动采集 TPCM 可信报告";
     },
     policyGenerationSummary() {
-      return this.activePolicyType === "measured_boot"
-        ? "生成可信启动参考状态"
-        : "生成 IMA 运行时策略";
+      if (this.activePolicyType === "measured_boot") return "生成可信启动参考状态";
+      if (this.activePolicyType === "ima_runtime") return "生成 IMA 运行时策略";
+      return "校验动态度量状态并绑定策略";
     },
     currentTimeText() {
       return this.currentTime.toLocaleString("zh-CN", {
@@ -268,6 +272,12 @@ createApp({
     filteredPolicies() {
       return this.policies.filter((policy) => policy.policy_type === this.activePolicyType);
     },
+    policyTargetNodes() {
+      if (this.activePolicyType === "tpcm_dynamic_measurement") {
+        return this.computeInventory.filter((node) => node.trust_agent_type === "opentcsm_tpcm");
+      }
+      return this.computeInventory;
+    },
     trustCapabilityItems() {
       const caps = this.keylime.trust_capabilities || {};
       return [
@@ -326,9 +336,9 @@ createApp({
         }));
     },
     policyNamePlaceholder() {
-      return this.activePolicyType === "measured_boot"
-        ? "例如 compute-trusted-boot-v1"
-        : "例如 compute-ima-runtime-v1";
+      if (this.activePolicyType === "measured_boot") return "例如 compute-trusted-boot-v1";
+      if (this.activePolicyType === "ima_runtime") return "例如 compute-ima-runtime-v1";
+      return "例如 hygon-tpcm-dynamic-v1";
     },
     keylimeStatusClass() {
       if (this.keylimeError) return "bad";
@@ -992,6 +1002,14 @@ createApp({
           reboot_after_apply: this.createForm.rebootAfterApply
         };
         excludes = this.parseLines(this.createForm.excludesText);
+      } else if (this.activePolicyType === "tpcm_dynamic_measurement") {
+        content = {
+          dynamic_measure_required: this.createForm.dynamicMeasureRequired,
+          require_clean_trust_report: this.createForm.cleanTrustReportRequired,
+          minimum_dynamic_baselines: Number(this.createForm.minimumDynamicBaselines || 0),
+          baseline_generation: "active_opentcsm_collect",
+          keylime_artifact: "opentcsm_dynamic_measurement_policy"
+        };
       } else {
         throw new Error("该策略类型暂未启用");
       }
@@ -1018,6 +1036,7 @@ createApp({
       const policyType = String(policy.policy_type || "");
       if (policyType === "measured_boot") return "TPM 启动基线";
       if (policyType === "ima_runtime") return "IMA 运行基线";
+      if (policyType === "tpcm_dynamic_measurement") return "TPCM 动态度量报告";
       return "-";
     },
     policyGenerationModeText(policy) {
@@ -1031,7 +1050,17 @@ createApp({
       if (artifact === "measured_boot_refstate_or_tpm_policy") return "可信启动策略";
       if (artifact === "tpm_pcr_quote_policy") return "TPM PCR Quote 策略";
       if (artifact === "runtime_policy") return "IMA 运行时策略";
+      if (artifact === "opentcsm_dynamic_measurement_policy") return "TPCM 动态度量策略";
       return artifact || "-";
+    },
+    policyDynamicRequiredText(policy) {
+      return policy?.content?.dynamic_measure_required === false ? "不强制" : "要求开启";
+    },
+    policyCleanReportText(policy) {
+      return policy?.content?.require_clean_trust_report === false ? "不强制" : "要求无失败项";
+    },
+    policyMinimumDynamicBaselineText(policy) {
+      return `${policy?.content?.minimum_dynamic_baselines ?? 0}`;
     },
     bindingNames(policy) {
       return (policy.bindings || []).map((item) => item.target_name).join("、") || "-";
@@ -1071,6 +1100,8 @@ createApp({
           ? "TPM PCR Quote"
         : evidenceType === "ima_measurement_list"
           ? "IMA 度量列表"
+        : evidenceType === "tpcm_dynamic_measurement"
+          ? "TPCM 动态度量"
           : "节点证据";
       const evidenceHash = keylimePolicy.evidence_sha256 || "";
       const policyHash = keylimePolicy.content_sha256 || "";

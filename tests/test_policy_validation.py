@@ -11,6 +11,10 @@ def test_legacy_tpm_policy_type_maps_to_measured_boot() -> None:
     assert canonical_policy_type("tpm_pcr") == "measured_boot"
 
 
+def test_dynamic_policy_alias_maps_to_tpcm_dynamic_measurement() -> None:
+    assert canonical_policy_type("opentcsm_dynamic") == "tpcm_dynamic_measurement"
+
+
 def test_measured_boot_defaults_to_pcr_zero_through_seven() -> None:
     policy = TrustPolicyIn(
         name="compute-measured-boot",
@@ -49,6 +53,37 @@ def test_ima_policy_requires_measure_rule() -> None:
     )
 
     with pytest.raises(HTTPException, match="measure 规则"):
+        validated_policy_payload(policy)
+
+
+def test_tpcm_dynamic_policy_defaults_to_opentcsm_guard() -> None:
+    policy = TrustPolicyIn(
+        name="hygon-dynamic",
+        policy_type="tpcm_dynamic_measurement",
+        target_node_ids=[4],
+        content={},
+    )
+
+    payload, node_ids, deploy_now = validated_policy_payload(policy)
+
+    assert payload["content"]["trust_agent_type"] == "opentcsm_tpcm"
+    assert payload["content"]["dynamic_measure_required"] is True
+    assert payload["content"]["require_clean_trust_report"] is True
+    assert payload["content"]["minimum_dynamic_baselines"] == 0
+    assert payload["content"]["keylime_artifact"] == "opentcsm_dynamic_measurement_policy"
+    assert node_ids == [4]
+    assert deploy_now is True
+
+
+def test_tpcm_dynamic_policy_rejects_negative_baseline_count() -> None:
+    policy = TrustPolicyIn(
+        name="bad-hygon-dynamic",
+        policy_type="tpcm_dynamic_measurement",
+        target_node_ids=[4],
+        content={"minimum_dynamic_baselines": -1},
+    )
+
+    with pytest.raises(HTTPException, match="不能小于 0"):
         validated_policy_payload(policy)
 
 

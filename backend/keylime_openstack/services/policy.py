@@ -11,10 +11,12 @@ from sqlalchemy.orm import Session, selectinload
 from keylime_openstack.constants import (
     BINDING_NODE,
     LEGACY_POLICY_TYPE_ALIASES,
+    POLICY_EVM,
     POLICY_IMA_RUNTIME,
     POLICY_MEASURED_BOOT,
     POLICY_DEPLOY_NOT_DEPLOYED,
     POLICY_DEPLOY_QUEUED,
+    POLICY_TPCM_DYNAMIC_MEASUREMENT,
     SUPPORTED_POLICY_TYPES,
 )
 from keylime_openstack.models import ComputeNode, PolicyBinding, TrustPolicy
@@ -31,6 +33,8 @@ def validated_policy_payload(policy_in: TrustPolicyIn) -> tuple[dict[str, Any], 
     target_node_ids = sorted(set(payload.pop("target_node_ids")))
     deploy_now = bool(payload.pop("deploy_now"))
     policy_type = canonical_policy_type(str(payload["policy_type"]))
+    if policy_type == POLICY_EVM:
+        raise HTTPException(status_code=422, detail="EVM 策略管理尚未启用")
     if policy_type not in SUPPORTED_POLICY_TYPES:
         raise HTTPException(status_code=422, detail=f"不支持的策略类型：{policy_type}")
     if not target_node_ids:
@@ -41,6 +45,8 @@ def validated_policy_payload(policy_in: TrustPolicyIn) -> tuple[dict[str, Any], 
         content = _validate_measured_boot(content)
     elif policy_type == POLICY_IMA_RUNTIME:
         content = _validate_ima_runtime(content)
+    elif policy_type == POLICY_TPCM_DYNAMIC_MEASUREMENT:
+        content = _validate_tpcm_dynamic_measurement(content)
 
     payload["policy_type"] = policy_type
     payload["content"] = content
@@ -227,6 +233,33 @@ def _validate_ima_runtime(content: dict[str, Any]) -> dict[str, Any]:
         "runtime_policy_generation": "keylime-policy-from-measurements",
         "reboot_after_apply": bool(content.get("reboot_after_apply", False)),
     }
+
+
+def _validate_tpcm_dynamic_measurement(content: dict[str, Any]) -> dict[str, Any]:
+    minimum_dynamic_baselines = _non_negative_int(
+        content.get("minimum_dynamic_baselines", 0),
+        "动态基线最小数量",
+    )
+    return {
+        **content,
+        "trust_agent_type": "opentcsm_tpcm",
+        "policy_scope": "tpcm_dynamic_measurement",
+        "dynamic_measure_required": bool(content.get("dynamic_measure_required", True)),
+        "require_clean_trust_report": bool(content.get("require_clean_trust_report", True)),
+        "minimum_dynamic_baselines": minimum_dynamic_baselines,
+        "baseline_generation": "active_opentcsm_collect",
+        "keylime_artifact": "opentcsm_dynamic_measurement_policy",
+    }
+
+
+def _non_negative_int(value: Any, label: str) -> int:
+    try:
+        normalized = int(value)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"{label}必须是整数") from exc
+    if normalized < 0:
+        raise HTTPException(status_code=422, detail=f"{label}不能小于 0")
+    return normalized
 
 
 def _binding_keylime_policy(binding: PolicyBinding) -> dict[str, Any]:

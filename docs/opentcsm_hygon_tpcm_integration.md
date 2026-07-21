@@ -111,7 +111,32 @@ The worker performs the same active collection periodically for
 ## Policy Deployment Boundary
 
 Keylime nodes still receive measured boot and IMA runtime policies through the
-existing Keylime tenant path. OpenTCSM/TPCM nodes are marked as
-`external_pending` for policy deployment until the OpenTCSM command/API adapter
-is implemented. This avoids calling Keylime tenant against a node that no
-longer runs Keylime agent.
+existing Keylime tenant path. OpenTCSM/TPCM nodes are not sent to the Keylime
+tenant. OpenTCSM policy types that do not yet have a native adapter are marked
+as `external_pending`; the `tpcm_dynamic_measurement` policy type is handled by
+the OpenTCSM evidence collector described below.
+
+## TPCM Dynamic Measurement Policy
+
+The management plane now supports a first productized `tpcm_dynamic_measurement`
+policy type for OpenTCSM/TPCM nodes. This policy type is intentionally scoped to
+OpenTCSM nodes and is not offered for Keylime-agent nodes.
+
+The first implementation is a verify-and-bind workflow:
+
+1. The worker actively collects the current OpenTCSM trust report from the node.
+2. The policy checks whether TPCM dynamic measurement is enabled.
+3. The policy checks whether the trust report has zero failure counters when
+   `require_clean_trust_report=true`.
+4. The policy checks whether the observed dynamic baseline count is greater
+   than or equal to `minimum_dynamic_baselines`.
+5. If the checks pass, the binding is marked `applied` and stores the observed
+   trust report hash, global control policy hash, dynamic baseline count, and
+   generated policy hash.
+
+This does not yet write new dynamic measurement reference rules into OpenTCSM.
+That write path needs the exact production-safe OpenTCSM command/API contract
+for the installed OpenTCSM version. Until that adapter is implemented, the
+management plane treats dynamic measurement policy deployment as controlled
+verification of the node's active TPCM state, backed by stored evidence and
+periodic refresh.

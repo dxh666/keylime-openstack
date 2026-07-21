@@ -391,11 +391,12 @@
             </label>
             <fieldset class="wide target-selector">
               <legend>目标节点</legend>
-              <label v-for="node in computeInventory" :key="node.id" class="check-option">
+              <label v-for="node in policyTargetNodes" :key="node.id" class="check-option">
                 <input v-model="createForm.targetNodeIds" type="checkbox" :value="node.id">
                 <span>{{ node.hostname }}</span>
                 <small>{{ node.management_ip || node.keylime_agent_ip }}</small>
               </label>
+              <p v-if="!policyTargetNodes.length" class="empty">暂无可选目标节点。</p>
             </fieldset>
             <div class="wide generation-panel">
               <span>基线来源</span>
@@ -429,6 +430,21 @@
               <label class="wide toggle-line">
                 <input v-model="createForm.rebootAfterApply" type="checkbox">
                 <span>在维护窗口内自动重启目标节点</span>
+              </label>
+            </template>
+
+            <template v-if="activePolicyType === 'tpcm_dynamic_measurement'">
+              <label class="wide toggle-line">
+                <input v-model="createForm.dynamicMeasureRequired" type="checkbox">
+                <span>要求 TPCM 动态度量已开启</span>
+              </label>
+              <label class="wide toggle-line">
+                <input v-model="createForm.cleanTrustReportRequired" type="checkbox">
+                <span>要求可信报告无失败项</span>
+              </label>
+              <label>
+                <span>动态基线最小数量</span>
+                <input v-model.number="createForm.minimumDynamicBaselines" type="number" min="0">
               </label>
             </template>
             <div class="form-actions">
@@ -479,6 +495,15 @@
           <section v-if="detailPolicy.policy_type === 'ima_runtime'" class="detail-block">
             <h3>排除规则</h3>
             <pre>{{ listText(detailPolicy.excludes) }}</pre>
+          </section>
+          <section v-if="detailPolicy.policy_type === 'tpcm_dynamic_measurement'" class="detail-block">
+            <h3>动态度量规则</h3>
+            <div class="detail-grid">
+              <div><span>动态度量</span><strong>{{ policyDynamicRequiredText(detailPolicy) }}</strong></div>
+              <div><span>可信报告</span><strong>{{ policyCleanReportText(detailPolicy) }}</strong></div>
+              <div><span>动态基线最小数量</span><strong>{{ policyMinimumDynamicBaselineText(detailPolicy) }}</strong></div>
+              <div><span>可信代理对象</span><strong>{{ policyArtifactText(detailPolicy) }}</strong></div>
+            </div>
           </section>
           <section class="detail-block">
             <h3>基线生成</h3>

@@ -24,12 +24,14 @@ from keylime_openstack.constants import (
     POLICY_DEPLOY_SUPERSEDED,
     POLICY_IMA_RUNTIME,
     POLICY_MEASURED_BOOT,
+    POLICY_TPCM_DYNAMIC_MEASUREMENT,
     TRUST_AGENT_KEYLIME,
     TRUST_AGENT_OPENTCSM_TPCM,
 )
 from keylime_openstack.models import AuditEvent, ComputeNode, PolicyBinding, TrustPolicy
 from keylime_openstack.services.ansible import AnsibleExecutor
 from keylime_openstack.services.keylime import KeylimeClient
+from keylime_openstack.services.opentcsm_collect import OpenTcsmCollector
 from keylime_openstack.services.policy import canonical_policy_type, load_policy
 from keylime_openstack.services.trust_agents import (
     node_trust_agent_name,
@@ -66,12 +68,17 @@ class PolicyDeploymentService:
             self.session.flush()
             try:
                 policy_type = canonical_policy_type(policy.policy_type)
-                if node_trust_agent_type(node, self.settings) != TRUST_AGENT_KEYLIME:
+                agent_type = node_trust_agent_type(node, self.settings)
+                if agent_type == TRUST_AGENT_OPENTCSM_TPCM and policy_type == POLICY_TPCM_DYNAMIC_MEASUREMENT:
+                    details = self._deploy_opentcsm_dynamic_measurement(policy, binding, node)
+                elif agent_type != TRUST_AGENT_KEYLIME:
                     details = self._defer_external_trust_agent_policy(policy, binding, node)
                 elif policy_type == POLICY_MEASURED_BOOT:
                     details = self._deploy_measured_boot(policy, binding, node)
                 elif policy_type == POLICY_IMA_RUNTIME:
                     details = self._deploy_ima_runtime(policy, binding, node)
+                elif policy_type == POLICY_TPCM_DYNAMIC_MEASUREMENT:
+                    raise RuntimeError("TPCM 动态度量策略仅支持 OpenTCSM/TPCM 节点")
                 else:
                     raise RuntimeError(f"deployment is not implemented for {policy.policy_type}")
             except AwaitingReboot as exc:
@@ -357,6 +364,85 @@ class PolicyDeploymentService:
                 "runtime_policy_sha256": _content_hash(runtime_policy),
             }
 
+    def _deploy_opentcsm_dynamic_measurement(
+        self,
+        policy: TrustPolicy,
+        binding: PolicyBinding,
+        node: ComputeNode,
+    ) -> dict[str, Any]:
+        result = OpenTcsmCollector(self.session, self.settings).collect(node)
+        raw = result.get("raw") if isinstance(result.get("raw"), dict) else {}
+        failures = dict(raw.get("trust_report_failures") or {})
+        minimum_dynamic_baselines = int(policy.content.get("minimum_dynamic_baselines") or 0)
+        dynamic_baselines = _safe_int(raw.get("dynamic_measure_ref_number"))
+        dynamic_required = bool(policy.content.get("dynamic_measure_required", True))
+        require_clean_report = bool(policy.content.get("require_clean_trust_report", True))
+        dynamic_on = raw.get("dynamic_measure_on") is True
+        dynamic_status = result.get("dynamic_measurement_status")
+        violations: list[str] = []
+        if dynamic_required and not dynamic_on:
+            violations.append("TPCM 动态度量未开启")
+        if dynamic_required and dynamic_status != "pass":
+            violations.append(f"TPCM 动态度量状态未通过：{dynamic_status or 'unknown'}")
+        if require_clean_report and failures:
+            violations.append("TPCM 可信报告存在失败计数")
+        if dynamic_baselines < minimum_dynamic_baselines:
+            violations.append(
+                f"TPCM 动态基线数量不足：当前 {dynamic_baselines}，要求 {minimum_dynamic_baselines}"
+            )
+        if violations:
+            raise RuntimeError("OpenTCSM 动态度量策略校验未通过：" + "；".join(violations))
+
+        rendered_policy = {
+            "policy": {
+                "dynamic_measure_required": dynamic_required,
+                "require_clean_trust_report": require_clean_report,
+                "minimum_dynamic_baselines": minimum_dynamic_baselines,
+            },
+            "observed": {
+                "trust_root": result.get("trust_root"),
+                "agent_name": result.get("agent_name"),
+                "trusted": result.get("trusted"),
+                "dynamic_measure_on": dynamic_on,
+                "dynamic_measurement_status": dynamic_status,
+                "dynamic_measure_ref_number": dynamic_baselines,
+                "dmeasure_times": raw.get("dmeasure_times"),
+                "trust_report_sha256": raw.get("trust_report_sha256", ""),
+                "policy_report_sha256": raw.get("policy_report_sha256", ""),
+                "global_control_policy_sha256": raw.get("global_control_policy_sha256", ""),
+                "trust_report_failures": failures,
+            },
+        }
+        external_name = _external_name("tpcm-dyn", policy.name, node.hostname, rendered_policy)
+        self._applied(
+            binding,
+            policy,
+            external_name,
+            rendered_policy,
+            deployment_details={
+                "keylime_artifact": "opentcsm_dynamic_measurement_policy",
+                "evidence_type": "tpcm_dynamic_measurement",
+                "evidence_sha256": raw.get("trust_report_sha256", ""),
+                "rendered_policy_sha256": _content_hash(rendered_policy),
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "deployed_by": "opentcsm-collector",
+                "trust_agent_type": TRUST_AGENT_OPENTCSM_TPCM,
+                "trusted_root": node_trusted_root(node, self.settings),
+                "dynamic_measure_on": dynamic_on,
+                "dynamic_measure_ref_number": dynamic_baselines,
+                "trust_report_clean": not failures,
+            },
+        )
+        return {
+            "external_policy_name": external_name,
+            "keylime_artifact": "opentcsm_dynamic_measurement_policy",
+            "dynamic_measure_on": dynamic_on,
+            "dynamic_measurement_status": dynamic_status,
+            "dynamic_measure_ref_number": dynamic_baselines,
+            "trust_report_sha256": raw.get("trust_report_sha256", ""),
+            "policy_sha256": _content_hash(rendered_policy),
+        }
+
     def _applied(
         self,
         binding: PolicyBinding,
@@ -566,3 +652,10 @@ def _tpm_policy_from_pcrs(pcr_values: dict[int, str]) -> dict[str, Any]:
         policy[str(pcr)] = [digest.lower()]
     policy["mask"] = hex(mask)
     return policy
+
+
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
