@@ -553,6 +553,33 @@ createApp({
           ]
         }
       ];
+      if (this.isOpenTcsmNode(row, node, keylimeNode)) {
+        const report = keylimeNode.trust_report || {};
+        sections.push({
+          title: "TPCM 可信报告",
+          items: [
+            { label: "可信根", value: report.trust_root || row.trustedRoot || "-" },
+            { label: "代理组件", value: report.agent_name || row.trustAgentName || "OpenTCSM" },
+            { label: "TPCM ID", value: report.tpcm_id || "-" },
+            { label: "报告状态", value: this.trustStatusText(report.trust_status), state: report.trusted === true ? "ok" : report.trusted === false ? "bad" : "warn" },
+            { label: "启动度量", value: this.enabledText(report.boot_measure_on) },
+            { label: "动态度量", value: this.enabledText(report.dynamic_measure_on) },
+            { label: "可信报告评分", value: this.reportEvalText(report.trust_report_eval) },
+            { label: "失败计数", value: report.failure_count ?? "-" },
+            { label: "动态度量次数", value: report.dmeasure_times ?? "-" },
+            { label: "启动基线数", value: report.boot_measure_ref_number ?? "-" },
+            { label: "动态基线数", value: report.dynamic_measure_ref_number ?? "-" },
+            { label: "启动记录数", value: report.boot_record_count ?? "-" },
+            { label: "采集时间", value: this.formatTime(report.collected_at) },
+            { label: "有效期", value: this.formatTime(report.valid_until) },
+            { label: "可信报告哈希", value: this.shortHash(report.trust_report_sha256) },
+            { label: "策略报告哈希", value: this.shortHash(report.policy_report_sha256) },
+            { label: "启动记录哈希", value: this.shortHash(report.boot_measure_records_sha256) },
+            { label: "失败项", value: this.failureText(report.trust_report_failures) },
+            { label: "采集错误", value: this.listText(report.errors || []) }
+          ]
+        });
+      }
       if (remediation.summary) {
         sections.push({
           title: "修复建议",
@@ -589,8 +616,39 @@ createApp({
         "-"
       );
     },
+    isOpenTcsmNode(row, node, keylimeNode) {
+      return (
+        row?.trustAgentType === "opentcsm_tpcm" ||
+        node?.trust_agent_type === "opentcsm_tpcm" ||
+        keylimeNode?.trust_agent_type === "opentcsm_tpcm"
+      );
+    },
     yesNo(value) {
       return value ? "是" : "否";
+    },
+    enabledText(value) {
+      if (value === true) return "已开启";
+      if (value === false) return "未开启";
+      return "-";
+    },
+    trustStatusText(value) {
+      const normalized = String(value || "").toLowerCase();
+      if (normalized === "trusted") return "可信";
+      if (normalized === "untrusted") return "不可信";
+      return "未知";
+    },
+    reportEvalText(value) {
+      if (value === null || value === undefined || value === "") return "-";
+      return `${value}`;
+    },
+    shortHash(value) {
+      const text = String(value || "");
+      return text ? text.slice(0, 16) : "-";
+    },
+    failureText(value) {
+      const entries = Object.entries(value || {});
+      if (!entries.length) return "无";
+      return entries.map(([key, item]) => `${key}: ${item}`).join("\n");
     },
     trustText(value) {
       if (value === true) return "可信";

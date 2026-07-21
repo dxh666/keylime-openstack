@@ -8,7 +8,11 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select
 
-from keylime_openstack.constants import TRUST_AGENT_KEYLIME, TRUST_AGENT_OPENTCSM_TPCM
+from keylime_openstack.constants import (
+    PROVIDER_OPENTCSM,
+    TRUST_AGENT_KEYLIME,
+    TRUST_AGENT_OPENTCSM_TPCM,
+)
 from keylime_openstack.config import get_settings
 from keylime_openstack.database import SessionLocal
 from keylime_openstack.models import ComputeNode
@@ -277,6 +281,11 @@ def _external_trust_agent_node_check(
         else _external_agent_reason(evidence, evidence_fresh, capabilities, agent_type)
     )
     latest_record = max(records, key=lambda item: item.collected_at, default=None)
+    report_record = max(
+        (record for record in records if record.provider == PROVIDER_OPENTCSM),
+        key=lambda item: item.collected_at,
+        default=latest_record,
+    )
     latest_record_epoch = _external_record_epoch(latest_record)
     return {
         "host": node.hostname,
@@ -300,6 +309,7 @@ def _external_trust_agent_node_check(
         "evidence": evidence,
         "evidence_fresh": evidence_fresh,
         "evidence_valid_until": evidence_valid_until,
+        "trust_report": _external_report_summary(report_record),
         "trust_capabilities": capabilities,
         "capability_status": capability_status,
         "remediation": _remediation(
@@ -308,6 +318,44 @@ def _external_trust_agent_node_check(
             host=node.hostname,
             trust_agent_type=agent_type,
         ),
+    }
+
+
+def _external_report_summary(record) -> dict[str, object]:
+    if not record:
+        return {}
+    payload = record.payload or {}
+    raw = payload.get("raw") if isinstance(payload.get("raw"), dict) else {}
+    failures = raw.get("trust_report_failures") if isinstance(raw.get("trust_report_failures"), dict) else {}
+    errors = payload.get("errors") if isinstance(payload.get("errors"), list) else []
+    boot_records = raw.get("boot_records") if isinstance(raw.get("boot_records"), list) else []
+    return {
+        "provider": record.provider,
+        "agent_name": payload.get("agent_name") or "",
+        "trust_root": payload.get("trust_root") or "",
+        "report_type": payload.get("report_type") or "",
+        "collected_at": record.collected_at.isoformat() if record.collected_at else None,
+        "valid_until": record.valid_until.isoformat() if record.valid_until else None,
+        "status": record.status,
+        "summary": record.summary,
+        "trusted": payload.get("trusted"),
+        "trust_status": raw.get("trust_status") or "unknown",
+        "tpcm_id": raw.get("tpcm_id") or "",
+        "boot_measure_on": raw.get("boot_measure_on"),
+        "dynamic_measure_on": raw.get("dynamic_measure_on"),
+        "trust_report_clean": raw.get("trust_report_clean"),
+        "trust_report_eval": raw.get("trust_report_eval"),
+        "trust_report_failures": failures,
+        "failure_count": len(failures),
+        "boot_record_count": len(boot_records),
+        "dmeasure_times": raw.get("dmeasure_times"),
+        "boot_measure_ref_number": raw.get("boot_measure_ref_number"),
+        "dynamic_measure_ref_number": raw.get("dynamic_measure_ref_number"),
+        "trust_report_sha256": raw.get("trust_report_sha256") or "",
+        "policy_report_sha256": raw.get("policy_report_sha256") or "",
+        "global_control_policy_sha256": raw.get("global_control_policy_sha256") or "",
+        "boot_measure_records_sha256": raw.get("boot_measure_records_sha256") or "",
+        "errors": errors,
     }
 
 
