@@ -44,7 +44,7 @@ def ensure_default_environment(session: Session) -> None:
         "Hygon",
         "Hygon C86-3G 7380 32-core Processor",
         "anolis-6.6.102",
-        "hygon22 heterogeneous compute node.",
+        "Hygon TPCM heterogeneous compute nodes.",
     )
 
     nodes = {node.hostname: node for node in session.scalars(select(ComputeNode)).all()}
@@ -111,6 +111,23 @@ def ensure_default_environment(session: Session) -> None:
                 "trust_agent_type": "opentcsm_tpcm",
                 "trust_agent_name": "OpenTCSM",
                 "trusted_root": "Hygon TPCM",
+            },
+        },
+        {
+            "hostname": "hygon23",
+            "hypervisor_name": "hygon23",
+            "management_ip": "172.31.100.23",
+            "role": "compute",
+            "keylime_agent_ip": "",
+            "keylime_agent_uuid": "",
+            "hardware_profile": hygon,
+            "facts": {
+                "kernel": "6.6.102-5.3.2.an23.x86_64",
+                "os": "Anolis OS 23.4",
+                "trust_agent_type": "opentcsm_tpcm",
+                "trust_agent_name": "OpenTCSM",
+                "trusted_root": "Hygon TPCM",
+                "tpcm_id": "E9FA9758029E6318B21093811A51D4EC",
             },
         },
     ]

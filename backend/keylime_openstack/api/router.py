@@ -37,6 +37,7 @@ from keylime_openstack.services.host_integrity import host_integrity_report_to_e
 from keylime_openstack.services.keylime_gate import keylime_only_check
 from keylime_openstack.services.keylime import KeylimeClient
 from keylime_openstack.services.opentcsm import opentcsm_report_to_evidence
+from keylime_openstack.services.opentcsm_collect import OpenTcsmCollector
 from keylime_openstack.services.policy import (
     bind_policy_to_nodes,
     canonical_policy_type,
@@ -514,6 +515,29 @@ def ingest_opentcsm_evidence(
             for item in records
         ],
     }
+
+
+@router.post("/nodes/{hostname}/opentcsm-collect", dependencies=[Depends(require_admin)])
+def collect_opentcsm_evidence(
+    hostname: str,
+    session: Session = Depends(db_session),
+    settings: Settings = Depends(settings_dep),
+) -> dict[str, object]:
+    ensure_default_environment(session)
+    node = session.scalars(
+        select(ComputeNode).where(
+            (ComputeNode.hostname == hostname) | (ComputeNode.hypervisor_name == hostname)
+        )
+    ).first()
+    if not node:
+        raise HTTPException(status_code=404, detail=f"unknown compute node {hostname}")
+    try:
+        result = OpenTcsmCollector(session, settings).collect(node)
+    except Exception as exc:
+        session.rollback()
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    session.commit()
+    return result
 
 
 @router.get("/audit", response_model=list[AuditEventOut])

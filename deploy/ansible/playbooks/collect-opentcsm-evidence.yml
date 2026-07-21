@@ -1,0 +1,91 @@
+---
+- name: Collect OpenTCSM Hygon TPCM evidence
+  hosts: keylime_managed
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Collect OpenTCSM command output
+      ansible.builtin.shell: |
+        python3 - <<'PY'
+        import datetime
+        import json
+        import os
+        import socket
+        import subprocess
+
+        env = os.environ.copy()
+        env["LC_ALL"] = "C"
+        env["PATH"] = (
+            "/usr/local/opentcsm/tcsm/user/utils/tcs:"
+            "/usr/local/opentcsm/tcsm/user/test/tcs:"
+            "/usr/local/opentcsm/tcsm/user/test/tcm:"
+            + env.get("PATH", "")
+        )
+        env["LD_LIBRARY_PATH"] = (
+            "/usr/local/opentcsm/tcsm/user:"
+            "/usr/local/opentcsm/tsb:"
+            + env.get("LD_LIBRARY_PATH", "")
+        )
+
+        commands = {
+            "tpcm_info": "get_tpcm_info",
+            "tpcm_id": "get_tpcm_id",
+            "tpcm_features": "get_tpcm_features",
+            "trust_status": "get_trust_status",
+            "trust_report": "get_trust_report",
+            "policy_report": "get_policy_report",
+            "boot_measure_records": "get_bmeasure_records",
+            "global_control_policy": "get_global_control_policy",
+            "tsb_log_tail": "tail -120 /usr/local/opentcsm/log/tsb.log",
+        }
+
+        results = {}
+        for name, command in commands.items():
+            try:
+                completed = subprocess.run(
+                    command,
+                    shell=True,
+                    executable="/bin/bash",
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=60,
+                    env=env,
+                )
+                results[name] = {
+                    "command": command,
+                    "rc": completed.returncode,
+                    "stdout": completed.stdout,
+                    "stderr": completed.stderr,
+                }
+            except Exception as exc:
+                results[name] = {
+                    "command": command,
+                    "rc": 124,
+                    "stdout": "",
+                    "stderr": str(exc),
+                }
+
+        print(json.dumps({
+            "hostname": socket.gethostname(),
+            "collected_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "trust_root": "Hygon TPCM",
+            "agent_name": "OpenTCSM",
+            "report_type": "tpcm",
+            "commands": results,
+        }, ensure_ascii=False))
+        PY
+      args:
+        executable: /bin/bash
+      changed_when: false
+      register: opentcsm_collect
+
+    - name: Store OpenTCSM evidence on controller workspace
+      ansible.builtin.copy:
+        content: "{{ opentcsm_collect.stdout }}\n"
+        dest: "{{ evidence_output_path }}"
+        mode: "0600"
+      delegate_to: localhost
+      become: false

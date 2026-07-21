@@ -6,6 +6,7 @@ This project supports a mixed trust-agent model:
 csri8   keylime        TPM 2.0 + Keylime agent
 csri9   keylime        TPM 2.0 + Keylime agent
 hygon22 opentcsm_tpcm  Hygon TPCM + OpenTCSM
+hygon23 opentcsm_tpcm  Hygon TPCM + OpenTCSM
 ```
 
 The management UI and trust decision model stay the same. Each compute node
@@ -27,8 +28,17 @@ trust-plane API.
 Set the node trust-agent map in `/etc/keylime-openstack/keylime-openstack.env`:
 
 ```text
-TRUST_AGENT_TYPE_MAP=csri8=keylime,csri9=keylime,hygon22=opentcsm_tpcm
+DEFAULT_COMPUTE_HOSTS=csri8,csri9,hygon22,hygon23
+TRUST_AGENT_TYPE_MAP=csri8=keylime,csri9=keylime,hygon22=opentcsm_tpcm,hygon23=opentcsm_tpcm
 OPENTCSM_EVIDENCE_FRESH_SECONDS=300
+```
+
+OpenTCSM/TPCM nodes must not be added to the Keylime verifier inventory:
+
+```text
+KEYLIME_AGENT_HOSTS=csri8,csri9
+KEYLIME_AGENT_IP_MAP=csri8=172.31.100.8,csri9=172.31.100.9
+KEYLIME_AGENT_UUID_MAP=csri8=22222222-2222-4222-8222-000000000008,csri9=11111111-1111-4111-8111-000000000009
 ```
 
 The deploy helper fills these defaults when they are missing.
@@ -70,6 +80,21 @@ evm      optional, only when reported
 The trust decision engine then evaluates these evidence records with the same
 global capability switches used by Keylime nodes.
 
+## Active Collection
+
+The management system can actively collect OpenTCSM/Hygon TPCM evidence over
+the configured Ansible SSH channel:
+
+```bash
+cd /opt/keylime-openstack
+bash deploy/scripts/opentcsm-evidence-collect.sh hygon23
+```
+
+This runs the OpenTCSM utilities on the node, captures the trust report,
+global control policy, boot measurement records, TPCM ID, and TSB log tail, and
+stores normalized `boot` and `runtime` evidence records in the management
+database.
+
 ## Policy Deployment Boundary
 
 Keylime nodes still receive measured boot and IMA runtime policies through the
@@ -77,4 +102,3 @@ existing Keylime tenant path. OpenTCSM/TPCM nodes are marked as
 `external_pending` for policy deployment until the OpenTCSM command/API adapter
 is implemented. This avoids calling Keylime tenant against a node that no
 longer runs Keylime agent.
-

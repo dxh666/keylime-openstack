@@ -6,9 +6,12 @@ import argparse
 import json
 
 from keylime_openstack.database import SessionLocal
+from keylime_openstack.models import ComputeNode
 from keylime_openstack.seed import ensure_default_environment
 from keylime_openstack.services.keylime_gate import keylime_only_check
+from keylime_openstack.services.opentcsm_collect import OpenTcsmCollector
 from keylime_openstack.worker import Worker
+from sqlalchemy import select
 
 
 def main() -> None:
@@ -47,6 +50,11 @@ def main() -> None:
         action="store_true",
         help="Only include untrusted nodes in the per-node output.",
     )
+    opentcsm_collect = sub.add_parser(
+        "opentcsm-collect",
+        help="Collect OpenTCSM/Hygon TPCM evidence from a managed node.",
+    )
+    opentcsm_collect.add_argument("host", help="Managed OpenTCSM/TPCM node hostname.")
     args = parser.parse_args()
 
     if args.command == "bootstrap":
@@ -71,6 +79,23 @@ def main() -> None:
         print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
         if args.strict and not result["ok"]:
             raise SystemExit(2)
+        return
+
+    if args.command == "opentcsm-collect":
+        from keylime_openstack.config import get_settings
+
+        with SessionLocal() as session:
+            ensure_default_environment(session)
+            node = session.scalars(
+                select(ComputeNode).where(
+                    (ComputeNode.hostname == args.host) | (ComputeNode.hypervisor_name == args.host)
+                )
+            ).first()
+            if not node:
+                raise SystemExit(f"unknown compute node {args.host}")
+            result = OpenTcsmCollector(session, get_settings()).collect(node)
+            session.commit()
+        print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
         return
 
 
