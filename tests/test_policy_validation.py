@@ -67,6 +67,7 @@ def test_tpcm_dynamic_policy_defaults_to_opentcsm_guard() -> None:
     payload, node_ids, deploy_now = validated_policy_payload(policy)
 
     assert payload["content"]["trust_agent_type"] == "opentcsm_tpcm"
+    assert payload["content"]["node_dynamic_measure_enabled"] is True
     assert payload["content"]["dynamic_measure_required"] is True
     assert payload["content"]["require_clean_trust_report"] is False
     assert payload["content"]["environment_object_configs"] == {
@@ -113,6 +114,32 @@ def test_tpcm_dynamic_policy_accepts_fixed_object_configs() -> None:
         "interval_milli": 60000,
     }
     assert payload["content"]["delete_unmanaged_objects"] is False
+
+
+def test_tpcm_dynamic_policy_node_switch_keeps_object_configs() -> None:
+    policy = TrustPolicyIn(
+        name="hygon-dynamic-disabled",
+        policy_type="tpcm_dynamic_measurement",
+        target_node_ids=[4],
+        content={
+            "node_dynamic_measure_enabled": False,
+            "environment_object_configs": {
+                "kernel_section": {"enabled": True, "interval_milli": 30000},
+                "syscall_table": {"enabled": True, "interval_milli": 60000},
+                "idt_table": {"enabled": False, "interval_milli": 120000},
+            },
+        },
+    )
+
+    payload, _, _ = validated_policy_payload(policy)
+
+    assert payload["content"]["node_dynamic_measure_enabled"] is False
+    assert payload["content"]["dynamic_measure_required"] is False
+    assert payload["content"]["environment_objects"] == []
+    assert payload["content"]["environment_object_configs"]["kernel_section"] == {
+        "enabled": True,
+        "interval_milli": 30000,
+    }
 
 
 def test_tpcm_dynamic_policy_requires_single_target_node() -> None:

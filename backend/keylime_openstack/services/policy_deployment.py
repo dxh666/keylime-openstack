@@ -97,6 +97,8 @@ class PolicyDeploymentService:
                     and policy_type == POLICY_TPCM_DYNAMIC_MEASUREMENT
                     else {}
                 )
+                if failure_details:
+                    failure_details.update(_dynamic_policy_context(policy.content))
                 self._failed(binding, error, failure_details)
                 details = {"error": error, **failure_details}
             self._audit(policy.name, policy_type, node.hostname, binding, details)
@@ -388,17 +390,26 @@ class PolicyDeploymentService:
         with self._workspace() as workspace:
             apply_result_path = workspace / "opentcsm-dynamic-apply.json"
             object_configs = _dynamic_object_configs(policy.content)
+            node_dynamic_measure_enabled = bool(
+                policy.content.get(
+                    "node_dynamic_measure_enabled",
+                    policy.content.get("dynamic_measure_required", True),
+                )
+            )
             environment_objects = [
-                name for name, config in object_configs.items() if config["enabled"]
+                name
+                for name, config in object_configs.items()
+                if node_dynamic_measure_enabled and config["enabled"]
             ]
-            delete_unmanaged_objects = False
+            close_disabled_fixed_objects = True
             dynamic_policy = {
+                "node_dynamic_measure_enabled": node_dynamic_measure_enabled,
                 "environment_object_configs": object_configs,
                 "environment_objects": environment_objects,
                 "environment_interval_milli": int(
                     policy.content.get("environment_interval_milli") or 60000
                 ),
-                "delete_unmanaged_objects": delete_unmanaged_objects,
+                "delete_unmanaged_objects": close_disabled_fixed_objects,
             }
             apply_result = self.ansible.run(
                 playbook="apply-opentcsm-dynamic-policy.yml",
@@ -445,7 +456,9 @@ class PolicyDeploymentService:
             if config["enabled"]
         }
         disabled_objects = {
-            name for name, config in object_configs.items() if not config["enabled"]
+            name
+            for name, config in object_configs.items()
+            if not node_dynamic_measure_enabled or not config["enabled"]
         }
         default_interval = int(policy.content.get("environment_interval_milli") or 60000)
         observed_dmeasure_policy = [
@@ -474,7 +487,7 @@ class PolicyDeploymentService:
                     f"TPCM 动态度量周期不一致：{object_name} 当前 "
                     f"{observed.get('interval_milli')}ms，要求 {desired_interval}ms"
                 )
-        if delete_unmanaged_objects:
+        if close_disabled_fixed_objects:
             for object_name in sorted(disabled_objects):
                 if object_name in observed_by_object:
                     violations.append(f"TPCM 动态度量对象未关闭：{object_name}")
@@ -487,7 +500,7 @@ class PolicyDeploymentService:
                 "environment_object_configs": object_configs,
                 "environment_objects": desired_objects,
                 "environment_interval_milli": default_interval,
-                "delete_unmanaged_objects": delete_unmanaged_objects,
+                "delete_unmanaged_objects": close_disabled_fixed_objects,
             },
             "observed": {
                 "trust_root": result.get("trust_root"),
@@ -527,6 +540,7 @@ class PolicyDeploymentService:
                 "deployed_by": "opentcsm-policy-executor",
                 "trust_agent_type": TRUST_AGENT_OPENTCSM_TPCM,
                 "trusted_root": node_trusted_root(node, self.settings),
+                "node_dynamic_measure_enabled": node_dynamic_measure_enabled,
                 "auth_material_ref": auth.ref,
                 "auth_uid": auth.uid,
                 "auth_public_key_sha256": auth.public_fingerprint,
@@ -534,6 +548,9 @@ class PolicyDeploymentService:
                 "policy_apply_authorization_status": "normal",
                 "policy_apply_error_code": "",
                 "policy_apply_error_summary": "",
+                "policy_last_result": "success",
+                "policy_last_result_summary": "TPCM 动态度量策略已生效。",
+                "policy_last_result_at": datetime.now(timezone.utc).isoformat(),
                 "dynamic_measure_on": dynamic_on,
                 "dmeasure_policy_sha256": raw.get("dmeasure_policy_sha256", ""),
                 "dynamic_measure_ref_number": dynamic_baselines,
@@ -543,6 +560,7 @@ class PolicyDeploymentService:
         return {
             "external_policy_name": external_name,
             "keylime_artifact": "opentcsm_dynamic_measurement_policy",
+            "node_dynamic_measure_enabled": node_dynamic_measure_enabled,
             "dynamic_measure_on": dynamic_on,
             "dynamic_measurement_status": dynamic_status,
             "environment_objects": desired_objects,
@@ -554,6 +572,8 @@ class PolicyDeploymentService:
             "policy_sha256": _content_hash(rendered_policy),
             "policy_apply_status": "consistent",
             "policy_apply_authorization_status": "normal",
+            "policy_last_result": "success",
+            "policy_last_result_summary": "TPCM 动态度量策略已生效。",
         }
 
     def _applied(
@@ -642,6 +662,9 @@ class PolicyDeploymentService:
             **dict(binding.binding_details or {}),
             "policy_apply_status": POLICY_DEPLOY_FAILED,
             "policy_apply_error_summary": error[:500],
+            "policy_last_result": "failed",
+            "policy_last_result_summary": error[:500],
+            "policy_last_result_at": datetime.now(timezone.utc).isoformat(),
         }
         if extra_details:
             details.update(extra_details)
@@ -662,22 +685,27 @@ class PolicyDeploymentService:
             **details,
         }
         if is_dynamic:
+            baseline = (
+                details.get("dmeasure_policy_sha256")
+                or details.get("policy_sha256")
+                or details.get("rendered_policy_sha256")
+                or ""
+            )
+            auth_code = str(details.get("policy_apply_error_code") or "")
+            is_auth_event = auth_code.startswith("TPCM_AUTH_")
             event_details = {
                 **event_details,
-                "log_type": "dynamic_measurement",
+                "log_type": "tpcm_authorization" if is_auth_event else "dynamic_measurement",
                 "policy_type": policy_type,
                 "subject_name": "TPCM",
                 "object_name": _dynamic_audit_object_name(details),
-                "operation": "策略生效",
+                "measurement_type": "授权检测" if is_auth_event else "策略生效",
+                "measurement_baseline": baseline,
+                "operation": "授权检测" if is_auth_event else "策略生效",
                 "result": "成功"
                 if binding.application_status == POLICY_DEPLOY_APPLIED
                 else "失败",
-                "hash": (
-                    details.get("dmeasure_policy_sha256")
-                    or details.get("policy_sha256")
-                    or details.get("rendered_policy_sha256")
-                    or ""
-                ),
+                "hash": baseline,
             }
         self.session.add(
             AuditEvent(
@@ -833,6 +861,8 @@ def _looks_like_tpcm_auth_rejected(text: str) -> bool:
 
 
 def _dynamic_audit_object_name(details: dict[str, Any]) -> str:
+    if details.get("node_dynamic_measure_enabled") is False:
+        return "全部动态度量对象"
     configs = details.get("environment_object_configs")
     if isinstance(configs, dict) and configs:
         enabled = [
@@ -845,6 +875,28 @@ def _dynamic_audit_object_name(details: dict[str, Any]) -> str:
     if isinstance(objects, list) and objects:
         return ",".join(str(item) for item in objects)
     return "环境动态度量策略"
+
+
+def _dynamic_policy_context(content: dict[str, Any]) -> dict[str, Any]:
+    object_configs = _dynamic_object_configs(content)
+    node_dynamic_measure_enabled = bool(
+        content.get(
+            "node_dynamic_measure_enabled",
+            content.get("dynamic_measure_required", True),
+        )
+    )
+    environment_objects = [
+        name
+        for name, config in object_configs.items()
+        if node_dynamic_measure_enabled and config["enabled"]
+    ]
+    return {
+        "node_dynamic_measure_enabled": node_dynamic_measure_enabled,
+        "environment_object_configs": object_configs,
+        "environment_objects": environment_objects,
+        "environment_interval_milli": int(content.get("environment_interval_milli") or 60000),
+        "keylime_artifact": "opentcsm_dynamic_measurement_policy",
+    }
 
 
 def _dynamic_object_configs(content: dict[str, Any]) -> dict[str, dict[str, int | bool]]:

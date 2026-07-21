@@ -97,6 +97,10 @@ class TrustPolicyIn(BaseModel):
     deploy_now: bool = True
 
 
+class TpcmDynamicGlobalSwitchIn(BaseModel):
+    enabled: bool
+
+
 class TrustDecisionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

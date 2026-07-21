@@ -739,6 +739,29 @@ h3 {
   grid-template-columns: minmax(150px, 1.2fr) 120px 130px 150px 190px 130px;
 }
 
+.dynamic-node-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+  padding: 12px 13px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel-soft);
+}
+
+.dynamic-node-switch div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.dynamic-node-switch span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .dynamic-actions {
   display: flex;
   flex-wrap: wrap;
@@ -876,6 +899,29 @@ h3 {
 .switch-item span {
   color: var(--muted);
   font-size: 12px;
+}
+
+.switch-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 86px;
+  justify-content: flex-end;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--blue);
+  font-weight: 700;
+}
+
+.switch-control:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.switch-control span {
+  color: inherit;
+  font-size: 13px;
 }
 
 .switch {

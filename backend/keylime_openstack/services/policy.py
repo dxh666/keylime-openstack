@@ -67,6 +67,10 @@ def validated_policy_payload(policy_in: TrustPolicyIn) -> tuple[dict[str, Any], 
     return payload, target_node_ids, deploy_now
 
 
+def normalized_tpcm_dynamic_measurement_content(content: dict[str, Any]) -> dict[str, Any]:
+    return _validate_tpcm_dynamic_measurement(dict(content or {}))
+
+
 def bind_policy_to_nodes(
     session: Session,
     policy: TrustPolicy,
@@ -245,6 +249,12 @@ def _validate_ima_runtime(content: dict[str, Any]) -> dict[str, Any]:
 
 
 def _validate_tpcm_dynamic_measurement(content: dict[str, Any]) -> dict[str, Any]:
+    node_dynamic_measure_enabled = bool(
+        content.get(
+            "node_dynamic_measure_enabled",
+            content.get("dynamic_measure_required", True),
+        )
+    )
     environment_interval_milli = _bounded_int(
         content.get("environment_interval_milli", content.get("interval_milli", 60000)),
         "动态度量周期",
@@ -256,7 +266,9 @@ def _validate_tpcm_dynamic_measurement(content: dict[str, Any]) -> dict[str, Any
         default_interval_milli=environment_interval_milli,
     )
     environment_objects = [
-        name for name, config in environment_object_configs.items() if config["enabled"]
+        name
+        for name, config in environment_object_configs.items()
+        if node_dynamic_measure_enabled and config["enabled"]
     ]
     auth_material_ref = str(content.get("auth_material_ref") or "dmeasure-uid").strip()
     if not auth_material_ref:
@@ -266,7 +278,8 @@ def _validate_tpcm_dynamic_measurement(content: dict[str, Any]) -> dict[str, Any
         "trust_agent_type": "opentcsm_tpcm",
         "policy_scope": "tpcm_dynamic_measurement",
         "require_clean_trust_report": bool(content.get("require_clean_trust_report", False)),
-        "dynamic_measure_required": bool(content.get("dynamic_measure_required", True)),
+        "node_dynamic_measure_enabled": node_dynamic_measure_enabled,
+        "dynamic_measure_required": node_dynamic_measure_enabled,
         "environment_object_configs": environment_object_configs,
         "environment_objects": environment_objects,
         "environment_interval_milli": environment_interval_milli,

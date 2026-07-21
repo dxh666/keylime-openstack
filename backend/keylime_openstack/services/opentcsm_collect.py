@@ -75,6 +75,8 @@ class OpenTcsmCollector:
             for item in report["raw"].get("dmeasure_policy", [])
             if isinstance(item, dict) and item.get("object")
         ]
+        dmeasure_policy_sha256 = report["raw"].get("dmeasure_policy_sha256") or ""
+        trust_report_sha256 = report["raw"].get("trust_report_sha256") or ""
         self.session.add(
             AuditEvent(
                 event_type="opentcsm_evidence_collect",
@@ -87,17 +89,15 @@ class OpenTcsmCollector:
                     "statuses": {record.evidence_type: record.status for record in records},
                     "evidence_ids": [record.id for record in records],
                     "tpcm_id": report["raw"].get("tpcm_id", ""),
-                    "report_hash": report["raw"].get("trust_report_sha256", ""),
+                    "report_hash": trust_report_sha256,
                     "log_type": "dynamic_measurement",
                     "subject_name": "TPCM",
                     "object_name": ",".join(dynamic_objects) if dynamic_objects else "-",
+                    "measurement_type": "状态采集",
+                    "measurement_baseline": dmeasure_policy_sha256 or trust_report_sha256,
                     "operation": "状态刷新",
                     "result": "成功" if report.get("dynamic_measurement_status") == "pass" else "异常",
-                    "hash": (
-                        report["raw"].get("dmeasure_policy_sha256")
-                        or report["raw"].get("trust_report_sha256")
-                        or ""
-                    ),
+                    "hash": dmeasure_policy_sha256 or trust_report_sha256,
                 },
             )
         )

@@ -38,7 +38,7 @@
         signing_key = str(auth["private_key"]) + str(auth["public_key"])
         default_interval = int(policy.get("environment_interval_milli") or 60000)
         object_configs = policy.get("environment_object_configs") or {}
-        delete_unmanaged_objects = False
+        delete_unmanaged_objects = bool(policy.get("delete_unmanaged_objects", False))
         desired_configs = {}
         if isinstance(object_configs, dict) and object_configs:
             for name in sorted(allowed_objects):

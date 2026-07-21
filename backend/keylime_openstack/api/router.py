@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from keylime_openstack.api.deps import db_session, require_admin, settings_dep
 from keylime_openstack.config import Settings
 from keylime_openstack.constants import (
+    BINDING_NODE,
     DEFAULT_TRUST_TRAITS,
     POLICY_TPCM_DYNAMIC_MEASUREMENT,
     TRUST_AGENT_OPENTCSM_TPCM,
@@ -35,6 +36,7 @@ from keylime_openstack.schemas import (
     OpenTcsmEvidenceReportIn,
     OverviewOut,
     TaskRunOut,
+    TpcmDynamicGlobalSwitchIn,
     TrustDecisionOut,
     TrustPolicyIn,
     TrustPolicyOut,
@@ -50,6 +52,7 @@ from keylime_openstack.services.policy import (
     canonical_policy_type,
     list_policies,
     load_policy,
+    normalized_tpcm_dynamic_measurement_content,
     policy_out,
     validated_policy_payload,
 )
@@ -203,6 +206,143 @@ def hardware_profiles(session: Session = Depends(db_session)) -> list[dict[str, 
 @router.get("/policies", response_model=list[TrustPolicyOut])
 def policies(session: Session = Depends(db_session)) -> list[TrustPolicyOut]:
     return [policy_out(session, item) for item in list_policies(session)]
+
+
+@router.post("/policies/tpcm-dynamic/global-switch", dependencies=[Depends(require_admin)])
+def set_tpcm_dynamic_global_switch(
+    request: TpcmDynamicGlobalSwitchIn,
+    session: Session = Depends(db_session),
+    settings: Settings = Depends(settings_dep),
+) -> dict[str, object]:
+    ensure_default_environment(session)
+    session.flush()
+    nodes = [
+        node
+        for node in session.scalars(
+            select(ComputeNode)
+            .where(ComputeNode.role == "compute")
+            .where(ComputeNode.enabled.is_(True))
+            .order_by(ComputeNode.hostname)
+        ).all()
+        if node_trust_agent_type(node, settings) == TRUST_AGENT_OPENTCSM_TPCM
+    ]
+    if not nodes:
+        raise HTTPException(status_code=409, detail="当前没有可管理的 OpenTCSM/TPCM 节点")
+
+    processed_policy_ids: set[int] = set()
+    policy_results: list[dict[str, object]] = []
+    task_ids: list[int] = []
+    for node in nodes:
+        policy = _find_tpcm_dynamic_policy_for_node(session, node.id)
+        if policy is not None and policy.id in processed_policy_ids:
+            continue
+        content = dict(policy.content or {}) if policy else {}
+        content["node_dynamic_measure_enabled"] = request.enabled
+        content["dynamic_measure_required"] = request.enabled
+        normalized_content = normalized_tpcm_dynamic_measurement_content(content)
+        if policy is None:
+            policy = TrustPolicy(
+                name=_unique_policy_name(session, f"{node.hostname} 环境动态度量策略"),
+                policy_type=POLICY_TPCM_DYNAMIC_MEASUREMENT,
+                version=1,
+                status="active",
+                hash_alg="sha256",
+                content=normalized_content,
+                protected_paths=[],
+                excludes=[],
+                source={
+                    "executor": "ansible",
+                    "managed_by": "keylime-openstack",
+                    "scope": "node",
+                    "node": node.hostname,
+                    "global_dynamic_control": True,
+                },
+                description=f"{node.hostname} 的 TPCM 环境动态度量对象配置",
+            )
+            session.add(policy)
+            session.flush()
+            bind_policy_to_nodes(session, policy, [node.id], deploy_now=True)
+        else:
+            policy.content = normalized_content
+            policy.status = "active"
+            policy.source = {
+                **dict(policy.source or {}),
+                "executor": "ansible",
+                "managed_by": "keylime-openstack",
+                "scope": "node",
+                "global_dynamic_control": True,
+            }
+            if not any(
+                binding.active
+                and binding.target_type == BINDING_NODE
+                and binding.target_id == node.id
+                for binding in policy.bindings
+            ):
+                policy.bindings.append(
+                    PolicyBinding(
+                        target_type=BINDING_NODE,
+                        target_id=node.id,
+                        active=True,
+                        executor="ansible",
+                        application_status="queued",
+                        binding_details={
+                            "hostname": node.hostname,
+                            "management_ip": node.management_ip,
+                            "keylime_agent_uuid": node.keylime_agent_uuid,
+                        },
+                    )
+                )
+            for binding in policy.bindings:
+                if binding.active:
+                    binding.application_status = "queued"
+                    binding.last_error = ""
+        session.flush()
+        task = create_task(
+            session,
+            "policy_deploy",
+            target=policy.name,
+            requested_by="api",
+            task_args={"policy_id": policy.id},
+        )
+        processed_policy_ids.add(policy.id)
+        task_ids.append(task.id)
+        policy_results.append(
+            {
+                "policy_id": policy.id,
+                "policy_name": policy.name,
+                "node_dynamic_measure_enabled": request.enabled,
+            }
+        )
+
+    operation = "开启集群动态度量" if request.enabled else "关闭集群动态度量"
+    session.add(
+        AuditEvent(
+            event_type="tpcm_dynamic_global_switch",
+            target="OpenTCSM 动态度量",
+            severity="info",
+            message="queued TPCM dynamic measurement global switch",
+            event_details={
+                "log_type": "dynamic_measurement",
+                "subject_name": "TPCM",
+                "object_name": "全部动态度量对象",
+                "measurement_type": "全局控制",
+                "measurement_baseline": "",
+                "operation": operation,
+                "result": "已入队",
+                "target_nodes": [node.hostname for node in nodes],
+                "node_dynamic_measure_enabled": request.enabled,
+                "hash": "",
+            },
+        )
+    )
+    session.commit()
+    return {
+        "ok": True,
+        "enabled": request.enabled,
+        "nodes": [node.hostname for node in nodes],
+        "policies": policy_results,
+        "task_ids": task_ids,
+    }
 
 
 @router.get("/policies/{policy_id}", response_model=TrustPolicyOut)
@@ -812,15 +952,51 @@ def _record_policy_audit(
     )
 
 
+def _find_tpcm_dynamic_policy_for_node(session: Session, node_id: int) -> TrustPolicy | None:
+    return session.scalars(
+        select(TrustPolicy)
+        .join(PolicyBinding, PolicyBinding.policy_id == TrustPolicy.id)
+        .where(TrustPolicy.policy_type == POLICY_TPCM_DYNAMIC_MEASUREMENT)
+        .where(PolicyBinding.target_type == BINDING_NODE)
+        .where(PolicyBinding.target_id == node_id)
+        .where(PolicyBinding.active.is_(True))
+        .order_by(TrustPolicy.updated_at.desc(), TrustPolicy.id.desc())
+        .limit(1)
+    ).first()
+
+
+def _unique_policy_name(session: Session, base_name: str) -> str:
+    existing = set(
+        session.scalars(
+            select(TrustPolicy.name).where(TrustPolicy.name.like(f"{base_name}%"))
+        ).all()
+    )
+    if base_name not in existing:
+        return base_name
+    for index in range(2, 100):
+        candidate = f"{base_name}-{index}"
+        if candidate not in existing:
+            return candidate
+    return f"{base_name}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+
+
 def _dynamic_policy_audit_details(policy: TrustPolicy, event_type: str) -> dict[str, Any]:
     content = dict(policy.content or {})
+    node_dynamic_measure_enabled = bool(
+        content.get(
+            "node_dynamic_measure_enabled",
+            content.get("dynamic_measure_required", True),
+        )
+    )
     configs = content.get("environment_object_configs") if isinstance(content.get("environment_object_configs"), dict) else {}
     enabled_objects = [
         name
         for name, config in configs.items()
-        if isinstance(config, dict) and config.get("enabled") is True
+        if node_dynamic_measure_enabled
+        and isinstance(config, dict)
+        and config.get("enabled") is True
     ]
-    if not enabled_objects:
+    if node_dynamic_measure_enabled and not enabled_objects:
         enabled_objects = [str(item) for item in content.get("environment_objects") or []]
     target_names = [
         str(dict(binding.binding_details or {}).get("hostname") or binding.target_id)
@@ -830,10 +1006,17 @@ def _dynamic_policy_audit_details(policy: TrustPolicy, event_type: str) -> dict[
     return {
         "log_type": "dynamic_measurement",
         "subject_name": "TPCM",
-        "object_name": ",".join(enabled_objects) if enabled_objects else "none",
+        "object_name": ",".join(enabled_objects)
+        if enabled_objects
+        else "全部动态度量对象"
+        if not node_dynamic_measure_enabled
+        else "none",
+        "measurement_type": "策略生效" if event_type == "tpcm_dynamic_policy_apply_queued" else "策略保存",
+        "measurement_baseline": "",
         "operation": "策略生效" if event_type == "tpcm_dynamic_policy_apply_queued" else "策略保存",
         "result": "已入队" if event_type == "tpcm_dynamic_policy_apply_queued" else "成功",
         "target_nodes": target_names,
+        "node_dynamic_measure_enabled": node_dynamic_measure_enabled,
         "environment_object_configs": configs,
         "environment_interval_milli": content.get("environment_interval_milli"),
         "hash": "",

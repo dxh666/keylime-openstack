@@ -39,6 +39,38 @@ def test_dynamic_policy_audit_details_use_product_fields() -> None:
     assert details["log_type"] == "dynamic_measurement"
     assert details["subject_name"] == "TPCM"
     assert details["object_name"] == "kernel_section,idt_table"
+    assert details["measurement_type"] == "策略生效"
+    assert details["measurement_baseline"] == ""
     assert details["operation"] == "策略生效"
     assert details["result"] == "已入队"
     assert details["target_nodes"] == ["hygon23"]
+    assert details["node_dynamic_measure_enabled"] is True
+
+
+def test_dynamic_policy_audit_details_show_node_switch_disabled() -> None:
+    policy = TrustPolicy(
+        id=13,
+        name="hygon23-dynamic-disabled",
+        policy_type="tpcm_dynamic_measurement",
+        status="active",
+        content={
+            "node_dynamic_measure_enabled": False,
+            "environment_objects": ["kernel_section", "syscall_table"],
+            "environment_object_configs": {
+                "kernel_section": {"enabled": True, "interval_milli": 60000},
+                "syscall_table": {"enabled": True, "interval_milli": 60000},
+                "idt_table": {"enabled": False, "interval_milli": 60000},
+            },
+        },
+    )
+    policy.bindings = [
+        PolicyBinding(active=True, target_id=23, binding_details={"hostname": "hygon23"})
+    ]
+
+    details = _dynamic_policy_audit_details(policy, "tpcm_dynamic_policy_save")
+
+    assert details["log_type"] == "dynamic_measurement"
+    assert details["object_name"] == "全部动态度量对象"
+    assert details["operation"] == "策略保存"
+    assert details["result"] == "成功"
+    assert details["node_dynamic_measure_enabled"] is False

@@ -317,7 +317,7 @@
             </div>
             <div class="table compact-table dynamic-node-table">
               <div class="row header">
-                <span>节点名称</span><span>管理 IP</span><span>策略状态</span><span>授权状态</span><span>最近生效时间</span>
+                <span>节点名称</span><span>管理 IP</span><span>节点总开关</span><span>策略状态</span><span>最近生效时间</span>
               </div>
               <button
                 v-for="node in filteredDynamicNodeRows"
@@ -329,8 +329,8 @@
               >
                 <strong>{{ node.hostname }}</strong>
                 <span>{{ node.ip }}</span>
+                <span><em :class="['pill', node.nodeSwitchClass]">{{ node.nodeSwitchText }}</em></span>
                 <span><em :class="['pill', node.stateClass]">{{ node.stateText }}</em></span>
-                <span><em :class="['pill', node.authClass]">{{ node.authText }}</em></span>
                 <span>{{ node.effectiveAt }}</span>
               </button>
             </div>
@@ -351,6 +351,22 @@
                   保存并生效
                 </button>
               </div>
+            </div>
+            <div class="dynamic-node-switch">
+              <div>
+                <strong>节点动态度量总开关</strong>
+                <span>关闭后，该节点所有环境动态度量对象均不生效，已有对象配置保留。</span>
+              </div>
+              <label class="inline-switch">
+                <input
+                  v-model="dynamicForm.nodeEnabled"
+                  type="checkbox"
+                  :disabled="!selectedDynamicNode"
+                  @change="markDynamicFormDirty"
+                >
+                <em :class="['switch', dynamicForm.nodeEnabled ? 'on' : 'off']"></em>
+                <strong>{{ dynamicForm.nodeEnabled ? '开启' : '关闭' }}</strong>
+              </label>
             </div>
             <div class="info-grid dynamic-status-grid">
               <div v-for="item in dynamicStatusItems" :key="item.label">
@@ -374,7 +390,7 @@
                     <input
                       v-model="dynamicForm.objects[item.key].enabled"
                       type="checkbox"
-                      :disabled="!selectedDynamicNode"
+                      :disabled="!selectedDynamicNode || !dynamicForm.nodeEnabled"
                       @change="markDynamicFormDirty"
                     >
                     <em :class="['switch', dynamicForm.objects[item.key].enabled ? 'on' : 'off']"></em>
@@ -389,7 +405,7 @@
                     min="1000"
                     max="86400000"
                     step="1000"
-                    :disabled="!selectedDynamicNode || !dynamicForm.objects[item.key].enabled"
+                    :disabled="!selectedDynamicNode || !dynamicForm.nodeEnabled || !dynamicForm.objects[item.key].enabled"
                     @input="markDynamicFormDirty"
                   >
                   <small>毫秒</small>
@@ -410,9 +426,19 @@
             <article v-for="item in trustCapabilityItems" :key="item.key" class="switch-item">
               <div>
                 <strong>{{ item.label }}</strong>
-                <span>{{ item.enabled ? '已参与可信判定' : '未参与可信判定' }}</span>
+                <span>{{ item.summary || (item.enabled ? '已参与可信判定' : '未参与可信判定') }}</span>
               </div>
-              <em :class="['switch', item.enabled ? 'on' : 'off']"></em>
+              <button
+                v-if="item.actionable"
+                type="button"
+                class="switch-control"
+                :disabled="busy"
+                @click="toggleGlobalTrustCapability(item)"
+              >
+                <em :class="['switch', item.enabled ? 'on' : 'off']"></em>
+                <span>{{ item.enabled ? '关闭' : '开启' }}</span>
+              </button>
+              <em v-else :class="['switch', item.enabled ? 'on' : 'off']"></em>
             </article>
           </div>
         </section>
@@ -466,7 +492,7 @@
           </div>
           <div class="table compact-table audit-table">
             <div class="row header">
-              <span>时间</span><span>日志类型</span><span>主体名称</span><span>客体名称</span><span>hash</span><span>操作</span><span>结果</span>
+              <span>时间</span><span>日志类型</span><span>主体名称</span><span>客体名称</span><span>度量对象基准值</span><span>操作</span><span>结果</span>
             </div>
             <div v-for="event in auditEvents" :key="event.id" class="row">
               <span>{{ formatTime(event.created_at) }}</span>

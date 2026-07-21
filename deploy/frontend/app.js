@@ -65,6 +65,7 @@ const emptyPolicyForm = (policyType = "measured_boot") => ({
 });
 
 const emptyDynamicForm = () => ({
+  nodeEnabled: true,
   objects: Object.fromEntries(
     DYNAMIC_MEASUREMENT_OBJECTS.map((item) => [
       item.key,
@@ -340,7 +341,7 @@ createApp({
       ) || null;
     },
     dynamicMeasurementSourcePolicy() {
-      return this.dynamicMeasurementAppliedPolicy;
+      return this.dynamicMeasurementAppliedPolicy || this.dynamicMeasurementPolicy;
     },
     dynamicSelectedPolicyBinding() {
       const policy = this.dynamicMeasurementPolicy;
@@ -365,9 +366,10 @@ createApp({
       const report = this.selectedDynamicReport;
       const auth = this.dynamicApplyAuthorization;
       const dynamicOn = report.dynamic_measure_on;
+      const lastResult = this.dynamicLastApplyResult(this.dynamicSelectedPolicyBinding);
       return [
         {
-          label: "动态度量总开关",
+          label: "TPCM 全局动态度量",
           value: this.enabledText(dynamicOn),
           state: dynamicOn === true ? "ok" : dynamicOn === false ? "bad" : "warn"
         },
@@ -380,6 +382,15 @@ createApp({
           label: "策略来源",
           value: this.dynamicPolicySourceText,
           state: this.dynamicPolicySourceClass
+        },
+        {
+          label: "最近生效结果",
+          value: lastResult.text,
+          state: lastResult.state
+        },
+        {
+          label: "结果说明",
+          value: lastResult.summary
         },
         {
           label: "最近采集时间",
@@ -401,6 +412,8 @@ createApp({
           hostname: node.hostname,
           ip: node.management_ip || node.keylime_agent_ip || "-",
           selected: Number(node.id) === this.selectedDynamicNodeId,
+          nodeSwitchText: this.dynamicNodeSwitchText(policy),
+          nodeSwitchClass: this.dynamicNodeSwitchClass(policy),
           sourceText: policy ? this.dynamicNodePolicySourceText(policy) : "未配置",
           sourceClass: policy ? this.dynamicPolicyStateClass(state) : "warn",
           stateText: policy ? this.dynamicPolicyStateText(state) : "未配置",
@@ -427,13 +440,15 @@ createApp({
       const policy = this.dynamicMeasurementPolicy;
       const bindingState = policy ? this.bindingState(policy) : "not_deployed";
       const currentObjects = this.dynamicCurrentObjects;
+      const nodeEnabled = this.dynamicForm.nodeEnabled === true;
       return DYNAMIC_MEASUREMENT_OBJECTS.map((item) => {
         const config = this.dynamicForm.objects[item.key] || { enabled: false, intervalMilli: 60000 };
         const current = currentObjects.get(item.key);
-        const targetEnabled = config.enabled === true;
+        const targetEnabled = nodeEnabled && config.enabled === true;
         const targetInterval = Number(config.intervalMilli || 60000);
         const state = this.dynamicObjectApplyState({
           current,
+          nodeEnabled,
           targetEnabled,
           targetInterval,
           bindingState
@@ -458,7 +473,20 @@ createApp({
     },
     trustCapabilityItems() {
       const caps = this.keylime.trust_capabilities || {};
+      const tpcmNodes = (this.keylime.nodes || []).filter((node) =>
+        node.trust_agent_type === "opentcsm_tpcm" || node.trust_agent_name === "OpenTCSM"
+      );
+      const dynamicGlobalEnabled = tpcmNodes.length > 0 && tpcmNodes.every((node) =>
+        node.trust_report?.dynamic_measure_on === true
+      );
       return [
+        {
+          key: "tpcm_dynamic",
+          label: "TPCM 动态度量",
+          enabled: dynamicGlobalEnabled,
+          summary: dynamicGlobalEnabled ? "集群动态度量已开启" : "集群动态度量未全部开启",
+          actionable: tpcmNodes.length > 0
+        },
         { key: "boot", label: "可信启动", enabled: caps.boot === true },
         { key: "ima", label: "IMA 运行时", enabled: caps.ima === true },
         { key: "evm", label: "EVM", enabled: caps.evm === true },
@@ -667,6 +695,7 @@ createApp({
         const objectConfigs = content.environment_object_configs || {};
         const legacyObjects = new Set(content.environment_objects || DYNAMIC_MEASUREMENT_OBJECTS.map((item) => item.key));
         const defaultInterval = Number(content.environment_interval_milli || 60000);
+        form.nodeEnabled = content.node_dynamic_measure_enabled !== false && content.dynamic_measure_required !== false;
         for (const item of DYNAMIC_MEASUREMENT_OBJECTS) {
           const config = objectConfigs[item.key] || {};
           form.objects[item.key] = {
@@ -689,6 +718,18 @@ createApp({
     dynamicPolicyBinding(policy, nodeId) {
       if (!policy || !nodeId) return null;
       return (policy.bindings || []).find((binding) => Number(binding.target_id) === Number(nodeId)) || null;
+    },
+    dynamicNodeSwitchText(policy) {
+      if (!policy) return "未配置";
+      const content = policy.content || {};
+      const enabled = content.node_dynamic_measure_enabled !== false && content.dynamic_measure_required !== false;
+      return enabled ? "开启" : "关闭";
+    },
+    dynamicNodeSwitchClass(policy) {
+      if (!policy) return "warn";
+      const content = policy.content || {};
+      const enabled = content.node_dynamic_measure_enabled !== false && content.dynamic_measure_required !== false;
+      return enabled ? "ok" : "bad";
     },
     dynamicPolicyStateText(state) {
       const names = {
@@ -727,13 +768,43 @@ createApp({
       }
       return { text: "未检测", state: "warn", key: "unknown" };
     },
+    dynamicLastApplyResult(binding) {
+      if (!binding) {
+        return { text: "未配置", state: "warn", summary: "尚未保存节点动态度量策略。" };
+      }
+      const details = binding.binding_details || {};
+      const result = String(details.policy_last_result || "").toLowerCase();
+      if (result === "success" || binding.application_status === "applied") {
+        return {
+          text: "成功",
+          state: "ok",
+          summary: details.policy_last_result_summary || "策略已生效。"
+        };
+      }
+      if (binding.application_status === "queued" || binding.application_status === "applying") {
+        return { text: "待生效", state: "warn", summary: "策略正在等待后台任务处理。" };
+      }
+      if (result === "failed" || binding.application_status === "failed") {
+        return {
+          text: "失败",
+          state: "bad",
+          summary: details.policy_apply_error_summary || details.policy_last_result_summary || binding.last_error || "策略生效失败。"
+        };
+      }
+      return { text: "未生效", state: "warn", summary: "尚未完成策略生效。" };
+    },
     dynamicNodePolicySourceText(policy) {
       if (!policy) return "未配置";
       const state = this.bindingState(policy);
       return state === "applied" ? "节点策略" : "节点策略（未生效）";
     },
-    dynamicObjectApplyState({ current, targetEnabled, targetInterval, bindingState }) {
+    dynamicObjectApplyState({ current, nodeEnabled, targetEnabled, targetInterval, bindingState }) {
       if (this.dynamicFormDirty) return { text: "待保存", state: "warn" };
+      if (!nodeEnabled) {
+        if (!current) return { text: "一致", state: "ok" };
+        if (bindingState === "failed") return { text: "生效失败", state: "bad" };
+        return { text: "待关闭", state: "warn" };
+      }
       if (!targetEnabled) {
         if (!current) return { text: "一致", state: "ok" };
         if (bindingState === "failed") return { text: "生效失败", state: "bad" };
@@ -1239,6 +1310,7 @@ createApp({
         tpcm_dynamic_policy_save: "动态度量策略保存",
         tpcm_dynamic_policy_apply_queued: "动态度量策略生效已入队",
         tpcm_dynamic_policy_apply: "动态度量策略生效",
+        tpcm_dynamic_global_switch: "动态度量全局控制",
         host_integrity_evidence_collect: "采集节点完整性证据",
         opentcsm_evidence_collect: "采集 TPCM 可信报告",
         opentcsm_access_check: "OpenTCSM 接入检查"
@@ -1251,6 +1323,11 @@ createApp({
     auditType(event) {
       const details = this.auditDetails(event);
       if (details.log_type === "dynamic_measurement") return "动态度量日志";
+      if (details.log_type === "tpcm_authorization") return "TPCM授权日志";
+      if (details.log_type === "measured_boot") return "可信启动日志";
+      if (details.log_type === "ima_runtime") return "IMA运行时日志";
+      if (details.log_type === "node_management") return "节点纳管日志";
+      if (details.log_type === "system_operation") return "系统操作日志";
       return this.auditMessage(event);
     },
     auditSubject(event) {
@@ -1263,7 +1340,7 @@ createApp({
     },
     auditHash(event) {
       const details = this.auditDetails(event);
-      return details.hash || details.report_hash || details.evidence_sha256 || details.rendered_policy_sha256 || "";
+      return details.measurement_baseline || details.hash || details.report_hash || details.evidence_sha256 || details.rendered_policy_sha256 || "";
     },
     auditHashText(event) {
       const value = this.auditHash(event);
@@ -1334,6 +1411,7 @@ createApp({
       const selectedNode = this.selectedDynamicNode;
       if (!selectedNode) throw new Error("请先选择一个目标节点");
       const objectConfigs = {};
+      const nodeEnabled = this.dynamicForm.nodeEnabled === true;
       for (const item of DYNAMIC_MEASUREMENT_OBJECTS) {
         const config = this.dynamicForm.objects[item.key] || {};
         const interval = Number(config.intervalMilli || 60000);
@@ -1346,7 +1424,7 @@ createApp({
         };
       }
       const enabledObjects = Object.entries(objectConfigs)
-        .filter(([, config]) => config.enabled)
+        .filter(([, config]) => nodeEnabled && config.enabled)
         .map(([name]) => name);
       const defaultInterval = enabledObjects.length
         ? objectConfigs[enabledObjects[0]].interval_milli
@@ -1361,6 +1439,8 @@ createApp({
         description: existing?.description || `${selectedNode.hostname} 的 TPCM 环境动态度量对象配置`,
         content: {
           policy_scope: "tpcm_dynamic_measurement",
+          node_dynamic_measure_enabled: nodeEnabled,
+          dynamic_measure_required: nodeEnabled,
           environment_object_configs: objectConfigs,
           environment_objects: enabledObjects,
           environment_interval_milli: defaultInterval,
@@ -1468,14 +1548,16 @@ createApp({
         syscall_table: "系统调用表",
         idt_table: "中断描述符表"
       };
+      const nodeEnabled = policy?.content?.node_dynamic_measure_enabled !== false && policy?.content?.dynamic_measure_required !== false;
       const configs = policy?.content?.environment_object_configs || {};
       if (Object.keys(configs).length) {
-        return DYNAMIC_MEASUREMENT_OBJECTS.map((item) => {
+        const objectText = DYNAMIC_MEASUREMENT_OBJECTS.map((item) => {
           const config = configs[item.key] || {};
           const state = config.enabled ? "开启" : "关闭";
           const interval = config.enabled ? ` / ${config.interval_milli || 60000} ms` : "";
           return `${item.label}：${state}${interval}`;
         }).join("、");
+        return `${nodeEnabled ? "节点总开关：开启" : "节点总开关：关闭"}；${objectText}`;
       }
       const objects = policy?.content?.environment_objects || ["kernel_section", "syscall_table", "idt_table"];
       return objects.length ? objects.map((item) => names[item] || item).join("、") : "-";
@@ -1628,6 +1710,25 @@ createApp({
           await this.requestJson(endpoint, { method: "POST" }, token);
           this.showNotice("ok", "策略基线更新任务已进入队列");
           this.detailPolicy = null;
+          await this.refreshAll(false);
+        }
+      });
+    },
+    toggleGlobalTrustCapability(item) {
+      if (item.key !== "tpcm_dynamic") return;
+      const nextEnabled = !item.enabled;
+      this.requireToken({
+        title: nextEnabled ? "确认开启集群动态度量" : "确认关闭集群动态度量",
+        message: nextEnabled
+          ? "将开启所有 OpenTCSM 节点的动态度量总开关，并使对应节点策略生效。"
+          : "将关闭所有 OpenTCSM 节点的动态度量总开关，并使对应节点策略生效。",
+        confirmText: nextEnabled ? "开启并生效" : "关闭并生效",
+        action: async (token) => {
+          await this.requestJson("/api/policies/tpcm-dynamic/global-switch", {
+            method: "POST",
+            body: JSON.stringify({ enabled: nextEnabled })
+          }, token);
+          this.showNotice("ok", nextEnabled ? "集群动态度量开启任务已进入队列" : "集群动态度量关闭任务已进入队列");
           await this.refreshAll(false);
         }
       });
