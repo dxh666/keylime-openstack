@@ -557,27 +557,26 @@ createApp({
         const report = keylimeNode.trust_report || {};
         const history = keylimeNode.trust_report_history || [];
         sections.push({
+          title: "OpenTCSM 采集健康",
+          items: [
+            { label: "采集状态", value: this.collectionStatusText(keylimeNode.status), state: this.collectionStatusClass(keylimeNode.status) },
+            { label: "证据有效性", value: this.evidenceFreshText(keylimeNode.evidence_fresh), state: this.evidenceFreshClass(keylimeNode.evidence_fresh) },
+            { label: "最近采集", value: this.formatTime(report.collected_at) },
+            { label: "有效期", value: this.formatTime(report.valid_until) },
+            { label: "异常信息", value: this.collectionErrorText(keylimeNode, report) }
+          ]
+        });
+        sections.push({
           title: "TPCM 可信报告",
           items: [
             { label: "可信根", value: report.trust_root || row.trustedRoot || "-" },
-            { label: "代理组件", value: report.agent_name || row.trustAgentName || "OpenTCSM" },
             { label: "TPCM ID", value: report.tpcm_id || "-" },
             { label: "报告状态", value: this.trustStatusText(report.trust_status), state: report.trusted === true ? "ok" : report.trusted === false ? "bad" : "warn" },
-            { label: "启动度量", value: this.enabledText(report.boot_measure_on) },
-            { label: "动态度量", value: this.enabledText(report.dynamic_measure_on) },
+            { label: "启动度量开关", value: this.enabledText(report.boot_measure_on) },
+            { label: "动态度量开关", value: this.enabledText(report.dynamic_measure_on) },
             { label: "可信报告评分", value: this.reportEvalText(report.trust_report_eval) },
             { label: "失败计数", value: report.failure_count ?? "-" },
-            { label: "动态度量次数", value: report.dmeasure_times ?? "-" },
-            { label: "启动基线数", value: report.boot_measure_ref_number ?? "-" },
-            { label: "动态基线数", value: report.dynamic_measure_ref_number ?? "-" },
-            { label: "启动记录数", value: report.boot_record_count ?? "-" },
-            { label: "采集时间", value: this.formatTime(report.collected_at) },
-            { label: "有效期", value: this.formatTime(report.valid_until) },
-            { label: "可信报告哈希", value: this.shortHash(report.trust_report_sha256) },
-            { label: "策略报告哈希", value: this.shortHash(report.policy_report_sha256) },
-            { label: "启动记录哈希", value: this.shortHash(report.boot_measure_records_sha256) },
-            { label: "失败项", value: this.failureText(report.trust_report_failures) },
-            { label: "采集错误", value: this.listText(report.errors || []) }
+            { label: "失败项", value: this.failureText(report.trust_report_failures) }
           ]
         });
         sections.push({
@@ -659,6 +658,38 @@ createApp({
       const entries = Object.entries(value || {});
       if (!entries.length) return "无";
       return entries.map(([key, item]) => `${key}: ${item}`).join("\n");
+    },
+    collectionStatusText(value) {
+      const normalized = String(value || "").toLowerCase();
+      if (normalized === "collected") return "正常";
+      if (normalized === "pending") return "等待采集";
+      if (normalized === "error") return "采集异常";
+      return "未知";
+    },
+    collectionStatusClass(value) {
+      const normalized = String(value || "").toLowerCase();
+      if (normalized === "collected") return "ok";
+      if (normalized === "error") return "bad";
+      return "warn";
+    },
+    evidenceFreshText(value) {
+      const bootFresh = value?.boot === true;
+      const runtimeFresh = value?.runtime === true;
+      if (bootFresh && runtimeFresh) return "有效";
+      if (value?.boot === false || value?.runtime === false) return "已过期";
+      return "未知";
+    },
+    evidenceFreshClass(value) {
+      const text = this.evidenceFreshText(value);
+      if (text === "有效") return "ok";
+      if (text === "已过期") return "bad";
+      return "warn";
+    },
+    collectionErrorText(keylimeNode, report) {
+      const errors = report.errors || [];
+      if (errors.length) return this.listText(errors);
+      if (keylimeNode.status === "error") return keylimeNode.reason || "采集异常";
+      return "无";
     },
     tpcmHistoryText(item) {
       const parts = [
