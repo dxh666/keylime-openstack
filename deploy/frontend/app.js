@@ -567,13 +567,22 @@ createApp({
           ]
         });
         sections.push({
-          title: "TPCM 可信报告",
+          title: "TPCM 能力状态",
           items: [
             { label: "可信根", value: report.trust_root || row.trustedRoot || "-" },
             { label: "TPCM ID", value: report.tpcm_id || "-" },
+            { label: "启动度量", value: this.enabledText(report.boot_measure_on) },
+            { label: "动态度量", value: this.enabledText(report.dynamic_measure_on) },
+            { label: "启动基线数量", value: this.countText(report.boot_measure_ref_number) },
+            { label: "动态基线数量", value: this.countText(report.dynamic_measure_ref_number) },
+            { label: "动态度量次数", value: this.countText(report.dmeasure_times) },
+            { label: "控制策略指纹", value: this.shortHash(report.global_control_policy_sha256) }
+          ]
+        });
+        sections.push({
+          title: "TPCM 可信报告",
+          items: [
             { label: "报告状态", value: this.trustStatusText(report.trust_status), state: report.trusted === true ? "ok" : report.trusted === false ? "bad" : "warn" },
-            { label: "启动度量开关", value: this.enabledText(report.boot_measure_on) },
-            { label: "动态度量开关", value: this.enabledText(report.dynamic_measure_on) },
             { label: "可信报告评分", value: this.reportEvalText(report.trust_report_eval) },
             { label: "失败计数", value: report.failure_count ?? "-" },
             { label: "失败项", value: this.failureText(report.trust_report_failures) }
@@ -653,6 +662,10 @@ createApp({
     shortHash(value) {
       const text = String(value || "");
       return text ? text.slice(0, 16) : "-";
+    },
+    countText(value) {
+      if (value === null || value === undefined || value === "") return "-";
+      return `${value}`;
     },
     failureText(value) {
       const entries = Object.entries(value || {});
