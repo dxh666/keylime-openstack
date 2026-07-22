@@ -34,6 +34,7 @@ CUSTOM_KEYLIME_ATTESTED
 Read the production design first:
 
 ```text
+docs/README.md
 docs/keylime_openstack_production_trust_plane_design.md
 ```
 
@@ -55,7 +56,7 @@ Measured Boot、IMA 与 Ansible 策略管理：
 docs/keylime_measured_boot_ima_ansible_management.md
 ```
 
-Node-side IMA appraisal and EVM enablement:
+Deferred node-side IMA appraisal and EVM notes:
 
 ```text
 docs/keylime_openstack_node_evm_appraisal_enablement.md
@@ -138,12 +139,10 @@ Trusted trait:
 
 ```text
 docs/
-  case summaries, staged lab records, OpenStack project analysis,
-  Keylime deployment notes, troubleshooting records
+  product documentation index, active operations docs, historical lab records
 
 deploy/scripts/
-  Keylime-to-Placement sync scripts, freshness checks,
-  nova-compute quarantine prototype, agent restart helper
+  current parameterized operational scripts; see deploy/scripts/README.md
 
 deploy/systemd/
   systemd service/timer units for periodic sync and the management console
@@ -152,7 +151,7 @@ deploy/env/
   sanitized lab variable template
 
 deploy/examples/
-  command snippets for private trusted flavor and verification
+  command snippets, legacy host-specific helpers, deferred experiments
 
 deploy/frontend/
   frontend for compute-node trust monitoring and TPM PCR policy management

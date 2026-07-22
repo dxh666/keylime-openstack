@@ -185,7 +185,7 @@ cp deploy/scripts/keylime-placement-sync.sh /opt/keylime-openstack-sync/
 cp deploy/scripts/keylime-placement-sync-locked.sh /opt/keylime-openstack-sync/
 cp deploy/scripts/keylime-nova-compute-quarantine.sh /opt/keylime-openstack-sync/
 cp deploy/scripts/keylime-sync-control-loop.sh /opt/keylime-openstack-sync/
-cp deploy/scripts/keylime-reactivate-csri9.sh /opt/keylime-openstack-sync/
+cp deploy/examples/legacy/keylime-reactivate-csri9.sh /opt/keylime-openstack-sync/
 
 chmod +x /opt/keylime-openstack-sync/*.sh
 
@@ -202,7 +202,7 @@ systemctl restart keylime-openstack-sync.timer
 在 `csri9` 计算节点，如果仍使用容器版 agent：
 
 ```bash
-cp deploy/scripts/restart-keylime-agent-csri9.sh /root/
+cp deploy/examples/legacy/restart-keylime-agent-csri9.sh /root/
 chmod +x /root/restart-keylime-agent-csri9.sh
 ```
 

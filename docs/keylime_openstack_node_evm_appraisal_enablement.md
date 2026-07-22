@@ -83,7 +83,7 @@ From `csri10`:
 ```bash
 for entry in csri8=172.31.100.8 csri9=172.31.100.9 hygon22=172.31.100.22; do
   ip="${entry#*=}"
-  scp /opt/keylime-openstack/deploy/scripts/keylime-node-evm-appraisal.sh \
+  scp /opt/keylime-openstack/deploy/examples/experimental/evm/keylime-node-evm-appraisal.sh \
     root@"$ip":/usr/local/sbin/keylime-node-evm-appraisal
   ssh root@"$ip" chmod 0755 /usr/local/sbin/keylime-node-evm-appraisal
   ssh root@"$ip" /usr/local/sbin/keylime-node-evm-appraisal status
@@ -101,7 +101,7 @@ mkdir -p /root/keylime-openstack-ima-evm-signing
 cd /opt/keylime-openstack
 
 KEYLIME_NODE_EVM_ROOT=/root/keylime-openstack-ima-evm-signing \
-  deploy/scripts/keylime-node-evm-appraisal.sh create-keypair
+  deploy/examples/experimental/evm/keylime-node-evm-appraisal.sh create-keypair
 ```
 
 The generated files are:

@@ -102,8 +102,8 @@ deploy/examples/verification-commands.md
 以下 helper 仍是人工运维辅助，不应自动运行：
 
 ```text
-deploy/scripts/keylime-reactivate-csri9.sh
-deploy/scripts/restart-keylime-agent-csri9.sh
+deploy/examples/legacy/keylime-reactivate-csri9.sh
+deploy/examples/legacy/restart-keylime-agent-csri9.sh
 ```
 
 ## 一键部署
