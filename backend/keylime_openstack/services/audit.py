@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextvars import ContextVar
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -46,7 +47,21 @@ def record_audit_event(
         target=target,
         severity=severity,
         message=message,
-        event_details=dict(event_details or {}),
+        event_details=_json_safe(event_details or {}),
     )
     session.add(event)
     return event
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, tuple | set):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, datetime | date):
+        return value.isoformat()
+    if isinstance(value, str | int | float | bool) or value is None:
+        return value
+    return str(value)
