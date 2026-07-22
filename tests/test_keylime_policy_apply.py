@@ -1,8 +1,16 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
+from keylime_openstack.config import Settings
+from keylime_openstack.constants import POLICY_IMA_RUNTIME
+from keylime_openstack.models import ComputeNode, TrustPolicy
 from keylime_openstack.services.keylime import KeylimeClient
+from keylime_openstack.services.keylime_policy_deployment import KeylimePolicyDeployment
 from keylime_openstack.services.policy_deployment import PolicyDeploymentService
 
 
@@ -81,3 +89,111 @@ def test_keylime_failure_includes_command_context() -> None:
     assert "rc=2" in message
     assert "keylime-tenant -c add" in message
     assert "INFO:keylime.config" in message
+
+
+def test_keylime_deployment_applies_ima_runtime_policy(tmp_path) -> None:
+    class FakeAnsible:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, Any]] = []
+
+        def run(
+            self,
+            *,
+            playbook: str,
+            node: ComputeNode,
+            workspace: Path,
+            extra_vars: dict[str, Any],
+        ) -> SimpleNamespace:
+            self.calls.append(
+                {
+                    "playbook": playbook,
+                    "node": node.hostname,
+                    "workspace": workspace,
+                    "extra_vars": extra_vars,
+                }
+            )
+            Path(extra_vars["evidence_output_path"]).write_text(
+                "10 abc ima-ng sha256:111 /usr/bin/python\n"
+                "10 def ima-ng sha256:222 /usr/bin/bash\n",
+                encoding="utf-8",
+            )
+            return SimpleNamespace(rc=0, stdout="ok", stderr="")
+
+    class FakeKeylime:
+        def __init__(self) -> None:
+            self.created_measurements = ""
+            self.created_excludes: list[str] = []
+            self.stored_name = ""
+            self.stored_policy: dict[str, Any] = {}
+            self.applied_args: dict[str, Any] = {}
+
+        def tenant_tool_create_runtime_policy(
+            self,
+            measurements: str,
+            excludes: list[str],
+        ) -> dict[str, Any]:
+            self.created_measurements = measurements
+            self.created_excludes = excludes
+            return {"ima": {"ignored_keyrings": []}, "excludes": excludes}
+
+        def tenant_tool_store_runtime_policy(
+            self,
+            *,
+            name: str,
+            runtime_policy: dict[str, Any],
+        ) -> None:
+            self.stored_name = name
+            self.stored_policy = runtime_policy
+
+        def tenant_tool_apply_policy(self, **kwargs: Any) -> dict[str, Any]:
+            self.applied_args = kwargs
+            return {"rc": 0, "stdout": "ok", "stderr": ""}
+
+    fake_ansible = FakeAnsible()
+    fake_keylime = FakeKeylime()
+
+    @contextmanager
+    def workspace() -> Iterator[Path]:
+        yield tmp_path
+
+    deployment = KeylimePolicyDeployment(
+        settings=Settings(keylime_docker_dir=".", temp_dir=str(tmp_path)),
+        ansible=fake_ansible,  # type: ignore[arg-type]
+        keylime=fake_keylime,  # type: ignore[arg-type]
+        workspace_factory=workspace,
+        require_ansible_success=lambda rc, stdout, stderr: None,
+        require_keylime_success=lambda result: None,
+        active_external_policy_name=lambda node_id, policy_type: "",
+        active_boot_policy_adapter=lambda node_id: {
+            "measured_boot_policy_name": "mb-active",
+        },
+    )
+    policy = TrustPolicy(
+        id=8,
+        name="runtime-baseline",
+        policy_type=POLICY_IMA_RUNTIME,
+        content={"node_ima_policy": "allow"},
+        excludes=["/tmp"],
+    )
+    node = ComputeNode(
+        id=9,
+        hostname="csri9",
+        management_ip="172.31.100.9",
+        keylime_agent_uuid="uuid-csri9",
+        keylime_agent_port=9002,
+    )
+
+    result = deployment.deploy_ima_runtime(policy, node)
+
+    assert fake_ansible.calls[0]["playbook"] == "apply-ima-policy.yml"
+    assert fake_keylime.created_excludes == ["/tmp"]
+    assert fake_keylime.stored_name == result.external_name
+    assert fake_keylime.stored_policy == result.rendered_policy
+    assert result.external_name.startswith("klos-ima-runtime-baseline-csri9-")
+    assert result.deployment_details["keylime_artifact"] == "runtime_policy"
+    assert result.deployment_details["measurement_count"] == 2
+    assert result.response["measurement_count"] == 2
+    assert fake_keylime.applied_args["agent_uuid"] == "uuid-csri9"
+    assert fake_keylime.applied_args["agent_ip"] == "172.31.100.9"
+    assert fake_keylime.applied_args["runtime_policy_name"] == result.external_name
+    assert fake_keylime.applied_args["measured_boot_policy_name"] == "mb-active"
