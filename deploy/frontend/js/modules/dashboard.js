@@ -1,3 +1,61 @@
+function alertMessageText(node) {
+  if (node.trust_managed === false || node.status === "unmanaged") {
+    return "计算节点未纳入可信代理纳管";
+  }
+  const reason = String(node.reason || node.last_event_id || "");
+  const names = {
+    TRUST_AGENT_UNMANAGED: "计算节点未纳入可信代理纳管",
+    WAITING_FOR_IMA_MISSING: "IMA 运行时策略未绑定或未下发",
+    WAITING_FOR_BOOT_MISSING: "可信启动证据尚未采集",
+    WAITING_FOR_BOOT_FAIL: "可信启动证据未通过",
+    WAITING_FOR_IMA_FAIL: "IMA 运行时证据未通过",
+    WAITING_FOR_BOOT_FAIL_IMA_FAIL: "可信启动或 IMA 运行时证据未通过",
+    WAITING_FOR_BOOT_FAIL_IMA_MISSING: "可信启动未通过，IMA 运行时策略未绑定或未下发",
+    WAITING_FOR_BOOT_MISSING_IMA_MISSING: "可信启动与 IMA 运行时证据尚未完备",
+    WAITING_FOR_EVM: "EVM 可信能力尚未启用"
+  };
+  return names[reason] || reason || "可信状态未通过";
+}
+
+function alertStateClass(node) {
+  if (node.status === "error") return "bad";
+  if (node.trust_managed === false || node.status === "unmanaged") return "warn";
+  const reason = String(node.reason || node.last_event_id || "").toLowerCase();
+  if (reason.includes("_fail") || reason.includes(".fail") || reason.includes("not_reachable")) {
+    return "bad";
+  }
+  return "warn";
+}
+
+function alertSeverityText(node) {
+  return alertStateClass(node) === "bad" ? "重要" : "提醒";
+}
+
+function alertRemediationText(node) {
+  if (node.trust_managed === false || node.status === "unmanaged") {
+    return "确认该 OpenStack 计算节点是否需要纳管；如需要，安装并配置 TPM/TPCM 可信代理后更新节点纳管配置。";
+  }
+  const summary = String(node.remediation?.summary || "");
+  const reason = String(node.reason || node.last_event_id || "");
+  const names = {
+    "Compute node is not managed by a trusted-root agent.":
+      "确认该 OpenStack 计算节点是否需要纳管；如需要，安装并配置 TPM/TPCM 可信代理后更新节点纳管配置。",
+    "No IMA runtime policy is bound in Keylime verifier for this agent.":
+      "Keylime verifier 中未绑定该节点的 IMA 运行时策略；当前先保留，后续再处理策略下发与重启流程。",
+    "IMA runtime policy does not match the live measurement list.":
+      "IMA 运行时度量与已绑定策略不一致；比对实时度量后再重新生成或下发策略。",
+    "IMA runtime evidence is not trusted; compare live measurements with the bound policy.":
+      "IMA 运行时证据未通过；比对实时度量与已绑定策略。",
+    "TPM/PCR boot evidence failed; do not refresh IMA runtime baseline first.":
+      "TPM/PCR 可信启动证据未通过；先处理可信启动策略或启动证据。"
+  };
+  if (names[summary]) return names[summary];
+  if (reason === "WAITING_FOR_IMA_MISSING") {
+    return "Keylime verifier 中未绑定该节点的 IMA 运行时策略；当前先保留，后续再处理策略下发与重启流程。";
+  }
+  return summary || "-";
+}
+
 export const dashboardComputed = {
   controllerNodes() {
     return this.nodes.filter((node) => node.role === "controller");
@@ -180,12 +238,10 @@ export const dashboardComputed = {
       .filter((node) => node.trust_managed === false || node.status === "unmanaged" || node.trusted === false || node.status === "error")
       .map((node) => ({
         target: node.host || node.agent_uuid || "-",
-        severity: node.status === "error" ? "重要" : "提醒",
-        state: node.status === "error" || (node.trusted === false && node.status !== "unmanaged") ? "bad" : "warn",
-        message: node.trust_managed === false || node.status === "unmanaged"
-          ? "计算节点未纳入可信代理纳管"
-          : node.reason || node.last_event_id || "可信状态未通过",
-        remediation: node.remediation?.summary || "-"
+        severity: alertSeverityText(node),
+        state: alertStateClass(node),
+        message: alertMessageText(node),
+        remediation: alertRemediationText(node)
       }));
   },
   keylimeStatusClass() {

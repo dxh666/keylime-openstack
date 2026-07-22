@@ -1,7 +1,11 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
-from keylime_openstack.constants import PROVIDER_OPENTCSM, TRUST_AGENT_KEYLIME
+from keylime_openstack.constants import (
+    PROVIDER_OPENTCSM,
+    TRUST_AGENT_KEYLIME,
+    TRUST_AGENT_UNMANAGED,
+)
 from keylime_openstack.services.keylime_gate import _external_report_summary, _remediation
 
 
@@ -17,6 +21,31 @@ def test_missing_verifier_enrollment_points_to_trusted_boot_redeploy():
     assert remediation["category"] == "verifier-enrollment"
     assert "可信启动策略页面" in commands
     assert "keylime-ima-runtime-policy-refresh.sh" not in commands
+
+
+def test_unmanaged_remediation_uses_product_language():
+    remediation = _remediation(
+        event_id="TRUST_AGENT_UNMANAGED",
+        trusted=False,
+        host="hygon22",
+        trust_agent_type=TRUST_AGENT_UNMANAGED,
+    )
+
+    assert remediation["category"] == "inventory"
+    assert remediation["summary"] == "计算节点未纳入可信代理纳管。"
+    assert "TRUST_AGENT_TYPE_MAP" in "\n".join(remediation["next_commands"])
+
+
+def test_ima_missing_remediation_uses_product_language():
+    remediation = _remediation(
+        event_id="WAITING_FOR_IMA_MISSING",
+        trusted=False,
+        host="csri8",
+        trust_agent_type=TRUST_AGENT_KEYLIME,
+    )
+
+    assert remediation["category"] == "ima-runtime-policy"
+    assert remediation["summary"].startswith("Keylime verifier 中未绑定该节点的 IMA 运行时策略")
 
 
 def test_opentcsm_report_summary_exposes_product_fields_without_command_output():

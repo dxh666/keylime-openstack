@@ -574,15 +574,15 @@ def _remediation(
     trust_agent_type: str,
 ) -> dict[str, object]:
     if trusted:
-        return {"category": "none", "summary": "No action required."}
+        return {"category": "none", "summary": "无需处理。"}
 
     event = event_id.lower()
     if trust_agent_type == TRUST_AGENT_UNMANAGED:
         return {
             "category": "inventory",
-            "summary": "Compute node is not managed by a trusted-root agent.",
+            "summary": "计算节点未纳入可信代理纳管。",
             "next_commands": [
-                "Install and register a TPM/TPCM trusted agent, then update TRUST_AGENT_TYPE_MAP.",
+                "确认该 OpenStack 计算节点是否需要纳管；如需要，安装并配置 TPM/TPCM 可信代理后更新 TRUST_AGENT_TYPE_MAP。",
             ],
         }
     if trust_agent_type == TRUST_AGENT_OPENTCSM_TPCM:
@@ -607,7 +607,7 @@ def _remediation(
     if event == "missing-agent-uuid":
         return {
             "category": "inventory",
-            "summary": "Node has no Keylime agent UUID in the trust-plane inventory.",
+            "summary": "可信平面节点清单中缺少该节点的 TPM 代理 UUID。",
             "next_commands": [
                 "deploy/scripts/keylime-agent-inventory-refresh.sh",
             ],
@@ -626,16 +626,16 @@ def _remediation(
     if event == "keylime-tenant-tool-unavailable":
         return {
             "category": "tenant-tool",
-            "summary": "Verifier API failed and tenant-tool fallback cannot run because Docker is unavailable in the API container.",
+            "summary": "Verifier API 读取失败，且 API 容器内无法使用 Docker 执行 tenant-tool 兜底命令。",
             "next_commands": [
-                "Run the Keylime tenant command from /opt/keylime-docker on csri10.",
-                "Mount Docker access into the API container only if tenant-tool fallback is required.",
+                "在 csri10 的 /opt/keylime-docker 目录执行 Keylime tenant 命令。",
+                "仅在需要 tenant-tool 兜底时，再为 API 容器配置 Docker 访问能力。",
             ],
         }
     if event == "keylime-api-error":
         return {
             "category": "keylime-api",
-            "summary": "Trust plane could not read Keylime verifier status.",
+            "summary": "可信平面无法读取 Keylime verifier 状态。",
             "next_commands": [
                 "docker ps | grep -E 'keylime-verifier|keylime-registrar'",
                 "docker compose logs --tail=120 keylime-verifier",
@@ -644,7 +644,7 @@ def _remediation(
     if event.startswith("internal.verifier.not_reachable"):
         return {
             "category": "agent-reachability",
-            "summary": "Verifier cannot reach the Keylime agent; check agent container/network, then reactivate.",
+            "summary": "Keylime verifier 无法访问该节点 TPM 代理；检查代理容器和网络后重新激活。",
             "next_commands": [
                 "ssh root@<agent-ip> 'docker ps | grep keylime-agent || true'",
                 f"deploy/scripts/keylime-only-attestation-check.sh --strict --hosts {host}",
@@ -655,7 +655,7 @@ def _remediation(
     ):
         return {
             "category": "ima-runtime-policy",
-            "summary": "IMA runtime policy does not match the live measurement list.",
+            "summary": "IMA 运行时度量与已绑定策略不一致。",
             "next_commands": [
                 f"deploy/scripts/keylime-only-attestation-repair.sh --hosts {host}",
                 f"deploy/scripts/keylime-ima-runtime-policy-diff.sh {host} bound",
@@ -665,7 +665,7 @@ def _remediation(
     if event.startswith(("pcr.", "measured_boot.", "quote.", "tpm.")):
         return {
             "category": "boot-tpm-policy",
-            "summary": "TPM/PCR boot evidence failed; do not refresh IMA runtime baseline first.",
+            "summary": "TPM/PCR 可信启动证据未通过；先处理可信启动策略或启动证据。",
             "next_commands": [
                 "deploy/scripts/keylime-tpm-evidence-audit.sh",
             ],
@@ -673,7 +673,7 @@ def _remediation(
     if "stale" in event:
         return {
             "category": "freshness",
-            "summary": "Attestation is no longer fresh; wait for verifier or check agent/verifier loop.",
+            "summary": "可信证明已过期；等待 verifier 刷新，或检查代理与 verifier 的证明循环。",
             "next_commands": [
                 f"deploy/scripts/keylime-only-attestation-check.sh --strict --hosts {host}",
             ],
@@ -681,7 +681,7 @@ def _remediation(
     if "boot_" in event:
         return {
             "category": "boot-tpm-policy",
-            "summary": "Boot evidence is not trusted; inspect PCR policy and event log before runtime policy work.",
+            "summary": "可信启动证据未通过；先检查 PCR 策略和启动事件日志，再处理运行时策略。",
             "next_commands": [
                 "deploy/scripts/keylime-tpm-evidence-audit.sh",
             ],
@@ -689,7 +689,7 @@ def _remediation(
     if "ima_missing" in event or "runtime_missing" in event:
         return {
             "category": "ima-runtime-policy",
-            "summary": "No IMA runtime policy is bound in Keylime verifier for this agent.",
+            "summary": "Keylime verifier 中未绑定该节点的 IMA 运行时策略；当前先保留，后续再处理策略下发与重启流程。",
             "next_commands": [
                 "curl -fsS http://127.0.0.1:8088/api/tasks?limit=10",
                 "进入 IMA 运行时策略页面，确认策略绑定状态为已下发；如未下发，重新下发该节点策略。",
@@ -699,14 +699,14 @@ def _remediation(
     if "ima_" in event or "runtime_" in event:
         return {
             "category": "ima-runtime-policy",
-            "summary": "IMA runtime evidence is not trusted; compare live measurements with the bound policy.",
+            "summary": "IMA 运行时证据未通过；比对实时度量与已绑定策略。",
             "next_commands": [
                 f"deploy/scripts/keylime-ima-runtime-policy-diff.sh {host} bound",
             ],
         }
     return {
         "category": "unknown",
-        "summary": "Inspect Keylime verifier logs and node-specific evidence.",
+        "summary": "检查 Keylime verifier 日志和该节点的可信证据。",
         "next_commands": [
             "docker compose logs --since=20m keylime-verifier",
         ],
