@@ -10,6 +10,7 @@ from keylime_openstack.database import Base
 from keylime_openstack.models import PolicyBinding, TrustPolicy
 from keylime_openstack.schemas import TpcmDynamicGlobalSwitchIn
 from keylime_openstack.services.policy_deployment import (
+    PolicyDeploymentService,
     _opentcsm_dynamic_failure_details,
 )
 
@@ -22,6 +23,33 @@ def test_opentcsm_dynamic_auth_rejection_is_productized() -> None:
     assert details["policy_apply_authorization_status"] == "rejected"
     assert details["policy_apply_error_code"] == "TPCM_AUTH_REJECTED"
     assert "TPCM" in details["policy_apply_error_summary"]
+
+
+def test_opentcsm_dynamic_missing_command_is_productized() -> None:
+    details = _opentcsm_dynamic_failure_details(
+        "get_dmeasure_policy_before rc=127; stderr=command not found: get_dmeasure_policy"
+    )
+
+    assert details["policy_apply_error_code"] == "TPCM_COMMAND_NOT_FOUND"
+    assert "OpenTCSM" in details["policy_apply_error_summary"]
+    assert "get_dmeasure_policy" in details["policy_apply_error_summary"]
+
+
+def test_failed_policy_binding_uses_product_summary_as_last_error() -> None:
+    binding = PolicyBinding(binding_details={})
+    details = _opentcsm_dynamic_failure_details(
+        "FileNotFoundError: [Errno 2] No such file or directory: 'get_dmeasure_policy'"
+    )
+
+    PolicyDeploymentService._failed(
+        binding,
+        "raw ansible traceback that should stay out of policy lists",
+        details,
+    )
+
+    assert binding.last_error == details["policy_apply_error_summary"]
+    assert "raw ansible traceback" not in binding.last_error
+    assert binding.binding_details["policy_apply_error_code"] == "TPCM_COMMAND_NOT_FOUND"
 
 
 def test_dynamic_policy_audit_details_use_product_fields() -> None:

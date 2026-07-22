@@ -656,14 +656,19 @@ class PolicyDeploymentService:
         error: str,
         extra_details: dict[str, Any] | None = None,
     ) -> None:
+        display_error = str(
+            (extra_details or {}).get("policy_apply_error_summary")
+            or (extra_details or {}).get("policy_last_result_summary")
+            or error
+        )
         binding.application_status = POLICY_DEPLOY_FAILED
-        binding.last_error = error[:4000]
+        binding.last_error = display_error[:4000]
         details = {
             **dict(binding.binding_details or {}),
             "policy_apply_status": POLICY_DEPLOY_FAILED,
-            "policy_apply_error_summary": error[:500],
+            "policy_apply_error_summary": display_error[:500],
             "policy_last_result": "failed",
-            "policy_last_result_summary": error[:500],
+            "policy_last_result_summary": display_error[:500],
             "policy_last_result_at": datetime.now(timezone.utc).isoformat(),
         }
         if extra_details:
@@ -835,6 +840,12 @@ def _opentcsm_dynamic_failure_details(error: str) -> dict[str, Any]:
         status = "rejected"
         code = "TPCM_AUTH_REJECTED"
         summary = "TPCM 拒绝了策略生效授权，请检查 UID 和授权证书/密钥是否已在节点注册。"
+    elif _looks_like_opentcsm_command_missing(text):
+        code = "TPCM_COMMAND_NOT_FOUND"
+        summary = (
+            "OpenTCSM 动态度量命令不可用，请确认节点已完整安装 OpenTCSM，"
+            "并提供 get_dmeasure_policy/update_dmeasure_policy 等工具。"
+        )
     elif "校验未通过" in text or "validation" in text.lower():
         status = "normal"
         code = "TPCM_DYNAMIC_POLICY_NOT_CONSISTENT"
@@ -857,6 +868,24 @@ def _looks_like_tpcm_auth_rejected(text: str) -> bool:
         return True
     if "0x00000098" in text or "ret:0x98" in text or "ret: 0x98" in text:
         return True
+    return False
+
+
+def _looks_like_opentcsm_command_missing(text: str) -> bool:
+    dynamic_commands = (
+        "get_dmeasure_policy",
+        "update_dmeasure_policy",
+        "get_global_control_policy",
+    )
+    lowered = text.lower()
+    for command in dynamic_commands:
+        if (
+            f"command not found: {command}" in lowered
+            or f"no such file or directory: '{command}'" in lowered
+            or f'no such file or directory: "{command}"' in lowered
+            or f"{command} rc=127" in lowered
+        ):
+            return True
     return False
 
 

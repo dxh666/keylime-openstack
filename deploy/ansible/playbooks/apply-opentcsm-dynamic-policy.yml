@@ -62,24 +62,49 @@
             return safe
 
         def run(name, command):
-            completed = subprocess.run(
-                command,
-                shell=False,
-                check=False,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=120,
-                env=env,
-            )
-            return {
-                "name": name,
-                "command": redact(command),
-                "rc": completed.returncode,
-                "stdout": completed.stdout,
-                "stderr": completed.stderr,
-            }
+            try:
+                completed = subprocess.run(
+                    command,
+                    shell=False,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=120,
+                    env=env,
+                )
+                return {
+                    "name": name,
+                    "command": redact(command),
+                    "rc": completed.returncode,
+                    "stdout": completed.stdout,
+                    "stderr": completed.stderr,
+                }
+            except FileNotFoundError:
+                return {
+                    "name": name,
+                    "command": redact(command),
+                    "rc": 127,
+                    "stdout": "",
+                    "stderr": f"command not found: {command[0]}",
+                }
+            except subprocess.TimeoutExpired as exc:
+                return {
+                    "name": name,
+                    "command": redact(command),
+                    "rc": 124,
+                    "stdout": (exc.stdout or "") if isinstance(exc.stdout, str) else "",
+                    "stderr": f"command timed out: {command[0]}",
+                }
+            except Exception as exc:
+                return {
+                    "name": name,
+                    "command": redact(command),
+                    "rc": 1,
+                    "stdout": "",
+                    "stderr": str(exc),
+                }
 
         def parse_policy(text):
             rows = {}
