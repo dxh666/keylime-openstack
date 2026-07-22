@@ -233,18 +233,30 @@ up_services() {
 health() {
   health_endpoint "/api/health" "API health"
   echo
-  health_endpoint "/api/overview" "API overview"
+  health_endpoint "/api/overview" "API overview" "admin-token"
   echo
 }
 
 health_endpoint() {
   local path="$1"
   local label="$2"
+  local auth_mode="${3:-public}"
   local attempt
   local output
+  local admin_token
+  local curl_args=(-fsS)
+
+  if [ "$auth_mode" = "admin-token" ]; then
+    admin_token="$(get_env_value ADMIN_TOKEN)"
+    if [ -z "$admin_token" ]; then
+      echo "ERROR: $label requires ADMIN_TOKEN for authenticated health check." >&2
+      return 1
+    fi
+    curl_args+=(-H "X-Admin-Token: $admin_token")
+  fi
 
   for attempt in $(seq 1 "$HEALTH_RETRIES"); do
-    if output="$(curl -fsS "$API_URL$path" 2>&1)"; then
+    if output="$(curl "${curl_args[@]}" "$API_URL$path" 2>&1)"; then
       printf '%s\n' "$output"
       return 0
     fi
