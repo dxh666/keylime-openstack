@@ -45,7 +45,7 @@ def test_ima_missing_remediation_uses_product_language():
     )
 
     assert remediation["category"] == "ima-runtime-policy"
-    assert remediation["summary"].startswith("Keylime verifier 中未绑定该节点的 IMA 运行时策略")
+    assert remediation["summary"].startswith("TPM 可信验证器中未绑定该节点的 IMA 运行时策略")
 
 
 def test_opentcsm_report_summary_exposes_product_fields_without_command_output():

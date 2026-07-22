@@ -615,7 +615,7 @@ def _remediation(
     if event == "keylime-verifier-agent-not-found":
         return {
             "category": "verifier-enrollment",
-            "summary": "Keylime 验证器中没有该节点的有效纳管记录。",
+            "summary": "TPM 可信验证器中没有该节点的有效纳管记录。",
             "next_commands": [
                 "cd /opt/keylime-docker && docker compose run --rm keylime-tenant -c reglist",
                 "cd /opt/keylime-docker && docker compose run --rm keylime-tenant -c cvlist",
@@ -635,7 +635,7 @@ def _remediation(
     if event == "keylime-api-error":
         return {
             "category": "keylime-api",
-            "summary": "可信平面无法读取 Keylime verifier 状态。",
+            "summary": "可信平面无法读取 TPM 可信验证器状态。",
             "next_commands": [
                 "docker ps | grep -E 'keylime-verifier|keylime-registrar'",
                 "docker compose logs --tail=120 keylime-verifier",
@@ -644,7 +644,7 @@ def _remediation(
     if event.startswith("internal.verifier.not_reachable"):
         return {
             "category": "agent-reachability",
-            "summary": "Keylime verifier 无法访问该节点 TPM 代理；检查代理容器和网络后重新激活。",
+            "summary": "TPM 可信验证器无法访问该节点 TPM 代理；检查代理容器和网络后重新激活。",
             "next_commands": [
                 "ssh root@<agent-ip> 'docker ps | grep keylime-agent || true'",
                 f"deploy/scripts/keylime-only-attestation-check.sh --strict --hosts {host}",
@@ -689,7 +689,7 @@ def _remediation(
     if "ima_missing" in event or "runtime_missing" in event:
         return {
             "category": "ima-runtime-policy",
-            "summary": "Keylime verifier 中未绑定该节点的 IMA 运行时策略；当前先保留，后续再处理策略下发与重启流程。",
+            "summary": "TPM 可信验证器中未绑定该节点的 IMA 运行时策略；当前先保留，后续再处理策略下发与重启流程。",
             "next_commands": [
                 "curl -fsS http://127.0.0.1:8088/api/tasks?limit=10",
                 "进入 IMA 运行时策略页面，确认策略绑定状态为已下发；如未下发，重新下发该节点策略。",
@@ -706,7 +706,7 @@ def _remediation(
         }
     return {
         "category": "unknown",
-        "summary": "检查 Keylime verifier 日志和该节点的可信证据。",
+        "summary": "检查 TPM 可信验证器日志和该节点的可信证据。",
         "next_commands": [
             "docker compose logs --since=20m keylime-verifier",
         ],

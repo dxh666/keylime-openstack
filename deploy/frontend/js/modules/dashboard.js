@@ -41,7 +41,7 @@ function alertRemediationText(node) {
     "Compute node is not managed by a trusted-root agent.":
       "确认该 OpenStack 计算节点是否需要纳管；如需要，安装并配置 TPM/TPCM 可信代理后更新节点纳管配置。",
     "No IMA runtime policy is bound in Keylime verifier for this agent.":
-      "Keylime verifier 中未绑定该节点的 IMA 运行时策略；当前先保留，后续再处理策略下发与重启流程。",
+      "TPM 可信验证器中未绑定该节点的 IMA 运行时策略；当前先保留，后续再处理策略下发与重启流程。",
     "IMA runtime policy does not match the live measurement list.":
       "IMA 运行时度量与已绑定策略不一致；比对实时度量后再重新生成或下发策略。",
     "IMA runtime evidence is not trusted; compare live measurements with the bound policy.":
@@ -51,7 +51,7 @@ function alertRemediationText(node) {
   };
   if (names[summary]) return names[summary];
   if (reason === "WAITING_FOR_IMA_MISSING") {
-    return "Keylime verifier 中未绑定该节点的 IMA 运行时策略；当前先保留，后续再处理策略下发与重启流程。";
+    return "TPM 可信验证器中未绑定该节点的 IMA 运行时策略；当前先保留，后续再处理策略下发与重启流程。";
   }
   return summary || "-";
 }
