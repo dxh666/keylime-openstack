@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Keylime OpenStack 可信管理</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=20260723-edge-login">
 </head>
 <body>
   <div id="app" v-cloak :class="{ 'login-app': !authenticated }">
@@ -262,6 +262,7 @@
         <section class="panel">
           <div class="panel-head">
             <h2>计算节点</h2>
+            <button type="button" :disabled="busy" @click="syncTrustRegistrations">同步纳管</button>
           </div>
           <div class="table compact-table node-compute-table">
             <div class="row header">
@@ -714,6 +715,6 @@
   </div>
 
   <script src="vendor/vue.global.prod.js"></script>
-  <script type="module" src="app.js"></script>
+  <script type="module" src="app.js?v=20260723-edge-login"></script>
 </body>
 </html>

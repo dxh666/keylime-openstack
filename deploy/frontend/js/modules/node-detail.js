@@ -56,7 +56,7 @@ export const nodeDetailMethods = {
         title: "可信代理",
         items: [
           { label: "纳管状态", value: row.managed, state: row.managedClass },
-          { label: "代理类型", value: row.trustAgentName || this.trustAgentName(node, keylimeNode) },
+          { label: "代理名称", value: row.trustAgentName || this.trustAgentName(node, keylimeNode) },
           { label: "可信根", value: row.trustedRoot || this.trustedRoot(node, keylimeNode) },
           { label: "Agent UUID", value: this.agentUuidText(node, keylimeNode) },
           { label: "Agent IP", value: node.keylime_agent_ip || keylimeNode.agent_ip || node.management_ip || "-" },
@@ -81,7 +81,7 @@ export const nodeDetailMethods = {
       const report = keylimeNode.trust_report || {};
       const history = keylimeNode.trust_report_history || [];
       sections.push({
-        title: "OpenTCSM 采集健康",
+        title: "TPCM 采集健康",
         items: [
           { label: "采集状态", value: this.collectionStatusText(keylimeNode.status), state: this.collectionStatusClass(keylimeNode.status) },
           { label: "证据有效性", value: this.evidenceFreshText(keylimeNode.evidence_fresh), state: this.evidenceFreshClass(keylimeNode.evidence_fresh) },
@@ -93,7 +93,7 @@ export const nodeDetailMethods = {
       const accessCheck = this.opentcsmAccessChecks[row.host || node.hostname];
       if (accessCheck) {
         sections.push({
-          title: "OpenTCSM 接入检查",
+          title: "TPCM 接入检查",
           items: this.opentcsmAccessCheckItems(accessCheck)
         });
       }

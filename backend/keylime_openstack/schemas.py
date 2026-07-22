@@ -76,7 +76,7 @@ class ComputeNodeOut(BaseModel):
     keylime_agent_ip: str
     keylime_agent_port: int
     trust_agent_type: str = "unmanaged"
-    trust_agent_name: str = "Unmanaged"
+    trust_agent_name: str = "未纳管"
     trust_managed: bool = False
     trusted_root_type: str = "unknown"
     trusted_root: str = "unknown"

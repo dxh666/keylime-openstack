@@ -89,6 +89,8 @@ def evaluate_trust(
     evidence: list[EvidenceRecord],
     openstack_state: OpenStackState | None,
     settings: Settings,
+    capabilities: dict[str, bool] | None = None,
+    runtime_capability: str = "ima",
 ) -> dict[str, Any]:
     """Return a normalized trust decision for one compute host."""
 
@@ -104,7 +106,7 @@ def evaluate_trust(
     runtime_keylime = bool(runtime and runtime.status == "pass" and runtime_fresh)
     evm_trusted = bool(evm and evm.status == "pass" and evm_fresh)
     trust_policy_mode = settings.normalized_trust_policy_mode
-    capabilities = settings.effective_trust_capabilities
+    capabilities = capabilities or settings.effective_trust_capabilities
     evm_required = capabilities["evm"]
     runtime_trusted = runtime_keylime
 
@@ -143,7 +145,7 @@ def evaluate_trust(
     if capabilities["boot"] and not boot_trusted:
         missing.append(_waiting_reason("boot", boot, boot_fresh))
     if capabilities["ima"] and not runtime_keylime:
-        missing.append(_waiting_reason("ima", runtime, runtime_fresh))
+        missing.append(_waiting_reason(runtime_capability, runtime, runtime_fresh))
     if capabilities["evm"] and not evm_trusted:
         missing.append(_waiting_reason("evm", evm, evm_fresh))
     if capabilities["openstack_service"] and not service_ok:
@@ -179,6 +181,7 @@ def evaluate_trust(
             "evm_required": evm_required,
             "trust_policy_mode": trust_policy_mode,
             "trust_capabilities": capabilities,
+            "runtime_capability": runtime_capability,
             "enabled_trust_capabilities": enabled_capabilities,
             "enabled_keylime_trust_capabilities": enabled_keylime_capabilities,
             "capability_status": capability_status,

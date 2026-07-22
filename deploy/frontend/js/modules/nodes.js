@@ -1,10 +1,29 @@
-import { nodeDetailMethods } from "./node-detail.js";
+import { nodeDetailMethods } from "./node-detail.js?v=20260723-node-sync";
 
 export const nodeMethods = {
   ...nodeDetailMethods,
   async refreshNodeStatus() {
     await this.refreshAll(true);
     if (!this.apiError) this.showNotice("ok", "节点状态已刷新。");
+  },
+  async syncTrustRegistrations() {
+    this.busy = true;
+    try {
+      const result = await this.requestJson("/api/trust/registrations/sync", { method: "POST" });
+      await this.refreshAll(false);
+      const matched = result.keylime_agents_matched?.length || 0;
+      const staticMatched = result.static_keylime_registrations?.length || 0;
+      const conflicts = result.registration_conflicts?.length || 0;
+      const suffix = conflicts ? `，发现 ${conflicts} 个冲突` : "";
+      const message = result.ok
+        ? `可信节点纳管已同步：自动匹配 ${matched} 个，配置匹配 ${staticMatched} 个${suffix}。`
+        : `可信节点纳管已部分同步：配置匹配 ${staticMatched} 个，自动发现失败：${result.discovery_error || "原因待确认"}。`;
+      this.showNotice(result.ok ? "ok" : "bad", message);
+    } catch (error) {
+      this.showNotice("bad", error.message);
+    } finally {
+      this.busy = false;
+    }
   },
   async refreshComputeNodeStatus(row) {
     if (row?.canCollectTpcmDynamic || row?.trustAgentType === "opentcsm_tpcm") {
@@ -41,7 +60,7 @@ export const nodeMethods = {
       await this.refreshAll(false);
       const freshRow = this.computeRows.find((item) => item.host === hostname) || row;
       this.openComputeDetail(freshRow);
-      this.showNotice(result.ok ? "ok" : "bad", result.summary || "OpenTCSM 接入检查已完成。");
+      this.showNotice(result.ok ? "ok" : "bad", result.summary || "TPCM 接入检查已完成。");
     } catch (error) {
       this.showNotice("bad", error.message);
     } finally {
@@ -68,17 +87,10 @@ export const nodeMethods = {
   isOpenTcsmNode(row, node, keylimeNode) {
     const profile = node?.trusted_node_profile || row?.rawNode?.trusted_node_profile || keylimeNode?.trusted_node_profile || {};
     const capabilities = profile.capabilities || node?.capabilities || row?.rawNode?.capabilities || {};
-    if (
+    return (
       profile.trust_managed === true &&
       profile.trusted_root_type === "tpcm" &&
       capabilities.tpcm_dynamic_measurement === true
-    ) {
-      return true;
-    }
-    return (
-      row?.trustAgentType === "opentcsm_tpcm" ||
-      node?.trust_agent_type === "opentcsm_tpcm" ||
-      keylimeNode?.trust_agent_type === "opentcsm_tpcm"
     );
   },
   keylimeManagedText(node, keylimeNode) {

@@ -55,6 +55,12 @@ class Settings(BaseSettings):
     keylime_docker_dir: str = "/opt/keylime-docker"
     keylime_tenant_service: str = "keylime-tenant"
     keylime_measured_boot_policy_engine: str = "example"
+    keylime_auto_registration_enabled: bool = True
+    keylime_auto_registration_use_tenant_tool: bool = False
+    keylime_agent_hosts: str = ""
+    keylime_agent_ip_map: str = ""
+    keylime_agent_uuid_map: str = ""
+    keylime_agent_port: int = 9002
 
     ansible_enabled: bool = True
     ansible_binary: str = "ansible-playbook"

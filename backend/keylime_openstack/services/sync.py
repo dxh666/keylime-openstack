@@ -9,6 +9,10 @@ from sqlalchemy.orm import Session
 
 from keylime_openstack.config import Settings
 from keylime_openstack.constants import (
+    CAPABILITY_EVM,
+    CAPABILITY_IMA_RUNTIME,
+    CAPABILITY_TPCM_DYNAMIC_MEASUREMENT,
+    CAPABILITY_TRUSTED_BOOT,
     REGISTRATION_UNMANAGED,
     REGISTRATION_UNTRUSTED,
     REGISTRATION_VERIFIED,
@@ -32,6 +36,7 @@ from keylime_openstack.services.trust_agents import (
     node_trusted_root_type,
 )
 from keylime_openstack.services.trust_registration import ensure_trusted_node_profile
+from keylime_openstack.services.trust_registration_sync import sync_trusted_node_registrations
 
 
 class TrustSyncService:
@@ -46,10 +51,16 @@ class TrustSyncService:
         ensure_default_environment(self.session)
         self.session.flush()
         nodes = self._enabled_compute_nodes()
+        registration_result = sync_trusted_node_registrations(
+            self.session,
+            self.settings,
+            nodes=nodes,
+            discover_keylime=self.settings.keylime_auto_registration_enabled,
+        )
         self.refresh_openstack_states(nodes)
         results = [self.sync_node(node) for node in nodes]
         self.session.commit()
-        return {"nodes": len(results), "results": results}
+        return {"nodes": len(results), "registration": registration_result, "results": results}
 
     def _enabled_compute_nodes(self) -> list[ComputeNode]:
         return list(
@@ -75,6 +86,8 @@ class TrustSyncService:
                 evidence=list(evidence),
                 openstack_state=openstack_state,
                 settings=self.settings,
+                capabilities=_decision_capabilities(self.settings, profile),
+                runtime_capability=_runtime_capability(profile),
             )
         else:
             decision_data = unmanaged_trust_decision(openstack_state)
@@ -150,7 +163,11 @@ def _update_profile_from_decision(
         "trusted": trusted,
         "evidence": evidence_status,
         "reason": decision_data.get("reason") or trust_agent_result.get("reason") or "",
-        "source": trust_agent_result.get("source") or trust_agent_result.get("trust_agent_type") or "",
+        "source": (
+            trust_agent_result.get("source")
+            or trust_agent_result.get("trust_agent_type")
+            or ""
+        ),
     }
     if not trust_managed:
         profile.registration_status = REGISTRATION_UNMANAGED
@@ -158,3 +175,38 @@ def _update_profile_from_decision(
         profile.registration_status = REGISTRATION_VERIFIED
     else:
         profile.registration_status = REGISTRATION_UNTRUSTED
+
+
+def _decision_capabilities(settings: Settings, profile: TrustedNodeProfile) -> dict[str, bool]:
+    global_capabilities = dict(settings.effective_trust_capabilities)
+    profile_capabilities = dict(profile.capabilities or {})
+    if not profile_capabilities:
+        return global_capabilities
+    return {
+        "boot": bool(
+            global_capabilities.get("boot")
+            and profile_capabilities.get(CAPABILITY_TRUSTED_BOOT) is True
+        ),
+        "ima": bool(
+            global_capabilities.get("ima")
+            and (
+                profile_capabilities.get(CAPABILITY_IMA_RUNTIME) is True
+                or profile_capabilities.get(CAPABILITY_TPCM_DYNAMIC_MEASUREMENT) is True
+            )
+        ),
+        "evm": bool(
+            global_capabilities.get("evm")
+            and profile_capabilities.get(CAPABILITY_EVM) is True
+        ),
+        "openstack_service": bool(global_capabilities.get("openstack_service")),
+    }
+
+
+def _runtime_capability(profile: TrustedNodeProfile) -> str:
+    capabilities = dict(profile.capabilities or {})
+    if (
+        capabilities.get(CAPABILITY_TPCM_DYNAMIC_MEASUREMENT) is True
+        and capabilities.get(CAPABILITY_IMA_RUNTIME) is not True
+    ):
+        return CAPABILITY_TPCM_DYNAMIC_MEASUREMENT
+    return CAPABILITY_IMA_RUNTIME

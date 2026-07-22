@@ -33,7 +33,9 @@ def test_unmanaged_remediation_uses_product_language():
 
     assert remediation["category"] == "inventory"
     assert remediation["summary"] == "计算节点未纳入可信代理纳管。"
-    assert "TRUST_AGENT_TYPE_MAP" in "\n".join(remediation["next_commands"])
+    commands = "\n".join(remediation["next_commands"])
+    assert "trust/registrations/sync" in commands
+    assert "TRUST_AGENT_TYPE_MAP" not in commands
 
 
 def test_ima_missing_remediation_uses_product_language():

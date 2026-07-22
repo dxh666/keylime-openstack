@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from keylime_openstack.constants import CAPABILITY_TPCM_DYNAMIC_MEASUREMENT
 from keylime_openstack.models import EvidenceRecord
 from keylime_openstack.services.decision import evaluate_trust, unmanaged_trust_decision
 
@@ -105,6 +106,25 @@ def test_openstack_service_gate_cannot_replace_keylime_trust() -> None:
 
     assert result["trusted"] is False
     assert result["reason"] == "NO_KEYLIME_TRUST_CAPABILITY_ENABLED"
+
+
+def test_tpcm_dynamic_runtime_capability_uses_product_reason_label() -> None:
+    result = evaluate_trust(
+        evidence=[_evidence("boot", "pass")],
+        openstack_state=None,
+        settings=DummySettings(boot=True, ima=True),
+        capabilities={
+            "boot": True,
+            "ima": True,
+            "evm": False,
+            "openstack_service": False,
+        },
+        runtime_capability=CAPABILITY_TPCM_DYNAMIC_MEASUREMENT,
+    )
+
+    assert result["trusted"] is False
+    assert result["reason"] == "WAITING_FOR_TPCM_DYNAMIC_MEASUREMENT"
+    assert result["details"]["runtime_capability"] == CAPABILITY_TPCM_DYNAMIC_MEASUREMENT
 
 
 def test_unmanaged_node_has_product_decision_reason() -> None:

@@ -11,6 +11,7 @@ from keylime_openstack.constants import (
     CAPABILITY_IMA_RUNTIME,
     CAPABILITY_TPCM_DYNAMIC_MEASUREMENT,
     CAPABILITY_TRUSTED_BOOT,
+    REGISTRATION_CONFLICT,
     TRUST_AGENT_OPENTCSM_TPCM,
     TRUST_AGENT_UNMANAGED,
     TRUST_ROOT_TPCM,
@@ -18,6 +19,10 @@ from keylime_openstack.constants import (
 )
 from keylime_openstack.models import ComputeNode, TrustedNodeProfile
 from keylime_openstack.services.auth import authenticate_admin
+from keylime_openstack.services.keylime import (
+    normalize_agent_inventory_payload,
+    parse_tenant_reglist_stdout,
+)
 from keylime_openstack.services.trust_agents import (
     node_trust_agent_type,
     node_trust_managed,
@@ -26,6 +31,11 @@ from keylime_openstack.services.trust_agents import (
 from keylime_openstack.services.trust_registration import (
     legacy_trusted_node_profile_payload,
     upsert_trusted_node_profile,
+)
+from keylime_openstack.services.trust_registration_sync import sync_trusted_node_registrations
+
+KEYLIME_DISCOVERY_METHOD = (
+    "keylime_openstack.services.trust_registration_sync.KeylimeClient.list_registered_agents"
 )
 
 
@@ -155,6 +165,138 @@ def test_registration_upsert_infers_tpcm_adapter_and_capabilities() -> None:
     assert profile.capabilities[CAPABILITY_TRUSTED_BOOT] is True
     assert profile.capabilities[CAPABILITY_TPCM_DYNAMIC_MEASUREMENT] is True
     assert profile.agent_identity["tpcm_id"] == "tpcm-id"
+
+
+def test_keylime_agent_inventory_payload_normalizes_common_shapes() -> None:
+    agents = normalize_agent_inventory_payload(
+        {
+            "results": {
+                "agents": {
+                    "22222222-2222-4222-8222-000000000008": {
+                        "ip": "10.0.0.11",
+                        "port": 9002,
+                        "metadata": {"hostname": "compute-a"},
+                    }
+                }
+            }
+        },
+        source="verifier-api",
+    )
+
+    assert agents == [
+        {
+            "agent_uuid": "22222222-2222-4222-8222-000000000008",
+            "ip": "10.0.0.11",
+            "port": 9002,
+            "hostname": "compute-a",
+            "metadata": {"hostname": "compute-a"},
+            "source": "verifier-api",
+        }
+    ]
+
+
+def test_keylime_tenant_reglist_text_parser_keeps_uuid_ip_pair() -> None:
+    agents = parse_tenant_reglist_stdout(
+        "agent 11111111-1111-4111-8111-000000000009\n"
+        "contact_ip: 10.0.0.12\n"
+    )
+
+    assert agents[0]["agent_uuid"] == "11111111-1111-4111-8111-000000000009"
+    assert agents[0]["ip"] == "10.0.0.12"
+
+
+def test_registration_sync_keeps_env_maps_as_compatibility_input() -> None:
+    with _memory_session() as memory_session:
+        node = ComputeNode(
+            hostname="compute-f",
+            hypervisor_name="nova-f",
+            management_ip="10.0.0.16",
+            role="compute",
+        )
+        memory_session.add(node)
+        memory_session.flush()
+
+        result = sync_trusted_node_registrations(
+            memory_session,
+            Settings(
+                keylime_agent_hosts="compute-f",
+                keylime_agent_ip_map="compute-f=10.0.0.16",
+                keylime_agent_uuid_map="compute-f=33333333-3333-4333-8333-000000000016",
+            ),
+            discover_keylime=False,
+        )
+
+    assert result["static_keylime_registrations"][0]["node"] == "compute-f"
+    assert node.keylime_agent_uuid == "33333333-3333-4333-8333-000000000016"
+    assert node.trust_profile.trust_managed is True
+    assert node.trust_profile.trusted_root_type == TRUST_ROOT_TPM
+    assert node.trust_profile.adapter_type == ADAPTER_KEYLIME
+
+
+def test_registration_sync_auto_binds_discovered_keylime_agent(monkeypatch) -> None:
+    with _memory_session() as memory_session:
+        node = ComputeNode(
+            hostname="compute-g",
+            hypervisor_name="nova-g",
+            management_ip="10.0.0.17",
+            role="compute",
+        )
+        memory_session.add(node)
+        memory_session.flush()
+
+        monkeypatch.setattr(
+            KEYLIME_DISCOVERY_METHOD,
+            lambda *_args, **_kwargs: [
+                {
+                    "agent_uuid": "44444444-4444-4444-8444-000000000017",
+                    "ip": "10.0.0.17",
+                    "port": 9002,
+                    "hostname": "",
+                    "metadata": {},
+                    "source": "verifier-api",
+                }
+            ],
+        )
+        result = sync_trusted_node_registrations(memory_session, Settings())
+
+    assert result["keylime_agents_matched"][0]["node"] == "compute-g"
+    assert node.keylime_agent_uuid == "44444444-4444-4444-8444-000000000017"
+    assert node.trust_profile.trust_managed is True
+    assert node.trust_profile.trusted_root_type == TRUST_ROOT_TPM
+
+
+def test_registration_sync_does_not_turn_tpcm_unmanaged_node_into_keylime(monkeypatch) -> None:
+    with _memory_session() as memory_session:
+        node = ComputeNode(
+            hostname="compute-h",
+            hypervisor_name="nova-h",
+            management_ip="10.0.0.18",
+            role="compute",
+            facts={"trusted_root_type": "tpcm", "trusted_root": "Hygon TPCM"},
+        )
+        memory_session.add(node)
+        memory_session.flush()
+
+        monkeypatch.setattr(
+            KEYLIME_DISCOVERY_METHOD,
+            lambda *_args, **_kwargs: [
+                {
+                    "agent_uuid": "55555555-5555-4555-8555-000000000018",
+                    "ip": "10.0.0.18",
+                    "port": 9002,
+                    "hostname": "",
+                    "metadata": {},
+                    "source": "verifier-api",
+                }
+            ],
+        )
+        result = sync_trusted_node_registrations(memory_session, Settings())
+
+    assert result["registration_conflicts"][0]["node"] == "compute-h"
+    assert node.keylime_agent_uuid == ""
+    assert node.trust_profile.trust_managed is False
+    assert node.trust_profile.trusted_root_type == TRUST_ROOT_TPCM
+    assert node.trust_profile.registration_status == REGISTRATION_CONFLICT
 
 
 def _memory_session() -> Session:

@@ -10,6 +10,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
 from keylime_openstack.constants import (
+    CAPABILITY_EVM,
+    CAPABILITY_IMA_RUNTIME,
+    CAPABILITY_TPCM_DYNAMIC_MEASUREMENT,
+    CAPABILITY_TRUSTED_BOOT,
     PROVIDER_OPENTCSM,
     TRUST_AGENT_KEYLIME,
     TRUST_AGENT_OPENTCSM_TPCM,
@@ -310,11 +314,7 @@ def _external_trust_agent_node_check(
     settings,
 ) -> dict[str, object]:
     agent_type = node_trust_agent_type(node, settings)
-    capabilities = {
-        name: enabled
-        for name, enabled in settings.effective_trust_capabilities.items()
-        if name in {"boot", "ima", "evm"}
-    }
+    capabilities = _profile_check_capabilities(node, settings)
     records = latest_evidence_for_decision(session, node)
     evidence = {record.evidence_type: record.status for record in records}
     evidence_fresh = {
@@ -693,6 +693,35 @@ def _external_agent_reason(
     return "WAITING_FOR_" + "_".join(missing)
 
 
+def _profile_check_capabilities(node: ComputeNode, settings) -> dict[str, bool]:
+    global_capabilities = {
+        name: enabled
+        for name, enabled in settings.effective_trust_capabilities.items()
+        if name in {"boot", "ima", "evm"}
+    }
+    profile = getattr(node, "trust_profile", None)
+    product_capabilities = dict(getattr(profile, "capabilities", {}) or {})
+    if not product_capabilities:
+        return global_capabilities
+    return {
+        "boot": bool(
+            global_capabilities.get("boot")
+            and product_capabilities.get(CAPABILITY_TRUSTED_BOOT) is True
+        ),
+        "ima": bool(
+            global_capabilities.get("ima")
+            and (
+                product_capabilities.get(CAPABILITY_IMA_RUNTIME) is True
+                or product_capabilities.get(CAPABILITY_TPCM_DYNAMIC_MEASUREMENT) is True
+            )
+        ),
+        "evm": bool(
+            global_capabilities.get("evm")
+            and product_capabilities.get(CAPABILITY_EVM) is True
+        ),
+    }
+
+
 def _keylime_read_error_event(error: str) -> str:
     normalized = error.lower()
     if (
@@ -722,7 +751,8 @@ def _remediation(
             "category": "inventory",
             "summary": "计算节点未纳入可信代理纳管。",
             "next_commands": [
-                "确认该 OpenStack 计算节点是否需要纳管；如需要，安装并配置 TPM/TPCM 可信代理后更新 TRUST_AGENT_TYPE_MAP。",
+                "确认该 OpenStack 计算节点是否需要纳管；如需要，安装并配置 TPM/TPCM 可信代理后执行可信节点纳管同步。",
+                "curl -fsS -X POST http://127.0.0.1:8088/api/trust/registrations/sync -H \"X-Admin-Token: $ADMIN_TOKEN\"",
             ],
         }
     if trust_agent_type == TRUST_AGENT_OPENTCSM_TPCM:
@@ -749,6 +779,7 @@ def _remediation(
             "category": "inventory",
             "summary": "可信平面节点清单中缺少该节点的 TPM 代理 UUID。",
             "next_commands": [
+                "curl -fsS -X POST http://127.0.0.1:8088/api/trust/registrations/sync -H \"X-Admin-Token: $ADMIN_TOKEN\"",
                 "deploy/scripts/keylime-agent-inventory-refresh.sh",
             ],
         }

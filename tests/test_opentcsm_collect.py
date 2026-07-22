@@ -1,4 +1,6 @@
+from keylime_openstack.config import Settings
 from keylime_openstack.models import ComputeNode
+from keylime_openstack.services.opentcsm import opentcsm_report_to_evidence
 from keylime_openstack.services.opentcsm_collect import normalize_opentcsm_collection
 
 
@@ -74,3 +76,41 @@ def test_trusted_tpcm_report_eval_is_not_a_failure_counter() -> None:
         {"index": 1, "be_type": 0, "interval_milli": 60000, "object": "syscall_table"},
         {"index": 2, "be_type": 0, "interval_milli": 60000, "object": "idt_table"},
     ]
+
+
+def test_tpcm_boot_measurement_summary_is_first_class_evidence_payload() -> None:
+    node = ComputeNode(id=1, hostname="hygon23", management_ip="172.31.100.23")
+    report = normalize_opentcsm_collection(
+        node,
+        {
+            "hostname": "hygon23",
+            "commands": {
+                "trust_status": _command("Trust status: trusted\n"),
+                "global_control_policy": _command(
+                    "policy->boot_measure_on: ON\n"
+                    "policy->dynamic_measure_on: ON\n"
+                ),
+                "boot_measure_records": _command("[0].name: BIOS/U-BOOT\n[1].name: shim.efi\n"),
+                "tpcm_info": _command(
+                    "dmeasure_times: 22\n"
+                    "boot_measure_ref_number: 2\n"
+                    "dynamic_measure_ref_number: 3\n"
+                ),
+                "dmeasure_policy": _command("[0].object: kernel_section\n"),
+                "trust_report": _command(
+                    "policy->be_boot_measure_on: ON\n"
+                    "policy->be_dynamic_measure_on: ON\n"
+                ),
+            },
+        },
+    )
+
+    records = opentcsm_report_to_evidence(node, report, Settings())
+    boot = next(item for item in records if item.evidence_type == "boot")
+    runtime = next(item for item in records if item.evidence_type == "runtime")
+
+    assert boot.payload["boot_measurement"]["record_count"] == 2
+    assert boot.payload["boot_measurement"]["reference_count"] == 2
+    assert "records=2" in boot.summary
+    assert runtime.payload["dynamic_measurement"]["object_count"] == 1
+    assert runtime.payload["dynamic_measurement"]["dmeasure_times"] == 22

@@ -17,6 +17,7 @@ def opentcsm_report_to_evidence(
 ) -> list[EvidenceRecord]:
     collected_at = _coerce_datetime(report.get("collected_at")) or datetime.now(timezone.utc)
     valid_until = collected_at + timedelta(seconds=settings.opentcsm_evidence_fresh_seconds)
+    raw = report.get("raw") if isinstance(report.get("raw"), dict) else {}
     payload = {
         "trust_agent": "opentcsm_tpcm",
         "trust_root": report.get("trust_root") or "Hygon TPCM",
@@ -24,7 +25,9 @@ def opentcsm_report_to_evidence(
         "agent_version": report.get("agent_version") or "",
         "report_type": report.get("report_type") or "tpcm",
         "trusted": report.get("trusted"),
-        "raw": report.get("raw") or {},
+        "boot_measurement": _boot_measurement_summary(raw),
+        "dynamic_measurement": _dynamic_measurement_summary(raw),
+        "raw": raw,
         "errors": report.get("errors") or [],
     }
 
@@ -50,7 +53,7 @@ def opentcsm_report_to_evidence(
             collected_at=collected_at,
             valid_until=valid_until,
             status=boot_status,
-            summary=_summary("TPCM trusted boot", boot_status, report),
+            summary=_summary("TPCM trusted boot", boot_status, report, "boot"),
             payload=payload,
         ),
         EvidenceRecord(
@@ -60,7 +63,7 @@ def opentcsm_report_to_evidence(
             collected_at=collected_at,
             valid_until=valid_until,
             status=runtime_status,
-            summary=_summary("TPCM dynamic measurement", runtime_status, report),
+            summary=_summary("TPCM dynamic measurement", runtime_status, report, "runtime"),
             payload=payload,
         ),
     ]
@@ -75,7 +78,7 @@ def opentcsm_report_to_evidence(
                 collected_at=collected_at,
                 valid_until=valid_until,
                 status=evm_status,
-                summary=_summary("TPCM EVM/Appraisal", evm_status, report),
+                summary=_summary("TPCM EVM/Appraisal", evm_status, report, "evm"),
                 payload=payload,
             )
         )
@@ -99,8 +102,51 @@ def _status(value: object, *, overall: object, default: str) -> str:
     return "unknown"
 
 
-def _summary(label: str, status: str, report: dict[str, Any]) -> str:
+def _boot_measurement_summary(raw: dict[str, Any]) -> dict[str, Any]:
+    boot_records = raw.get("boot_records") if isinstance(raw.get("boot_records"), list) else []
+    return {
+        "enabled": raw.get("boot_measure_on"),
+        "status": raw.get("boot_status") or "",
+        "record_count": len(boot_records),
+        "reference_count": raw.get("boot_measure_ref_number"),
+        "records_sha256": raw.get("boot_measure_records_sha256") or "",
+        "trust_report_sha256": raw.get("trust_report_sha256") or "",
+    }
+
+
+def _dynamic_measurement_summary(raw: dict[str, Any]) -> dict[str, Any]:
+    policy = raw.get("dmeasure_policy") if isinstance(raw.get("dmeasure_policy"), list) else []
+    return {
+        "enabled": raw.get("dynamic_measure_on"),
+        "object_count": len(policy),
+        "dmeasure_times": raw.get("dmeasure_times"),
+        "policy_sha256": raw.get("dmeasure_policy_sha256") or "",
+    }
+
+
+def _summary(label: str, status: str, report: dict[str, Any], evidence_type: str) -> str:
     summary = str(report.get("summary") or "").strip()
+    raw = report.get("raw") if isinstance(report.get("raw"), dict) else {}
+    if evidence_type == "boot":
+        boot = _boot_measurement_summary(raw)
+        if boot["record_count"] or boot["reference_count"] is not None:
+            reference_count = (
+                boot["reference_count"] if boot["reference_count"] is not None else "-"
+            )
+            return (
+                f"{label} {status}: records={boot['record_count']}, "
+                f"references={reference_count}"
+            )
+    if evidence_type == "runtime":
+        dynamic = _dynamic_measurement_summary(raw)
+        if dynamic["object_count"] or dynamic["dmeasure_times"] is not None:
+            dmeasure_times = (
+                dynamic["dmeasure_times"] if dynamic["dmeasure_times"] is not None else "-"
+            )
+            return (
+                f"{label} {status}: objects={dynamic['object_count']}, "
+                f"dmeasure_times={dmeasure_times}"
+            )
     if summary:
         return f"{label} {status}: {summary}"
     return f"{label} {status} from OpenTCSM/Hygon TPCM"

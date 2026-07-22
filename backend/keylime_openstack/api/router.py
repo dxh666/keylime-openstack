@@ -50,7 +50,9 @@ from keylime_openstack.api.routers.system import bootstrap, health, traits
 from keylime_openstack.api.routers.tasks import run_sync_now, tasks
 from keylime_openstack.api.routers.trust import (
     register_trust_agent,
+    sync_trust_registrations,
     trust_check,
+    trust_registrations,
     verify_trust_agent,
 )
 
@@ -71,6 +73,8 @@ __all__ = [
     "overview",
     "nodes",
     "trust_check",
+    "trust_registrations",
+    "sync_trust_registrations",
     "verify_trust_agent",
     "register_trust_agent",
     "keylime_check",

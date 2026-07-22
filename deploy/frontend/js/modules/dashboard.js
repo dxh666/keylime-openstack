@@ -179,7 +179,7 @@ export const dashboardComputed = {
         trustManaged,
         trustedRootType,
         canCollectTpcmDynamic,
-        trustAgentName: node.trust_agent_name || keylimeNode.trust_agent_name || "Unmanaged",
+        trustAgentName: node.trust_agent_name || keylimeNode.trust_agent_name || "未纳管",
         trustedRoot: node.trusted_root || keylimeNode.trusted_root || "unknown",
         managementIp: this.primaryController.management_ip || "-",
         ownIp: node.management_ip || node.keylime_agent_ip || keylimeNode.agent_ip || "-",

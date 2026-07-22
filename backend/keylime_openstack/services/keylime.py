@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import ssl
 import subprocess
 import tempfile
+from ast import literal_eval
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -14,6 +16,12 @@ from urllib.parse import urlsplit, urlunsplit
 import httpx
 
 from keylime_openstack.config import Settings
+
+
+UUID_RE = re.compile(
+    r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
+)
+IP_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
 
 
 class KeylimeClient:
@@ -116,6 +124,57 @@ class KeylimeClient:
         if errors:
             status["_adapter_errors"] = errors
         return status
+
+    def list_registered_agents(self, *, use_tenant_tool: bool = False) -> list[dict[str, Any]]:
+        """Discover Keylime agents from verifier/registrar APIs.
+
+        Keylime deployments differ in both version and JSON envelope. This method
+        keeps those differences inside the adapter and returns a narrow inventory
+        shape for product-level registration code.
+        """
+
+        errors: list[str] = []
+        agents: list[dict[str, Any]] = []
+        successful_reads = 0
+        for url, source in self._agent_list_urls():
+            try:
+                with httpx.Client(**self._http_client_kwargs(url)) as client:
+                    response = client.get(url)
+                    response.raise_for_status()
+                    successful_reads += 1
+                    agents.extend(normalize_agent_inventory_payload(response.json(), source=source))
+            except Exception as exc:  # pragma: no cover - deployment-specific API boundary
+                errors.append(f"{source} {url}: {_exception_summary(exc)}")
+
+        if agents:
+            return _dedupe_agent_inventory(agents)
+
+        if use_tenant_tool:
+            result = self.tenant_tool_reglist()
+            if result.get("rc") == 0:
+                agents.extend(parse_tenant_reglist_stdout(str(result.get("stdout") or "")))
+                if agents:
+                    return _dedupe_agent_inventory(agents)
+            errors.append(f"tenant-tool-reglist: {result.get('stderr') or result.get('stdout')}")
+
+        if successful_reads:
+            return []
+        if errors:
+            raise RuntimeError("; ".join(errors))
+        return []
+
+    def tenant_tool_reglist(self) -> dict[str, Any]:
+        command = [
+            "docker",
+            "compose",
+            "run",
+            "--rm",
+            self.settings.keylime_tenant_service,
+            "-c",
+            "reglist",
+            *self._tenant_service_endpoints(),
+        ]
+        return self._run_tenant_tool(command)
 
     def tenant_tool_status(self, agent_uuid: str) -> dict[str, Any]:
         command = [
@@ -487,6 +546,26 @@ class KeylimeClient:
             urls.append(f"{https_base}/v2.5/agents/{agent_uuid}")
         return urls
 
+    def _agent_list_urls(self) -> list[tuple[str, str]]:
+        urls: list[tuple[str, str]] = []
+        for base, source, versions in (
+            (self.settings.keylime_verifier_url, "verifier-api", ("v2.5",)),
+            (self.settings.keylime_registrar_url, "registrar-api", ("v2.1", "v2.2", "v2.5")),
+        ):
+            normalized_base = base.rstrip("/")
+            if not normalized_base:
+                continue
+            for version in versions:
+                urls.append((f"{normalized_base}/{version}/agents/", source))
+                urls.append((f"{normalized_base}/{version}/agents", source))
+            parts = urlsplit(normalized_base)
+            if parts.scheme == "http" and parts.port in {8881, 8891}:
+                https_base = urlunsplit(("https", parts.netloc, parts.path.rstrip("/"), "", ""))
+                for version in versions:
+                    urls.append((f"{https_base}/{version}/agents/", source))
+                    urls.append((f"{https_base}/{version}/agents", source))
+        return list(dict.fromkeys(urls))
+
     def _tenant_service_endpoints(self) -> list[str]:
         verifier = urlsplit(self.settings.keylime_verifier_url)
         registrar = urlsplit(self.settings.keylime_registrar_url)
@@ -598,6 +677,27 @@ def normalize_agent_payload(agent_uuid: str, payload: Any) -> dict[str, Any]:
     raise ValueError(f"agent {agent_uuid} verifier status not found in Keylime payload")
 
 
+def normalize_agent_inventory_payload(payload: Any, *, source: str = "") -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    _collect_agent_inventory(payload, records, inherited_uuid="", source=source)
+    return _dedupe_agent_inventory(records)
+
+
+def parse_tenant_reglist_stdout(stdout: str) -> list[dict[str, Any]]:
+    text = str(stdout or "").strip()
+    records: list[dict[str, Any]] = []
+    for candidate in _structured_payload_candidates(text):
+        for loader in (json.loads, literal_eval):
+            try:
+                parsed = loader(candidate)
+            except Exception:
+                continue
+            records.extend(normalize_agent_inventory_payload(parsed, source="tenant-tool-reglist"))
+            if records:
+                return _dedupe_agent_inventory(records)
+    return _dedupe_agent_inventory(_parse_tenant_reglist_text(text))
+
+
 def parse_tenant_status_stdout(agent_uuid: str, stdout: str) -> dict[str, Any]:
     """Extract verifier status JSON from keylime-tenant command output."""
 
@@ -621,6 +721,193 @@ def parse_tenant_status_stdout(agent_uuid: str, stdout: str) -> dict[str, Any]:
     if candidates:
         return candidates[-1]
     raise ValueError(f"no JSON status for agent {agent_uuid} in tenant output")
+
+
+def _collect_agent_inventory(
+    value: Any,
+    records: list[dict[str, Any]],
+    *,
+    inherited_uuid: str,
+    source: str,
+) -> None:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            key_text = str(key).strip()
+            if UUID_RE.fullmatch(key_text):
+                _collect_agent_inventory(item, records, inherited_uuid=key_text, source=source)
+
+        normalized = {_normalize_key(key): item for key, item in value.items()}
+        metadata = _metadata_dict(normalized.get("metadata") or normalized.get("meta_data"))
+        agent_uuid = str(
+            normalized.get("uuid")
+            or normalized.get("agent_uuid")
+            or normalized.get("agent_id")
+            or normalized.get("agentid")
+            or inherited_uuid
+            or ""
+        ).strip()
+        ip = _first_ip(
+            normalized,
+            (
+                "ip",
+                "agent_ip",
+                "contact_ip",
+                "host_ip",
+                "address",
+                "registrar_ip",
+                "verifier_ip",
+            ),
+        )
+        port = _first_int(normalized, ("port", "agent_port", "contact_port"))
+        hostname = str(
+            normalized.get("hostname")
+            or normalized.get("host")
+            or normalized.get("node")
+            or metadata.get("hostname")
+            or metadata.get("host")
+            or ""
+        ).strip()
+        if UUID_RE.fullmatch(agent_uuid):
+            records.append(
+                {
+                    "agent_uuid": agent_uuid,
+                    "ip": ip,
+                    "port": port,
+                    "hostname": hostname,
+                    "metadata": metadata,
+                    "source": source,
+                }
+            )
+        for item in value.values():
+            _collect_agent_inventory(item, records, inherited_uuid=agent_uuid, source=source)
+        return
+
+    if isinstance(value, list):
+        for item in value:
+            _collect_agent_inventory(item, records, inherited_uuid=inherited_uuid, source=source)
+
+
+def _parse_tenant_reglist_text(stdout: str) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    current_uuid = ""
+    for raw_line in stdout.splitlines():
+        line = raw_line.strip()
+        uuids = UUID_RE.findall(line)
+        ips = [_valid_ip(item) for item in IP_RE.findall(line)]
+        ips = [item for item in ips if item]
+        if uuids:
+            current_uuid = uuids[-1]
+        if uuids and ips:
+            records.append(
+                {
+                    "agent_uuid": uuids[-1],
+                    "ip": ips[-1],
+                    "port": None,
+                    "hostname": "",
+                    "metadata": {},
+                    "source": "tenant-tool-reglist",
+                }
+            )
+            continue
+        if current_uuid and ips and re.search(
+            r"\b(contact[_ -]?ip|agent[_ -]?ip|host[_ -]?ip|ip|address)\b",
+            line,
+            re.IGNORECASE,
+        ):
+            records.append(
+                {
+                    "agent_uuid": current_uuid,
+                    "ip": ips[-1],
+                    "port": None,
+                    "hostname": "",
+                    "metadata": {},
+                    "source": "tenant-tool-reglist",
+                }
+            )
+    return records
+
+
+def _structured_payload_candidates(text: str) -> list[str]:
+    candidates = [text] if text else []
+    starts = [index for index in (text.find("{"), text.find("[")) if index >= 0]
+    if starts:
+        candidates.append(text[min(starts) :])
+    return [item for item in dict.fromkeys(candidates) if item]
+
+
+def _dedupe_agent_inventory(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    merged: dict[str, dict[str, Any]] = {}
+    for record in records:
+        agent_uuid = str(record.get("agent_uuid") or "").strip()
+        if not UUID_RE.fullmatch(agent_uuid):
+            continue
+        current = merged.setdefault(
+            agent_uuid,
+            {
+                "agent_uuid": agent_uuid,
+                "ip": "",
+                "port": None,
+                "hostname": "",
+                "metadata": {},
+                "source": "",
+            },
+        )
+        for key in ("ip", "hostname", "source"):
+            if record.get(key) and not current.get(key):
+                current[key] = record[key]
+        if record.get("port") and not current.get("port"):
+            current["port"] = record["port"]
+        metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
+        if metadata:
+            current["metadata"] = {**current.get("metadata", {}), **metadata}
+    return sorted(merged.values(), key=lambda item: item["agent_uuid"])
+
+
+def _normalize_key(key: Any) -> str:
+    return str(key).strip().lower().replace(" ", "_").replace("-", "_")
+
+
+def _metadata_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return {str(key): item for key, item in value.items()}
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        if isinstance(parsed, dict):
+            return {str(key): item for key, item in parsed.items()}
+    return {}
+
+
+def _first_ip(values: dict[str, Any], keys: tuple[str, ...]) -> str:
+    for key in keys:
+        candidate = _valid_ip(values.get(key))
+        if candidate:
+            return candidate
+    return ""
+
+
+def _valid_ip(value: Any) -> str:
+    text = str(value or "").strip()
+    if not IP_RE.fullmatch(text):
+        return ""
+    parts = text.split(".")
+    if all(0 <= int(part) <= 255 for part in parts):
+        return text
+    return ""
+
+
+def _first_int(values: dict[str, Any], keys: tuple[str, ...]) -> int | None:
+    for key in keys:
+        value = values.get(key)
+        try:
+            number = int(value)
+        except (TypeError, ValueError):
+            continue
+        if number > 0:
+            return number
+    return None
 
 
 def _exception_summary(exc: Exception) -> str:

@@ -85,17 +85,12 @@ def node_trust_managed(node: "ComputeNode", settings: "Settings") -> bool:
 def node_trust_agent_name(node: "ComputeNode", settings: "Settings") -> str:
     profile = _node_profile(node)
     if profile is not None:
-        return "Trusted Agent" if getattr(profile, "trust_managed", False) else "Unmanaged"
+        return "可信代理" if getattr(profile, "trust_managed", False) else "未纳管"
 
     agent_type = node_trust_agent_type(node, settings)
-    facts = node.facts or {}
     if agent_type == TRUST_AGENT_UNMANAGED:
-        return "Unmanaged"
-    if facts.get("trust_agent_name"):
-        return str(facts["trust_agent_name"])
-    if agent_type == TRUST_AGENT_OPENTCSM_TPCM:
-        return "OpenTCSM"
-    return "Keylime Agent"
+        return "未纳管"
+    return "可信代理"
 
 
 def node_trusted_root_type(node: "ComputeNode", settings: "Settings") -> str:
