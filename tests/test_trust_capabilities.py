@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from keylime_openstack.models import EvidenceRecord
-from keylime_openstack.services.decision import evaluate_trust
+from keylime_openstack.services.decision import evaluate_trust, unmanaged_trust_decision
 
 
 class DummySettings:
@@ -105,3 +105,13 @@ def test_openstack_service_gate_cannot_replace_keylime_trust() -> None:
 
     assert result["trusted"] is False
     assert result["reason"] == "NO_KEYLIME_TRUST_CAPABILITY_ENABLED"
+
+
+def test_unmanaged_node_has_product_decision_reason() -> None:
+    result = unmanaged_trust_decision(openstack_state=None)
+
+    assert result["trusted"] is False
+    assert result["reason"] == "TRUST_AGENT_UNMANAGED"
+    assert result["desired_traits"] == []
+    assert result["details"]["trust_managed"] is False
+    assert result["details"]["trust_management_status"] == "unmanaged"

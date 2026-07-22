@@ -95,13 +95,21 @@ class TrustEvidenceCollector:
 
     def collect_unmanaged_node(self, node: ComputeNode) -> dict[str, object]:
         details = self._result_base(node)
+        audit_details = {
+            **details,
+            "log_type": "node_management",
+            "subject_name": "可信代理",
+            "object_name": node.hostname,
+            "operation": "未纳管",
+            "result": "提醒",
+        }
         record_audit_event(
             self.session,
             event_type="trust_agent_evidence_collect",
             target=node.hostname,
             severity="warning",
-            message="node is not managed by a trusted-root agent",
-            event_details=details,
+            message="TRUST_AGENT_UNMANAGED",
+            event_details=audit_details,
         )
         return {
             **details,

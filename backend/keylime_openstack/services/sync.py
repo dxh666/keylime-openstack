@@ -10,7 +10,7 @@ from keylime_openstack.constants import TRUST_AGENT_KEYLIME
 from keylime_openstack.models import ComputeNode, OpenStackState, TrustDecision
 from keylime_openstack.seed import ensure_default_environment
 from keylime_openstack.services.audit import record_audit_event
-from keylime_openstack.services.decision import evaluate_trust
+from keylime_openstack.services.decision import evaluate_trust, unmanaged_trust_decision
 from keylime_openstack.services.openstack import OpenStackClient
 from keylime_openstack.services.sync_collectors import (
     OpenStackStateCollector,
@@ -57,14 +57,18 @@ class TrustSyncService:
 
     def sync_node(self, node: ComputeNode) -> dict[str, object]:
         trust_agent_type = node_trust_agent_type(node, self.settings)
+        trust_managed = node_trust_managed(node, self.settings)
         trust_agent_result = self.evidence_collector.collect_for_node(node)
         evidence = latest_evidence_for_decision(self.session, node)
         openstack_state = self._latest_openstack_state(node)
-        decision_data = evaluate_trust(
-            evidence=list(evidence),
-            openstack_state=openstack_state,
-            settings=self.settings,
-        )
+        if trust_managed:
+            decision_data = evaluate_trust(
+                evidence=list(evidence),
+                openstack_state=openstack_state,
+                settings=self.settings,
+            )
+        else:
+            decision_data = unmanaged_trust_decision(openstack_state)
         decision = TrustDecision(
             node_id=node.id,
             boot_trusted=decision_data["boot_trusted"],
@@ -90,10 +94,11 @@ class TrustSyncService:
             event_details={
                 "desired_traits": decision.desired_traits,
                 "trait_result": trait_result,
-                "trust_managed": node_trust_managed(node, self.settings),
+                "trust_managed": trust_managed,
                 "trusted_root_type": node_trusted_root_type(node, self.settings),
                 "trusted_root": node_trusted_root(node, self.settings),
                 "trust_agent_type": trust_agent_type,
+                "trust_management_status": trust_agent_result.get("status"),
             },
         )
         return {
@@ -102,7 +107,7 @@ class TrustSyncService:
             "reason": decision.reason,
             "desired_traits": decision.desired_traits,
             "trust_agent": trust_agent_result,
-            "trust_managed": node_trust_managed(node, self.settings),
+            "trust_managed": trust_managed,
             "trusted_root_type": node_trusted_root_type(node, self.settings),
             "trusted_root": node_trusted_root(node, self.settings),
             "keylime": trust_agent_result if trust_agent_type == TRUST_AGENT_KEYLIME else {},

@@ -16,6 +16,7 @@ from keylime_openstack.constants import (
     TRAIT_LEGACY_ATTESTED,
     TRAIT_RUNTIME_TRUSTED,
     TRAIT_TRUSTED,
+    TRUST_AGENT_UNMANAGED,
 )
 from keylime_openstack.models import EvidenceRecord, OpenStackState
 
@@ -49,6 +50,38 @@ def latest_by_type(records: list[EvidenceRecord]) -> dict[str, EvidenceRecord]:
     for record in sorted(records, key=lambda item: item.collected_at):
         latest[record.evidence_type] = record
     return latest
+
+
+def unmanaged_trust_decision(openstack_state: OpenStackState | None) -> dict[str, Any]:
+    """Return a trust decision for a compute node outside trusted-agent management."""
+
+    return {
+        "boot_trusted": False,
+        "runtime_trusted": False,
+        "trusted": False,
+        "reason": "TRUST_AGENT_UNMANAGED",
+        "desired_traits": [],
+        "evidence_refs": {
+            "boot": None,
+            "runtime": None,
+            "evm": None,
+        },
+        "details": {
+            "boot_status": TRUST_AGENT_UNMANAGED,
+            "runtime_status": TRUST_AGENT_UNMANAGED,
+            "evm_status": TRUST_AGENT_UNMANAGED,
+            "boot_fresh": False,
+            "runtime_fresh": False,
+            "evm_fresh": False,
+            "boot_valid_until": None,
+            "runtime_valid_until": None,
+            "evm_valid_until": None,
+            "trust_management_status": TRUST_AGENT_UNMANAGED,
+            "trust_managed": False,
+            "service_status": openstack_state.service_status if openstack_state else "missing",
+            "service_state": openstack_state.service_state if openstack_state else "missing",
+        },
+    }
 
 
 def evaluate_trust(

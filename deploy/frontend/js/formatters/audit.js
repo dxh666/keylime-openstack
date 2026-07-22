@@ -20,6 +20,10 @@ export const auditFormatters = {
       policy_update: "更新策略",
       policy_delete: "删除策略",
       policy_deploy_queued: "策略下发已入队",
+      trust_decision: "可信状态判定",
+      trust_agent_evidence_collect: "可信代理状态",
+      keylime_evidence_collect: "采集 TPM 可信证据",
+      openstack_state_refresh: "OpenStack 状态刷新",
       tpcm_dynamic_policy_save: "动态度量策略保存",
       tpcm_dynamic_policy_apply_queued: "动态度量策略生效已入队",
       tpcm_dynamic_policy_apply: "动态度量策略生效",
@@ -67,13 +71,13 @@ export const auditFormatters = {
     const details = this.auditDetails(event);
     if (details.result) return details.result;
     if (event.severity === "info") return "成功";
-    if (event.severity === "warning") return "异常";
+    if (event.severity === "warning") return "警告";
     return "失败";
   },
   auditResultClass(event) {
     const result = this.auditResult(event);
     if (["失败", "异常", "授权异常"].includes(result)) return "bad";
-    if (["已入队", "处理中"].includes(result)) return "warn";
+    if (["已入队", "处理中", "警告", "提醒"].includes(result)) return "warn";
     return this.severityClass(event.severity);
   },
 };
