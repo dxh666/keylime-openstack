@@ -1,19 +1,27 @@
+import json
+from contextlib import contextmanager
+from pathlib import Path
+from types import SimpleNamespace
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
+import keylime_openstack.services.tpcm_dynamic_deployment as tpcm_dynamic_deployment
 from keylime_openstack.api.router import (
     _dynamic_policy_audit_details,
     _tpcm_dynamic_global_control,
     set_tpcm_dynamic_global_switch,
 )
+from keylime_openstack.config import Settings
 from keylime_openstack.database import Base
-from keylime_openstack.models import PolicyBinding, TrustPolicy
+from keylime_openstack.models import ComputeNode, PolicyBinding, TrustPolicy
 from keylime_openstack.schemas import TpcmDynamicGlobalSwitchIn
 from keylime_openstack.services.policy import _binding_last_error_for_output
 from keylime_openstack.services.policy_deployment import (
     PolicyDeploymentService,
     _opentcsm_dynamic_failure_details,
 )
+from keylime_openstack.services.tpcm_dynamic_deployment import TpcmDynamicDeployment
 
 
 def test_opentcsm_dynamic_auth_rejection_is_productized() -> None:
@@ -129,6 +137,96 @@ def test_dynamic_policy_audit_details_show_node_switch_disabled() -> None:
     assert details["operation"] == "策略保存"
     assert details["result"] == "成功"
     assert details["node_dynamic_measure_enabled"] is False
+
+
+def test_tpcm_dynamic_deployment_returns_productized_result(monkeypatch, tmp_path: Path) -> None:
+    class FakeAuth:
+        ref = "unit-test"
+        uid = "unit-uid"
+        public_fingerprint = "public-sha256"
+
+        def playbook_vars(self) -> dict[str, object]:
+            return {"ref": self.ref, "uid": self.uid}
+
+        def metadata(self) -> dict[str, object]:
+            return {"ref": self.ref, "uid": self.uid, "public_key_sha256": self.public_fingerprint}
+
+    class FakeAnsible:
+        def run(self, *, extra_vars: dict[str, object], **_: object) -> SimpleNamespace:
+            result_path = Path(str(extra_vars["result_output_path"]))
+            result_path.write_text(
+                json.dumps(
+                    {
+                        "ok": True,
+                        "applied_at": "2026-07-22T00:00:00+00:00",
+                        "observed_before": [],
+                        "observed_after": [{"object": "kernel_section"}],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return SimpleNamespace(rc=0, stdout="", stderr="")
+
+    class FakeCollector:
+        def __init__(self, *_: object):
+            pass
+
+        def collect(self, _: ComputeNode) -> dict[str, object]:
+            return {
+                "trust_root": "Hygon TPCM",
+                "agent_name": "OpenTCSM",
+                "trusted": True,
+                "dynamic_measurement_status": "active",
+                "raw": {
+                    "dynamic_measure_on": True,
+                    "dynamic_measure_ref_number": 3,
+                    "dmeasure_policy": [
+                        {"object": "kernel_section", "interval_milli": 60000},
+                        {"object": "idt_table", "interval_milli": 30000},
+                    ],
+                    "trust_report_failures": {},
+                    "trust_report_sha256": "trust-sha256",
+                    "dmeasure_policy_sha256": "dmeasure-sha256",
+                },
+            }
+
+    @contextmanager
+    def workspace():
+        yield tmp_path
+
+    monkeypatch.setattr(tpcm_dynamic_deployment, "load_opentcsm_auth_material", lambda *_: FakeAuth())
+    monkeypatch.setattr(tpcm_dynamic_deployment, "OpenTcsmCollector", FakeCollector)
+
+    deployment = TpcmDynamicDeployment(
+        session=object(),  # type: ignore[arg-type]
+        settings=Settings(trust_agent_type_map="hygon23=opentcsm_tpcm"),
+        ansible=FakeAnsible(),  # type: ignore[arg-type]
+        workspace_factory=workspace,
+        require_ansible_success=lambda *_: None,
+    )
+    policy = TrustPolicy(
+        name="hygon23-dynamic",
+        policy_type="tpcm_dynamic_measurement",
+        content={
+            "environment_object_configs": {
+                "kernel_section": {"enabled": True, "interval_milli": 60000},
+                "syscall_table": {"enabled": False, "interval_milli": 60000},
+                "idt_table": {"enabled": True, "interval_milli": 30000},
+            },
+            "environment_interval_milli": 60000,
+        },
+    )
+    node = ComputeNode(hostname="hygon23", facts={"trust_agent_type": "opentcsm_tpcm"})
+
+    result = deployment.deploy(policy, node)
+
+    assert result.external_name.startswith("klos-tpcm-dyn-hygon23-dynamic-hygon23-")
+    assert result.deployment_details["keylime_artifact"] == "opentcsm_dynamic_measurement_policy"
+    assert result.deployment_details["trust_agent_type"] == "opentcsm_tpcm"
+    assert result.deployment_details["dynamic_measure_ref_number"] == 3
+    assert result.response["dynamic_measure_on"] is True
+    assert result.response["environment_objects"] == ["kernel_section", "idt_table"]
+    assert result.rendered_policy["observed"]["dmeasure_policy_sha256"] == "dmeasure-sha256"
 
 
 def test_tpcm_dynamic_global_control_defaults_to_enabled() -> None:
