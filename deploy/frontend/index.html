@@ -9,28 +9,68 @@
 <body>
   <div id="app" v-cloak :class="{ 'login-app': !authenticated }">
     <section v-if="!authChecked" class="login-screen">
-      <div class="login-panel">
-        <h1>可信云管理平台</h1>
-        <p>正在检查登录状态...</p>
+      <div class="login-shell login-shell-compact">
+        <div class="login-intro" aria-hidden="true">
+          <div class="login-mark"><span></span></div>
+          <p class="login-kicker">Keylime OpenStack</p>
+          <h1>可信云管理平台</h1>
+          <p class="login-subtitle">OpenStack 计算节点可信纳管与度量验证控制台</p>
+        </div>
+        <div class="login-panel login-status-panel" aria-live="polite">
+          <div class="login-spinner" aria-hidden="true"></div>
+          <h2>正在检查会话</h2>
+          <p>请稍候</p>
+        </div>
       </div>
     </section>
 
     <section v-else-if="!authenticated" class="login-screen">
-      <form class="login-panel" @submit.prevent="loginSession">
-        <h1>可信云管理平台</h1>
-        <label>
-          <span>用户名</span>
-          <input v-model.trim="loginForm.username" type="text" autocomplete="username" required>
-        </label>
-        <label>
-          <span>密码</span>
-          <input v-model="loginForm.password" type="password" autocomplete="current-password" required>
-        </label>
-        <p v-if="loginError" class="login-error">{{ loginError }}</p>
-        <button class="primary" type="submit" :disabled="busy">
-          {{ busy ? '登录中' : '登录' }}
-        </button>
-      </form>
+      <div class="login-shell">
+        <aside class="login-intro">
+          <div class="login-mark" aria-hidden="true"><span></span></div>
+          <p class="login-kicker">Keylime OpenStack</p>
+          <h1>可信云管理平台</h1>
+          <p class="login-subtitle">OpenStack 计算节点可信纳管与度量验证控制台</p>
+          <div class="login-signal-list" aria-label="可信能力">
+            <div>
+              <span class="login-signal ok" aria-hidden="true"></span>
+              <strong>TPM 可信根</strong>
+              <small>可信代理纳管</small>
+            </div>
+            <div>
+              <span class="login-signal warn" aria-hidden="true"></span>
+              <strong>TPCM 可信根</strong>
+              <small>动态度量验证</small>
+            </div>
+            <div>
+              <span class="login-signal audit" aria-hidden="true"></span>
+              <strong>操作审计</strong>
+              <small>登录、注销与管理动作追踪</small>
+            </div>
+          </div>
+        </aside>
+
+        <form class="login-panel" @submit.prevent="loginSession">
+          <div class="login-panel-head">
+            <span>安全登录</span>
+            <h2>管理员入口</h2>
+            <p>使用管理系统账号进入控制台</p>
+          </div>
+          <label class="login-field">
+            <span>用户名</span>
+            <input v-model.trim="loginForm.username" type="text" autocomplete="username" required autofocus>
+          </label>
+          <label class="login-field">
+            <span>密码</span>
+            <input v-model="loginForm.password" type="password" autocomplete="current-password" required>
+          </label>
+          <p v-if="loginError" class="login-error">{{ loginError }}</p>
+          <button class="primary login-submit" type="submit" :disabled="busy">
+            {{ busy ? '登录中' : '登录' }}
+          </button>
+          <p class="login-note">未登录用户仅可访问登录页</p>
+        </form>
+      </div>
     </section>
 
     <template v-else>
