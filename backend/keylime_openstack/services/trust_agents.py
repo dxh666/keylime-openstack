@@ -9,6 +9,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from keylime_openstack.constants import (
+    ADAPTER_KEYLIME,
+    ADAPTER_OPENTCSM,
     TRUST_AGENT_KEYLIME,
     TRUST_AGENT_OPENTCSM_TPCM,
     TRUST_AGENT_UNMANAGED,
@@ -54,6 +56,16 @@ def normalize_trust_agent_type(value: str) -> str:
 
 
 def node_trust_agent_type(node: "ComputeNode", settings: "Settings") -> str:
+    profile = _node_profile(node)
+    if profile is not None:
+        if getattr(profile, "trust_managed", False) is False:
+            return TRUST_AGENT_UNMANAGED
+        adapter_type = str(getattr(profile, "adapter_type", "") or "")
+        if adapter_type == ADAPTER_KEYLIME:
+            return TRUST_AGENT_KEYLIME
+        if adapter_type == ADAPTER_OPENTCSM:
+            return TRUST_AGENT_OPENTCSM_TPCM
+
     mapping = parse_host_map(settings.trust_agent_type_map)
     mapped = mapping.get(node.hostname) or mapping.get(node.hypervisor_name)
     facts = node.facts or {}
@@ -64,10 +76,17 @@ def node_trust_agent_type(node: "ComputeNode", settings: "Settings") -> str:
 
 
 def node_trust_managed(node: "ComputeNode", settings: "Settings") -> bool:
+    profile = _node_profile(node)
+    if profile is not None:
+        return bool(getattr(profile, "trust_managed", False))
     return node_trust_agent_type(node, settings) != TRUST_AGENT_UNMANAGED
 
 
 def node_trust_agent_name(node: "ComputeNode", settings: "Settings") -> str:
+    profile = _node_profile(node)
+    if profile is not None:
+        return "Trusted Agent" if getattr(profile, "trust_managed", False) else "Unmanaged"
+
     agent_type = node_trust_agent_type(node, settings)
     facts = node.facts or {}
     if agent_type == TRUST_AGENT_UNMANAGED:
@@ -80,6 +99,11 @@ def node_trust_agent_name(node: "ComputeNode", settings: "Settings") -> str:
 
 
 def node_trusted_root_type(node: "ComputeNode", settings: "Settings") -> str:
+    profile = _node_profile(node)
+    if profile is not None:
+        value = str(getattr(profile, "trusted_root_type", "") or "").lower()
+        return value or TRUST_ROOT_UNKNOWN
+
     facts = node.facts or {}
     value = str(facts.get("trusted_root_type") or facts.get("trusted_root") or "").lower()
     agent_type = node_trust_agent_type(node, settings)
@@ -91,6 +115,15 @@ def node_trusted_root_type(node: "ComputeNode", settings: "Settings") -> str:
 
 
 def node_trusted_root(node: "ComputeNode", settings: "Settings") -> str:
+    profile = _node_profile(node)
+    if profile is not None:
+        trusted_root_type = node_trusted_root_type(node, settings)
+        if trusted_root_type == TRUST_ROOT_TPCM:
+            return "Hygon TPCM"
+        if trusted_root_type == TRUST_ROOT_TPM:
+            return "TPM 2.0"
+        return TRUST_ROOT_UNKNOWN
+
     facts = node.facts or {}
     if facts.get("trusted_root"):
         return str(facts["trusted_root"])
@@ -100,3 +133,7 @@ def node_trusted_root(node: "ComputeNode", settings: "Settings") -> str:
     if trusted_root_type == TRUST_ROOT_TPM:
         return "TPM 2.0"
     return TRUST_ROOT_UNKNOWN
+
+
+def _node_profile(node: "ComputeNode") -> object | None:
+    return getattr(node, "trust_profile", None)

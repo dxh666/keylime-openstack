@@ -7,7 +7,7 @@ export const nodeMethods = {
     if (!this.apiError) this.showNotice("ok", "节点状态已刷新。");
   },
   async refreshComputeNodeStatus(row) {
-    if (row?.trustAgentType === "opentcsm_tpcm") {
+    if (row?.canCollectTpcmDynamic || row?.trustAgentType === "opentcsm_tpcm") {
       await this.collectOpenTcsmStatus(row);
       return;
     }
@@ -66,6 +66,15 @@ export const nodeMethods = {
     );
   },
   isOpenTcsmNode(row, node, keylimeNode) {
+    const profile = node?.trusted_node_profile || row?.rawNode?.trusted_node_profile || keylimeNode?.trusted_node_profile || {};
+    const capabilities = profile.capabilities || node?.capabilities || row?.rawNode?.capabilities || {};
+    if (
+      profile.trust_managed === true &&
+      profile.trusted_root_type === "tpcm" &&
+      capabilities.tpcm_dynamic_measurement === true
+    ) {
+      return true;
+    }
     return (
       row?.trustAgentType === "opentcsm_tpcm" ||
       node?.trust_agent_type === "opentcsm_tpcm" ||

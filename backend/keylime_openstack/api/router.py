@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
-from keylime_openstack.api.routers import ROUTERS
+from keylime_openstack.api.deps import require_user_or_admin_token
+from keylime_openstack.api.routers import AUTHENTICATED_ROUTERS, PUBLIC_ROUTERS
 from keylime_openstack.api.routers.audit import audit
+from keylime_openstack.api.routers.auth import login, logout, me
 from keylime_openstack.api.routers.dashboard import (
     _dashboard_control_node,
     _dashboard_control_plane,
@@ -46,18 +48,31 @@ from keylime_openstack.api.routers.policies import (
 from keylime_openstack.api.routers.queries import _latest_decisions, _latest_openstack_states
 from keylime_openstack.api.routers.system import bootstrap, health, traits
 from keylime_openstack.api.routers.tasks import run_sync_now, tasks
+from keylime_openstack.api.routers.trust import (
+    register_trust_agent,
+    trust_check,
+    verify_trust_agent,
+)
 
 router = APIRouter(prefix="/api")
-for domain_router in ROUTERS:
+for domain_router in PUBLIC_ROUTERS:
     router.include_router(domain_router)
+for domain_router in AUTHENTICATED_ROUTERS:
+    router.include_router(domain_router, dependencies=[Depends(require_user_or_admin_token)])
 
 __all__ = [
     "router",
     "health",
     "bootstrap",
+    "login",
+    "me",
+    "logout",
     "dashboard",
     "overview",
     "nodes",
+    "trust_check",
+    "verify_trust_agent",
+    "register_trust_agent",
     "keylime_check",
     "hardware_profiles",
     "policies",

@@ -147,10 +147,17 @@ export const dashboardComputed = {
         this.keylimeNodesByHost.get(node.hostname) ||
         this.keylimeNodesByUuid.get(node.keylime_agent_uuid) ||
         {};
+      const profile = node.trusted_node_profile || {};
+      const capabilities = profile.capabilities || node.capabilities || {};
       const trustAgentType = node.trust_agent_type || keylimeNode.trust_agent_type || "unmanaged";
-      const trustManaged = node.trust_managed ?? keylimeNode.trust_managed ?? trustAgentType !== "unmanaged";
-      const trustedRootType = node.trusted_root_type || keylimeNode.trusted_root_type || "unknown";
-      const trusted = keylimeNode.trusted;
+      const trustManaged = profile.trust_managed ?? node.trust_managed ?? keylimeNode.trust_managed ?? trustAgentType !== "unmanaged";
+      const trustedRootType = profile.trusted_root_type || node.trusted_root_type || keylimeNode.trusted_root_type || "unknown";
+      const trusted = keylimeNode.trusted ?? profile.last_evidence_summary?.trusted ?? null;
+      const canCollectTpcmDynamic = (
+        trustManaged === true &&
+        trustedRootType === "tpcm" &&
+        capabilities.tpcm_dynamic_measurement === true
+      );
       const trustText = trustManaged ? this.trustText(trusted) : "未纳管";
       const trustClass = trustManaged
         ? trusted === true
@@ -159,14 +166,19 @@ export const dashboardComputed = {
             ? "bad"
             : "warn"
         : "warn";
+      const proofTime = this.proofTime(keylimeNode);
+      const profileTime = this.formatTime(profile.last_verified_at || node.last_verified_at);
+      const attestationTime = trustManaged ? (proofTime !== "-" ? proofTime : profileTime) : "-";
       return {
         id: node.id,
         host: node.hostname,
+        openstackComputeName: profile.openstack_compute_name || node.openstack_compute_name || node.hypervisor_name || node.hostname,
         rawNode: node,
         keylimeNode,
         trustAgentType,
         trustManaged,
         trustedRootType,
+        canCollectTpcmDynamic,
         trustAgentName: node.trust_agent_name || keylimeNode.trust_agent_name || "Unmanaged",
         trustedRoot: node.trusted_root || keylimeNode.trusted_root || "unknown",
         managementIp: this.primaryController.management_ip || "-",
@@ -178,7 +190,7 @@ export const dashboardComputed = {
         trusted,
         trustText,
         trustClass,
-        attestationTime: trustManaged ? this.proofTime(keylimeNode) : "-",
+        attestationTime,
         reason: keylimeNode.reason || keylimeNode.last_event_id || "-"
       };
     });

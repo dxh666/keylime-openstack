@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from keylime_openstack.constants import TASK_FAILED, TASK_PENDING, TASK_RUNNING, TASK_SUCCESS
 from keylime_openstack.models import TaskRun
+from keylime_openstack.services.audit import current_audit_actor
 
 
 def create_task(
@@ -19,6 +20,8 @@ def create_task(
     requested_by: str = "system",
     task_args: dict[str, Any] | None = None,
 ) -> TaskRun:
+    if requested_by == "api":
+        requested_by = current_audit_actor("api")
     task = TaskRun(
         task_type=task_type,
         status=TASK_PENDING,

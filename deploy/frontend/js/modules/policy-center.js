@@ -5,7 +5,25 @@ export const policyCenterComputed = {
     return this.policies.filter((policy) => policy.policy_type === this.activePolicyType);
   },
   policyTargetNodes() {
-    return this.computeInventory;
+    return this.computeInventory.filter((node) => {
+      const profile = node.trusted_node_profile || node;
+      const capabilities = profile.capabilities || node.capabilities || {};
+      if (this.activePolicyType === "measured_boot") {
+        return (
+          profile.trust_managed === true &&
+          profile.trusted_root_type === "tpm" &&
+          capabilities.trusted_boot === true
+        );
+      }
+      if (this.activePolicyType === "ima_runtime") {
+        return (
+          profile.trust_managed === true &&
+          profile.trusted_root_type === "tpm" &&
+          capabilities.ima_runtime === true
+        );
+      }
+      return profile.trust_managed === true;
+    });
   },
   policyNamePlaceholder() {
     if (this.activePolicyType === "measured_boot") return "例如 compute-trusted-boot-v1";

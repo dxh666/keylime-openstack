@@ -35,7 +35,7 @@ export const nodeDetailMethods = {
         title: "基本信息",
         items: [
           { label: "节点名称", value: row.host || node.hostname || "-" },
-          { label: "Hypervisor 名称", value: node.hypervisor_name || row.host || "-" },
+          { label: "OpenStack 计算名称", value: row.openstackComputeName || node.openstack_compute_name || node.hypervisor_name || row.host || "-" },
           { label: "管理节点 IP", value: row.managementIp || "-" },
           { label: "自身 IP", value: row.ownIp || "-" },
           { label: "操作系统", value: this.nodeOsText(node) },

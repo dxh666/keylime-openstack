@@ -7,10 +7,15 @@ export const globalControlsComputed = {
   },
   trustCapabilityItems() {
     const inventory = this.nodes?.length ? this.nodes : this.keylime.nodes || [];
-    const tpcmNodes = inventory.filter((node) =>
-      node.trust_managed !== false &&
-      (node.trusted_root_type === "tpcm" || node.trust_agent_type === "opentcsm_tpcm")
-    );
+    const tpcmNodes = inventory.filter((node) => {
+      const profile = node.trusted_node_profile || node;
+      const capabilities = profile.capabilities || node.capabilities || {};
+      return (
+        profile.trust_managed === true &&
+        profile.trusted_root_type === "tpcm" &&
+        capabilities.tpcm_dynamic_measurement === true
+      );
+    });
     const dynamicGlobalEnabled = this.tpcmDynamicGlobalEnabled;
     return [
       {

@@ -28,12 +28,47 @@ class OpenStackStateOut(BaseModel):
     updated_at: datetime
 
 
+class TrustedNodeProfileOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int | None = None
+    node_id: int | None = None
+    hostname: str
+    openstack_compute_name: str = ""
+    management_ip: str = ""
+    is_openstack_compute: bool = False
+    trust_managed: bool = False
+    trusted_root_type: str = "unknown"
+    adapter_type: str = ""
+    agent_endpoint: dict[str, Any] = Field(default_factory=dict)
+    agent_identity: dict[str, Any] = Field(default_factory=dict)
+    capabilities: dict[str, Any] = Field(default_factory=dict)
+    registration_status: str = "unmanaged"
+    last_verified_at: datetime | None = None
+    last_evidence_summary: dict[str, Any] = Field(default_factory=dict)
+
+
+class TrustAgentRegistrationIn(BaseModel):
+    hostname: str = Field(default="", max_length=255)
+    openstack_compute_name: str = Field(default="", max_length=255)
+    management_ip: str = Field(default="", max_length=64)
+    is_openstack_compute: bool | None = None
+    trust_managed: bool = False
+    trusted_root_type: str = "unknown"
+    adapter_type: str = ""
+    agent_endpoint: dict[str, Any] = Field(default_factory=dict)
+    agent_identity: dict[str, Any] = Field(default_factory=dict)
+    capabilities: dict[str, Any] = Field(default_factory=dict)
+    registration_status: str = ""
+
+
 class ComputeNodeOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     hostname: str
     hypervisor_name: str
+    openstack_compute_name: str = ""
     management_ip: str
     role: str
     enabled: bool
@@ -45,6 +80,14 @@ class ComputeNodeOut(BaseModel):
     trust_managed: bool = False
     trusted_root_type: str = "unknown"
     trusted_root: str = "unknown"
+    adapter_type: str = ""
+    agent_endpoint: dict[str, Any] = Field(default_factory=dict)
+    agent_identity: dict[str, Any] = Field(default_factory=dict)
+    capabilities: dict[str, Any] = Field(default_factory=dict)
+    registration_status: str = "unmanaged"
+    last_verified_at: datetime | None = None
+    last_evidence_summary: dict[str, Any] = Field(default_factory=dict)
+    trusted_node_profile: TrustedNodeProfileOut | None = None
     facts: dict[str, Any]
     hardware_profile: HardwareProfileOut | None = None
     openstack_state: OpenStackStateOut | None = None
@@ -101,6 +144,22 @@ class TrustPolicyIn(BaseModel):
 
 class TpcmDynamicGlobalSwitchIn(BaseModel):
     enabled: bool
+
+
+class LoginIn(BaseModel):
+    username: str = Field(min_length=1, max_length=120)
+    password: str = Field(min_length=1, max_length=255)
+
+
+class UserOut(BaseModel):
+    username: str
+    display_name: str = ""
+    role: str = "admin"
+
+
+class AuthStatusOut(BaseModel):
+    authenticated: bool
+    user: UserOut | None = None
 
 
 class TrustDecisionOut(BaseModel):

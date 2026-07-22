@@ -30,6 +30,14 @@ createApp({
       dynamicNodeStatusFilter: "all",
       busy: false,
       loading: true,
+      authChecked: false,
+      authenticated: false,
+      currentUser: null,
+      loginForm: {
+        username: "admin",
+        password: ""
+      },
+      loginError: "",
       apiError: "",
       keylimeError: "",
       notice: { kind: "", text: "" },
@@ -58,6 +66,7 @@ createApp({
         title: "",
         message: "",
         confirmText: "确认",
+        requireToken: false,
         token: "",
         action: null
       },
@@ -75,8 +84,10 @@ createApp({
   },
   mounted() {
     this.updateClock();
-    this.refreshAll();
-    this.timer = setInterval(() => this.refreshAll(false), 10000);
+    this.initializeSession();
+    this.timer = setInterval(() => {
+      if (this.authenticated) this.refreshAll(false);
+    }, 10000);
     this.clockTimer = setInterval(() => this.updateClock(), 1000);
     window.addEventListener("click", this.closeUserMenu);
   },

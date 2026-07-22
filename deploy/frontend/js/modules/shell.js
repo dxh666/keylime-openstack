@@ -20,6 +20,9 @@ export const shellComputed = {
       hour12: false
     });
   },
+  currentUserName() {
+    return this.currentUser?.display_name || this.currentUser?.username || "admin";
+  },
 };
 
 export const shellMethods = {
@@ -65,16 +68,86 @@ export const shellMethods = {
     return jsonHeaders(token);
   },
   async requestJson(path, options = {}, token = "") {
-    return apiRequestJson(path, options, token);
+    try {
+      return await apiRequestJson(path, options, token);
+    } catch (error) {
+      if (error.status === 401) this.handleUnauthorized();
+      throw error;
+    }
+  },
+  async initializeSession() {
+    this.loading = true;
+    try {
+      const result = await apiRequestJson("/api/auth/me");
+      this.authChecked = true;
+      this.authenticated = result.authenticated === true;
+      this.currentUser = result.user || null;
+      if (this.authenticated) {
+        await this.refreshAll();
+      } else {
+        this.resetApplicationState();
+      }
+    } catch (error) {
+      this.authChecked = true;
+      this.authenticated = false;
+      this.currentUser = null;
+      this.resetApplicationState();
+    } finally {
+      this.loading = false;
+    }
+  },
+  async loginSession() {
+    this.loginError = "";
+    this.busy = true;
+    try {
+      const result = await apiRequestJson("/api/auth/login", {
+        method: "POST",
+        body: JSON.stringify(this.loginForm)
+      });
+      this.authenticated = result.authenticated === true;
+      this.currentUser = result.user || null;
+      this.loginForm.password = "";
+      await this.refreshAll();
+    } catch (error) {
+      this.loginError = error.message;
+    } finally {
+      this.busy = false;
+      this.authChecked = true;
+    }
+  },
+  handleUnauthorized() {
+    this.authenticated = false;
+    this.currentUser = null;
+    this.authChecked = true;
+    this.resetApplicationState();
+  },
+  resetApplicationState() {
+    this.dashboard = null;
+    this.overview = null;
+    this.keylime = { ok: null, nodes: [], nodes_total: 0, nodes_trusted: 0, trust_capabilities: {} };
+    this.globalControls = {
+      tpcm_dynamic_measurement: { enabled: true, source: "default", updated_at: null }
+    };
+    this.nodes = [];
+    this.policies = [];
+    this.auditEvents = [];
+    this.tasks = [];
+    this.opentcsmAccessChecks = {};
+    this.detailPolicy = null;
+    this.detailNode = null;
   },
   async refreshAll(showBusy = true) {
+    if (!this.authenticated) {
+      this.loading = false;
+      return;
+    }
     if (showBusy) this.busy = true;
     this.loading = true;
     const requests = {
       health: this.requestJson("/api/health"),
       dashboard: this.requestJson("/api/dashboard"),
       overview: this.requestJson("/api/overview"),
-      keylime: this.requestJson("/api/keylime/check"),
+      keylime: this.requestJson("/api/trust/check"),
       globalTpcmDynamic: this.requestJson("/api/policies/tpcm-dynamic/global-switch"),
       nodes: this.requestJson("/api/nodes"),
       policies: this.requestJson("/api/policies"),
@@ -126,8 +199,13 @@ export const shellMethods = {
       }, 6000);
     }
   },
-  logoutSession() {
+  async logoutSession() {
     this.closeUserMenu();
-    this.showNotice("ok", "已退出当前前端会话，后续管理操作仍需重新输入管理令牌。");
+    try {
+      await apiRequestJson("/api/auth/logout", { method: "POST" });
+    } catch (error) {
+      // Clear local state even when the server session is already gone.
+    }
+    this.handleUnauthorized();
   },
 };

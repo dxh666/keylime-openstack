@@ -5,7 +5,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from keylime_openstack.api.deps import db_session, require_admin, settings_dep
+from keylime_openstack.api.deps import (
+    db_session,
+    require_admin,
+    require_user_or_admin_token,
+    settings_dep,
+)
 from keylime_openstack.config import Settings
 from keylime_openstack.constants import DEFAULT_TRUST_TRAITS
 from keylime_openstack.seed import ensure_default_environment
@@ -29,6 +34,6 @@ def bootstrap(session: Session = Depends(db_session)) -> dict[str, object]:
     return {"ok": True}
 
 
-@router.get("/traits")
+@router.get("/traits", dependencies=[Depends(require_user_or_admin_token)])
 def traits() -> dict[str, list[str]]:
     return {"traits": DEFAULT_TRUST_TRAITS}

@@ -12,6 +12,10 @@ from keylime_openstack.config import Settings
 from keylime_openstack.models import ComputeNode, HardwareProfile
 from keylime_openstack.schemas import ComputeNodeOut
 from keylime_openstack.seed import ensure_default_environment
+from keylime_openstack.services.trust_registration import (
+    ensure_trusted_node_profile,
+    profile_payload,
+)
 from keylime_openstack.services.trust_agents import (
     node_trust_agent_name,
     node_trust_managed,
@@ -31,24 +35,44 @@ def nodes(
     ensure_default_environment(session)
     session.commit()
     rows = session.scalars(
-        select(ComputeNode).options(joinedload(ComputeNode.hardware_profile)).order_by(ComputeNode.hostname)
+        select(ComputeNode)
+        .options(joinedload(ComputeNode.hardware_profile), joinedload(ComputeNode.trust_profile))
+        .order_by(ComputeNode.hostname)
     ).all()
-    states = _latest_openstack_states(session, [item.id for item in rows])
-    return [
-        ComputeNodeOut.model_validate(
-            {
-                **item.__dict__,
-                "trust_agent_type": node_trust_agent_type(item, settings),
-                "trust_agent_name": node_trust_agent_name(item, settings),
-                "trust_managed": node_trust_managed(item, settings),
-                "trusted_root_type": node_trusted_root_type(item, settings),
-                "trusted_root": node_trusted_root(item, settings),
-                "hardware_profile": item.hardware_profile,
-                "openstack_state": states.get(item.id),
-            }
-        )
+    profiles = {
+        item.id: ensure_trusted_node_profile(session, item, settings)
         for item in rows
-    ]
+    }
+    session.commit()
+    states = _latest_openstack_states(session, [item.id for item in rows])
+    result = []
+    for item in rows:
+        profile = profiles[item.id]
+        profile_data = profile_payload(profile, item)
+        result.append(
+            ComputeNodeOut.model_validate(
+                {
+                    **item.__dict__,
+                    "openstack_compute_name": profile_data["openstack_compute_name"],
+                    "trust_agent_type": node_trust_agent_type(item, settings),
+                    "trust_agent_name": node_trust_agent_name(item, settings),
+                    "trust_managed": node_trust_managed(item, settings),
+                    "trusted_root_type": node_trusted_root_type(item, settings),
+                    "trusted_root": node_trusted_root(item, settings),
+                    "adapter_type": profile_data["adapter_type"],
+                    "agent_endpoint": profile_data["agent_endpoint"],
+                    "agent_identity": profile_data["agent_identity"],
+                    "capabilities": profile_data["capabilities"],
+                    "registration_status": profile_data["registration_status"],
+                    "last_verified_at": profile_data["last_verified_at"],
+                    "last_evidence_summary": profile_data["last_evidence_summary"],
+                    "trusted_node_profile": profile_data,
+                    "hardware_profile": item.hardware_profile,
+                    "openstack_state": states.get(item.id),
+                }
+            )
+        )
+    return result
 
 
 @router.get("/hardware-profiles")

@@ -19,9 +19,9 @@ from keylime_openstack.schemas import TpcmDynamicGlobalSwitchIn
 from keylime_openstack.services.policy import _binding_last_error_for_output
 from keylime_openstack.services.policy_deployment_audit import PolicyDeploymentAuditRecorder
 from keylime_openstack.services.policy_deployment import (
-    PolicyDeploymentService,
     _opentcsm_dynamic_failure_details,
 )
+from keylime_openstack.services.policy_deployment_state import PolicyDeploymentState
 from keylime_openstack.services.tpcm_dynamic_deployment import TpcmDynamicDeployment
 
 
@@ -51,7 +51,7 @@ def test_failed_policy_binding_uses_product_summary_as_last_error() -> None:
         "FileNotFoundError: [Errno 2] No such file or directory: 'get_dmeasure_policy'"
     )
 
-    PolicyDeploymentService._failed(
+    PolicyDeploymentState.mark_failed(
         binding,
         "raw ansible traceback that should stay out of policy lists",
         details,

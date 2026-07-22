@@ -7,7 +7,33 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div id="app" v-cloak>
+  <div id="app" v-cloak :class="{ 'login-app': !authenticated }">
+    <section v-if="!authChecked" class="login-screen">
+      <div class="login-panel">
+        <h1>可信云管理平台</h1>
+        <p>正在检查登录状态...</p>
+      </div>
+    </section>
+
+    <section v-else-if="!authenticated" class="login-screen">
+      <form class="login-panel" @submit.prevent="loginSession">
+        <h1>可信云管理平台</h1>
+        <label>
+          <span>用户名</span>
+          <input v-model.trim="loginForm.username" type="text" autocomplete="username" required>
+        </label>
+        <label>
+          <span>密码</span>
+          <input v-model="loginForm.password" type="password" autocomplete="current-password" required>
+        </label>
+        <p v-if="loginError" class="login-error">{{ loginError }}</p>
+        <button class="primary" type="submit" :disabled="busy">
+          {{ busy ? '登录中' : '登录' }}
+        </button>
+      </form>
+    </section>
+
+    <template v-else>
     <aside class="sidebar">
       <div class="brand">
         <strong>可信云管理平台</strong>
@@ -91,7 +117,7 @@
                 @click.stop="toggleUserMenu"
               >
                 <span class="toolbar-icon user-avatar" aria-hidden="true"></span>
-                <span>admin</span>
+                <span>{{ currentUserName }}</span>
               </button>
               <div v-if="userMenuOpen" class="user-menu-panel" @click.stop>
                 <span class="user-menu-caret" aria-hidden="true"></span>
@@ -99,7 +125,7 @@
                   <div class="user-profile-avatar">
                     <span class="user-profile-icon" aria-hidden="true"></span>
                   </div>
-                  <div class="user-profile-name">admin - 管理员</div>
+                  <div class="user-profile-name">{{ currentUserName }} - 管理员</div>
                 </div>
                 <div class="user-menu-footer">
                   <button type="button" class="logout-button" @click="logoutSession">注销</button>
@@ -247,7 +273,7 @@
                 <button type="button" class="small" @click="openComputeDetail(node)">查看详情</button>
                 <button type="button" class="small" :disabled="busy" @click="refreshComputeNodeStatus(node)">刷新状态</button>
                 <button
-                  v-if="node.trustAgentType === 'opentcsm_tpcm'"
+                  v-if="node.canCollectTpcmDynamic"
                   type="button"
                   class="small"
                   :disabled="busy"
@@ -659,7 +685,7 @@
         <section class="modal token-dialog" role="dialog" aria-modal="true">
           <h2>{{ tokenDialog.title }}</h2>
           <p>{{ tokenDialog.message }}</p>
-          <label>
+          <label v-if="tokenDialog.requireToken">
             <span>管理令牌</span>
             <input
               v-model="tokenDialog.token"
@@ -678,6 +704,7 @@
         </section>
       </div>
     </main>
+    </template>
   </div>
 
   <script src="vendor/vue.global.prod.js"></script>

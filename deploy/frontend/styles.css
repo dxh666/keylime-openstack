@@ -96,6 +96,55 @@ textarea {
   min-height: 100vh;
 }
 
+#app.login-app {
+  display: block;
+}
+
+.login-screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: linear-gradient(135deg, #eef2f7 0%, #f9fafb 48%, #e8f3ef 100%);
+}
+
+.login-panel {
+  width: min(420px, 100%);
+  display: grid;
+  gap: 14px;
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: var(--shadow);
+}
+
+.login-panel h1 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.25;
+}
+
+.login-panel p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.login-panel label {
+  display: grid;
+  gap: 6px;
+}
+
+.login-panel label span {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.login-error {
+  color: var(--red);
+  font-size: 13px;
+}
+
 .sidebar {
   position: sticky;
   top: 0;

@@ -6,13 +6,14 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from keylime_openstack.api.deps import db_session, settings_dep
+from keylime_openstack.api.deps import db_session, optional_current_user, settings_dep
 from keylime_openstack.api.routers.queries import _latest_decisions
 from keylime_openstack.config import Settings
 from keylime_openstack.constants import DEFAULT_TRUST_TRAITS
 from keylime_openstack.models import ComputeNode, TaskRun
 from keylime_openstack.schemas import DashboardOut, OverviewOut, TaskRunOut, TrustDecisionOut
 from keylime_openstack.seed import ensure_default_environment
+from keylime_openstack.services.auth import AuthenticatedUser
 
 router = APIRouter()
 
@@ -22,6 +23,7 @@ def dashboard(
     request: Request,
     session: Session = Depends(db_session),
     settings: Settings = Depends(settings_dep),
+    current_user: AuthenticatedUser | None = Depends(optional_current_user),
 ) -> DashboardOut:
     ensure_default_environment(session)
     session.commit()
@@ -38,7 +40,7 @@ def dashboard(
     return DashboardOut(
         control_node=_dashboard_control_node(controller),
         control_plane_status=_dashboard_control_plane(settings),
-        online_users=[_dashboard_current_user(request)],
+        online_users=[_dashboard_current_user(request, current_user)],
     )
 
 
@@ -133,7 +135,10 @@ def _dashboard_control_plane(settings: Settings) -> list[dict[str, str]]:
     ]
 
 
-def _dashboard_current_user(request: Request) -> dict[str, str]:
+def _dashboard_current_user(
+    request: Request,
+    current_user: AuthenticatedUser | None = None,
+) -> dict[str, str]:
     forwarded_for = request.headers.get("x-forwarded-for", "")
     forwarded_user = request.headers.get("x-forwarded-user", "")
     forwarded_group = request.headers.get("x-forwarded-groups", "")
@@ -141,7 +146,7 @@ def _dashboard_current_user(request: Request) -> dict[str, str]:
     client_host = request.client.host if request.client else ""
     return {
         "type": (forwarded_proto or request.url.scheme or "http").upper(),
-        "username": forwarded_user or "admin",
+        "username": (current_user.username if current_user else "") or forwarded_user or "admin",
         "user_group": forwarded_group or "Administrator",
         "ip_address": (forwarded_for.split(",", 1)[0].strip() if forwarded_for else client_host) or "-",
     }

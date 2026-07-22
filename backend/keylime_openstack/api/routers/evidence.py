@@ -18,7 +18,7 @@ from keylime_openstack.seed import ensure_default_environment
 from keylime_openstack.services.audit import record_audit_event
 from keylime_openstack.services.host_integrity import host_integrity_report_to_evidence
 from keylime_openstack.services.opentcsm import opentcsm_report_to_evidence
-from keylime_openstack.services.opentcsm_collect import OpenTcsmCollector
+from keylime_openstack.services.opentcsm_collect import OpenTcsmCollector, sync_tpcm_profile
 from keylime_openstack.services.trust_agents import node_trust_agent_type
 
 router = APIRouter()
@@ -93,6 +93,7 @@ def ingest_opentcsm_evidence(
     for record in records:
         session.add(record)
     session.flush()
+    sync_tpcm_profile(session, settings, node, report_data)
     record_audit_event(
         session,
         event_type="opentcsm_evidence_collect",

@@ -52,6 +52,47 @@ class ComputeNode(TimestampMixin, Base):
 
     hardware_profile: Mapped[HardwareProfile | None] = relationship(back_populates="nodes")
     decisions: Mapped[list["TrustDecision"]] = relationship(back_populates="node")
+    trust_profile: Mapped["TrustedNodeProfile | None"] = relationship(
+        back_populates="node",
+        uselist=False,
+    )
+
+
+class TrustedNodeProfile(TimestampMixin, Base):
+    __tablename__ = "trusted_node_profiles"
+    __table_args__ = (
+        UniqueConstraint("node_id", name="uq_trusted_node_profiles_node_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    node_id: Mapped[int] = mapped_column(ForeignKey("compute_nodes.id"), index=True)
+    hostname: Mapped[str] = mapped_column(String(255), index=True)
+    openstack_compute_name: Mapped[str] = mapped_column(String(255), default="", index=True)
+    management_ip: Mapped[str] = mapped_column(String(64), default="")
+    is_openstack_compute: Mapped[bool] = mapped_column(Boolean, default=True)
+    trust_managed: Mapped[bool] = mapped_column(Boolean, default=False)
+    trusted_root_type: Mapped[str] = mapped_column(String(40), default="unknown", index=True)
+    adapter_type: Mapped[str] = mapped_column(String(40), default="")
+    agent_endpoint: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    agent_identity: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    capabilities: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    registration_status: Mapped[str] = mapped_column(String(40), default="unmanaged", index=True)
+    last_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_evidence_summary: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+    node: Mapped[ComputeNode] = relationship(back_populates="trust_profile")
+
+
+class AuthSession(TimestampMixin, Base):
+    __tablename__ = "auth_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    username: Mapped[str] = mapped_column(String(120), index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    client_ip: Mapped[str] = mapped_column(String(64), default="")
+    user_agent: Mapped[str] = mapped_column(Text, default="")
 
 
 class TrustPolicy(TimestampMixin, Base):

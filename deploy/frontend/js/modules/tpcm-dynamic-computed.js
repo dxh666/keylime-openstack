@@ -2,7 +2,16 @@ import { DYNAMIC_MEASUREMENT_OBJECTS } from "../policies.js";
 
 export const tpcmDynamicComputed = {
   dynamicTargetNodes() {
-    return this.computeInventory.filter((node) => node.trust_agent_type === "opentcsm_tpcm");
+    return this.computeInventory.filter((node) => {
+      const profile = node.trusted_node_profile || node;
+      const capabilities = profile.capabilities || node.capabilities || {};
+      return (
+        profile.is_openstack_compute !== false &&
+        profile.trust_managed === true &&
+        profile.trusted_root_type === "tpcm" &&
+        capabilities.tpcm_dynamic_measurement === true
+      );
+    });
   },
   selectedDynamicNode() {
     if (!this.dynamicTargetNodes.length) return null;

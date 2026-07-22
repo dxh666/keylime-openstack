@@ -9,11 +9,15 @@ export function jsonHeaders(token = "") {
 export async function requestJson(path, options = {}, token = "") {
   const response = await fetch(path, {
     ...options,
+    credentials: "same-origin",
     headers: { ...jsonHeaders(token), ...(options.headers || {}) }
   });
   const data = await response.json();
   if (!response.ok) {
-    throw new Error(data.detail || data.error || `HTTP ${response.status}`);
+    const error = new Error(data.detail || data.error || `HTTP ${response.status}`);
+    error.status = response.status;
+    error.data = data;
+    throw error;
   }
   return data;
 }

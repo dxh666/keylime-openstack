@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from keylime_openstack.config import Settings
-from keylime_openstack.constants import TRUST_AGENT_KEYLIME
-from keylime_openstack.models import ComputeNode, OpenStackState, TrustDecision
+from keylime_openstack.constants import (
+    REGISTRATION_UNMANAGED,
+    REGISTRATION_UNTRUSTED,
+    REGISTRATION_VERIFIED,
+    TRUST_AGENT_KEYLIME,
+)
+from keylime_openstack.models import ComputeNode, OpenStackState, TrustDecision, TrustedNodeProfile
 from keylime_openstack.seed import ensure_default_environment
 from keylime_openstack.services.audit import record_audit_event
 from keylime_openstack.services.decision import evaluate_trust, unmanaged_trust_decision
@@ -24,6 +31,7 @@ from keylime_openstack.services.trust_agents import (
     node_trusted_root,
     node_trusted_root_type,
 )
+from keylime_openstack.services.trust_registration import ensure_trusted_node_profile
 
 
 class TrustSyncService:
@@ -56,6 +64,7 @@ class TrustSyncService:
         self.openstack_states.refresh(nodes)
 
     def sync_node(self, node: ComputeNode) -> dict[str, object]:
+        profile = ensure_trusted_node_profile(self.session, node, self.settings)
         trust_agent_type = node_trust_agent_type(node, self.settings)
         trust_managed = node_trust_managed(node, self.settings)
         trust_agent_result = self.evidence_collector.collect_for_node(node)
@@ -80,6 +89,7 @@ class TrustSyncService:
             decision_details=decision_data["details"],
         )
         self.session.add(decision)
+        _update_profile_from_decision(profile, decision_data, evidence, trust_agent_result)
 
         trait_result = self.openstack.set_provider_traits(
             node.hypervisor_name or node.hostname,
@@ -120,3 +130,31 @@ class TrustSyncService:
             .order_by(OpenStackState.updated_at.desc())
             .limit(1)
         ).first()
+
+
+def _update_profile_from_decision(
+    profile: TrustedNodeProfile,
+    decision_data: dict[str, object],
+    evidence: list[object],
+    trust_agent_result: dict[str, object],
+) -> None:
+    trust_managed = bool(profile.trust_managed)
+    trusted = bool(decision_data.get("trusted"))
+    evidence_status = {
+        str(record.evidence_type): str(record.status)
+        for record in evidence
+        if hasattr(record, "evidence_type") and hasattr(record, "status")
+    }
+    profile.last_verified_at = datetime.now(timezone.utc)
+    profile.last_evidence_summary = {
+        "trusted": trusted,
+        "evidence": evidence_status,
+        "reason": decision_data.get("reason") or trust_agent_result.get("reason") or "",
+        "source": trust_agent_result.get("source") or trust_agent_result.get("trust_agent_type") or "",
+    }
+    if not trust_managed:
+        profile.registration_status = REGISTRATION_UNMANAGED
+    elif trusted:
+        profile.registration_status = REGISTRATION_VERIFIED
+    else:
+        profile.registration_status = REGISTRATION_UNTRUSTED

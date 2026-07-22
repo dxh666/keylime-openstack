@@ -29,6 +29,11 @@ class Settings(BaseSettings):
         "keylime_openstack"
     )
     admin_token: str = ""
+    admin_username: str = "admin"
+    admin_password: str = ""
+    auth_cookie_name: str = "klos_session"
+    auth_session_ttl_seconds: int = 8 * 60 * 60
+    auth_cookie_secure: bool = False
     frontend_dir: str = "/app/deploy/frontend"
 
     openstack_auth_mode: str = "clouds_yaml"

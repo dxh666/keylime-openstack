@@ -5,7 +5,7 @@ This project supports a mixed trust-agent model:
 ```text
 csri8   keylime        TPM 2.0 + Keylime agent
 csri9   keylime        TPM 2.0 + Keylime agent
-hygon22 opentcsm_tpcm  Hygon TPCM + OpenTCSM
+hygon22 unmanaged      Hygon TPCM, no trusted agent connected
 hygon23 opentcsm_tpcm  Hygon TPCM + OpenTCSM
 ```
 
@@ -29,7 +29,7 @@ Set the node trust-agent map in `/etc/keylime-openstack/keylime-openstack.env`:
 
 ```text
 DEFAULT_COMPUTE_HOSTS=csri8,csri9,hygon22,hygon23
-TRUST_AGENT_TYPE_MAP=csri8=keylime,csri9=keylime,hygon22=opentcsm_tpcm,hygon23=opentcsm_tpcm
+TRUST_AGENT_TYPE_MAP=csri8=keylime,csri9=keylime,hygon22=unmanaged,hygon23=opentcsm_tpcm
 OPENTCSM_EVIDENCE_FRESH_SECONDS=300
 OPENTCSM_ACTIVE_COLLECT_ENABLED=true
 OPENTCSM_COLLECT_INTERVAL_SECONDS=60
@@ -47,6 +47,22 @@ KEYLIME_AGENT_UUID_MAP=csri8=22222222-2222-4222-8222-000000000008,csri9=11111111
 
 The deploy helper fills these defaults when they are missing.
 
+## Structured Registration
+
+The product-level registration record is `trusted_node_profile`. Existing
+`TRUST_AGENT_TYPE_MAP` and node facts are only a migration bridge. New
+automation should upsert the profile with:
+
+```text
+PUT /api/nodes/{hostname}/trusted-node-profile
+```
+
+For TPCM managed nodes, set `trust_managed=true`,
+`trusted_root_type=tpcm`, and `adapter_type=opentcsm`. For TPM managed nodes,
+set `trusted_root_type=tpm` and `adapter_type=keylime`. The management UI uses
+the profile capabilities, not hostnames, to decide whether a node can appear in
+TPCM dynamic-measurement targets.
+
 ## Evidence Ingestion
 
 OpenTCSM integration reports current TPCM evidence to:
@@ -63,7 +79,7 @@ TOKEN=$(grep '^ADMIN_TOKEN=' /etc/keylime-openstack/keylime-openstack.env | cut 
 curl -fsS -X POST \
   -H "X-Admin-Token: $TOKEN" \
   -H "Content-Type: application/json" \
-  http://127.0.0.1:8088/api/nodes/hygon22/opentcsm-evidence \
+  http://127.0.0.1:8088/api/nodes/hygon23/opentcsm-evidence \
   -d '{
     "trust_root": "Hygon TPCM",
     "agent_name": "OpenTCSM",

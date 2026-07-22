@@ -7,12 +7,15 @@ import time
 from datetime import datetime, timezone
 
 from sqlalchemy import select
+from sqlalchemy.orm import joinedload
 
 from keylime_openstack.constants import (
     PROVIDER_OPENTCSM,
     TRUST_AGENT_KEYLIME,
     TRUST_AGENT_OPENTCSM_TPCM,
     TRUST_AGENT_UNMANAGED,
+    REGISTRATION_UNTRUSTED,
+    REGISTRATION_VERIFIED,
 )
 from keylime_openstack.config import get_settings
 from keylime_openstack.database import SessionLocal
@@ -26,6 +29,10 @@ from keylime_openstack.services.trust_agents import (
     node_trust_managed,
     node_trusted_root,
     node_trusted_root_type,
+)
+from keylime_openstack.services.trust_registration import (
+    ensure_trusted_node_profile,
+    profile_payload,
 )
 
 
@@ -82,11 +89,15 @@ def _keylime_only_check_once(
         session.flush()
         query = (
             select(ComputeNode)
+            .options(joinedload(ComputeNode.trust_profile))
             .where(ComputeNode.role == "compute")
             .where(ComputeNode.enabled.is_(True))
             .order_by(ComputeNode.hostname)
         )
         nodes = list(session.scalars(query).all())
+        for node in nodes:
+            ensure_trusted_node_profile(session, node, settings)
+        session.flush()
         if wanted:
             nodes = [node for node in nodes if node.hostname in wanted]
 
@@ -151,6 +162,7 @@ def _keylime_node_check(
         "trusted_root_type": node_trusted_root_type(node, settings),
         "trusted_root": node_trusted_root(node, settings),
         "trust_capabilities": keylime_capabilities,
+        **_profile_fields(node),
     }
     if not node.keylime_agent_uuid:
         return {
@@ -215,6 +227,14 @@ def _keylime_node_check(
     trusted = bool(enabled_capabilities) and all(
         capability_status[name] for name in enabled_capabilities
     )
+    _sync_keylime_profile(
+        node,
+        trusted=trusted,
+        evidence=evidence,
+        capability_status=capability_status,
+        reason=_keylime_only_reason(evidence, evidence_fresh, keylime_capabilities),
+        reported_ip=reported_ip,
+    )
     active_event_id = _active_last_event_id(status)
     reason = (
         "TRUSTED"
@@ -248,6 +268,40 @@ def _keylime_node_check(
             trust_agent_type=TRUST_AGENT_KEYLIME,
         ),
     }
+
+
+def _sync_keylime_profile(
+    node: ComputeNode,
+    *,
+    trusted: bool,
+    evidence: dict[str, str],
+    capability_status: dict[str, bool],
+    reason: str,
+    reported_ip: str,
+) -> None:
+    profile = getattr(node, "trust_profile", None)
+    if not profile:
+        return
+    identity = dict(profile.agent_identity or {})
+    identity["keylime_agent_uuid"] = node.keylime_agent_uuid
+    endpoint = dict(profile.agent_endpoint or {})
+    endpoint["host"] = reported_ip or node.keylime_agent_ip or node.management_ip
+    endpoint["port"] = node.keylime_agent_port
+    profile.agent_identity = identity
+    profile.agent_endpoint = endpoint
+    profile.last_verified_at = datetime.now(timezone.utc)
+    profile.last_evidence_summary = {
+        "trusted": trusted,
+        "evidence": evidence,
+        "capability_status": capability_status,
+        "boot_measurement_summary": {
+            "type": "tpm_measured_boot",
+            "status": evidence.get("boot") or "unknown",
+        },
+        "reason": "TRUSTED" if trusted else reason,
+        "source": "keylime",
+    }
+    profile.registration_status = REGISTRATION_VERIFIED if trusted else REGISTRATION_UNTRUSTED
 
 
 def _external_trust_agent_node_check(
@@ -294,6 +348,14 @@ def _external_trust_agent_node_check(
         key=lambda item: item.collected_at,
         default=latest_record,
     )
+    _sync_external_profile(
+        node,
+        trusted=trusted,
+        evidence=evidence,
+        capability_status=capability_status,
+        reason=reason,
+        report_record=report_record,
+    )
     latest_record_epoch = _external_record_epoch(latest_record)
     return {
         "host": node.hostname,
@@ -304,6 +366,7 @@ def _external_trust_agent_node_check(
         "trust_managed": node_trust_managed(node, settings),
         "trusted_root_type": node_trusted_root_type(node, settings),
         "trusted_root": node_trusted_root(node, settings),
+        **_profile_fields(node),
         "trusted": trusted,
         "reason": reason,
         "status": "collected" if records else "pending",
@@ -332,6 +395,43 @@ def _external_trust_agent_node_check(
     }
 
 
+def _sync_external_profile(
+    node: ComputeNode,
+    *,
+    trusted: bool,
+    evidence: dict[str, str],
+    capability_status: dict[str, bool],
+    reason: str,
+    report_record,
+) -> None:
+    profile = getattr(node, "trust_profile", None)
+    if not profile:
+        return
+    report = _external_report_summary(report_record)
+    identity = dict(profile.agent_identity or {})
+    if report.get("tpcm_id"):
+        identity["tpcm_id"] = report["tpcm_id"]
+    profile.agent_identity = identity
+    profile.last_verified_at = datetime.now(timezone.utc)
+    profile.last_evidence_summary = {
+        "trusted": trusted,
+        "evidence": evidence,
+        "capability_status": capability_status,
+        "boot_measurement_summary": report.get("boot_measurement_summary") or {},
+        "dynamic_measurement_summary": {
+            "type": "tpcm_dynamic_measurement",
+            "enabled": report.get("dynamic_measure_on"),
+            "status": evidence.get("runtime") or "unknown",
+            "object_count": len(report.get("dmeasure_policy") or []),
+            "dmeasure_times": report.get("dmeasure_times"),
+            "policy_sha256": report.get("policy_report_sha256") or "",
+        },
+        "reason": "TRUSTED" if trusted else reason,
+        "source": report.get("provider") or "external",
+    }
+    profile.registration_status = REGISTRATION_VERIFIED if trusted else REGISTRATION_UNTRUSTED
+
+
 def _unmanaged_node_check(node: ComputeNode, settings) -> dict[str, object]:
     reason = "TRUST_AGENT_UNMANAGED"
     return {
@@ -343,6 +443,7 @@ def _unmanaged_node_check(node: ComputeNode, settings) -> dict[str, object]:
         "trust_managed": False,
         "trusted_root_type": node_trusted_root_type(node, settings),
         "trusted_root": node_trusted_root(node, settings),
+        **_profile_fields(node),
         "trusted": False,
         "reason": reason,
         "status": "unmanaged",
@@ -366,6 +467,37 @@ def _unmanaged_node_check(node: ComputeNode, settings) -> dict[str, object]:
             host=node.hostname,
             trust_agent_type=TRUST_AGENT_UNMANAGED,
         ),
+    }
+
+
+def _profile_fields(node: ComputeNode) -> dict[str, object]:
+    profile = getattr(node, "trust_profile", None)
+    if not profile:
+        return {
+            "openstack_compute_name": node.hypervisor_name or node.hostname,
+            "adapter_type": "",
+            "agent_endpoint": {},
+            "agent_identity": {},
+            "capabilities": {},
+            "registration_status": "",
+            "last_verified_at": None,
+            "last_evidence_summary": {},
+            "trusted_node_profile": None,
+        }
+    payload = profile_payload(profile, node)
+    last_verified_at = payload.get("last_verified_at")
+    if isinstance(last_verified_at, datetime):
+        payload["last_verified_at"] = last_verified_at.isoformat()
+    return {
+        "openstack_compute_name": payload["openstack_compute_name"],
+        "adapter_type": payload["adapter_type"],
+        "agent_endpoint": payload["agent_endpoint"],
+        "agent_identity": payload["agent_identity"],
+        "capabilities": payload["capabilities"],
+        "registration_status": payload["registration_status"],
+        "last_verified_at": payload["last_verified_at"],
+        "last_evidence_summary": payload["last_evidence_summary"],
+        "trusted_node_profile": payload,
     }
 
 
@@ -410,6 +542,13 @@ def _external_report_summary(record) -> dict[str, object]:
     errors = payload.get("errors") if isinstance(payload.get("errors"), list) else []
     boot_records = raw.get("boot_records") if isinstance(raw.get("boot_records"), list) else []
     dmeasure_policy = raw.get("dmeasure_policy") if isinstance(raw.get("dmeasure_policy"), list) else []
+    boot_measurement_summary = {
+        "enabled": raw.get("boot_measure_on"),
+        "record_count": len(boot_records),
+        "reference_count": raw.get("boot_measure_ref_number"),
+        "records_sha256": raw.get("boot_measure_records_sha256") or "",
+        "trust_report_sha256": raw.get("trust_report_sha256") or "",
+    }
     return {
         "provider": record.provider,
         "agent_name": payload.get("agent_name") or "",
@@ -437,6 +576,7 @@ def _external_report_summary(record) -> dict[str, object]:
         "policy_report_sha256": raw.get("policy_report_sha256") or "",
         "global_control_policy_sha256": raw.get("global_control_policy_sha256") or "",
         "boot_measure_records_sha256": raw.get("boot_measure_records_sha256") or "",
+        "boot_measurement_summary": boot_measurement_summary,
         "errors": errors,
     }
 
