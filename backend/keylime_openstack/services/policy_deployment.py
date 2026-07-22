@@ -4,21 +4,17 @@ from __future__ import annotations
 
 import tempfile
 from contextlib import contextmanager
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from keylime_openstack.config import Settings
 from keylime_openstack.constants import (
-    POLICY_DEPLOY_APPLIED,
     POLICY_DEPLOY_APPLYING,
     POLICY_DEPLOY_AWAITING_REBOOT,
     POLICY_DEPLOY_EXTERNAL_PENDING,
     POLICY_DEPLOY_FAILED,
-    POLICY_DEPLOY_SUPERSEDED,
     POLICY_IMA_RUNTIME,
     POLICY_MEASURED_BOOT,
     POLICY_TPCM_DYNAMIC_MEASUREMENT,
@@ -30,6 +26,7 @@ from keylime_openstack.services.ansible import AnsibleExecutor
 from keylime_openstack.services.keylime import KeylimeClient
 from keylime_openstack.services.keylime_policy_deployment import KeylimePolicyDeployment
 from keylime_openstack.services.policy import canonical_policy_type, load_policy
+from keylime_openstack.services.policy_deployment_state import PolicyDeploymentState
 from keylime_openstack.services.policy_deployment_audit import PolicyDeploymentAuditRecorder
 from keylime_openstack.services.trust_agents import (
     node_trust_agent_name,
@@ -86,6 +83,7 @@ class PolicyDeploymentService:
         self.ansible = AnsibleExecutor(settings)
         self.keylime = KeylimeClient(settings)
         self.audit_recorder = PolicyDeploymentAuditRecorder(session)
+        self.state = PolicyDeploymentState(session)
         self.keylime_policy = KeylimePolicyDeployment(
             settings=settings,
             ansible=self.ansible,
@@ -93,8 +91,8 @@ class PolicyDeploymentService:
             workspace_factory=self._workspace,
             require_ansible_success=self._require_ansible_success,
             require_keylime_success=self._require_keylime_success,
-            active_external_policy_name=self._active_external_policy_name,
-            active_boot_policy_adapter=self._active_boot_policy_adapter,
+            active_external_policy_name=self.state.active_external_policy_name,
+            active_boot_policy_adapter=self.state.active_boot_policy_adapter,
         )
         self.tpcm_dynamic = TpcmDynamicDeployment(
             session=session,
@@ -117,8 +115,8 @@ class PolicyDeploymentService:
                 continue
             node = self.session.get(ComputeNode, binding.target_id)
             if not node:
-                self._failed(binding, f"node {binding.target_id} no longer exists")
-                results.append(self._binding_result(binding, "failed"))
+                self.state.mark_failed(binding, f"node {binding.target_id} no longer exists")
+                results.append(self.state.binding_result(binding, "failed"))
                 continue
             binding.application_status = POLICY_DEPLOY_APPLYING
             binding.last_error = ""
@@ -152,10 +150,10 @@ class PolicyDeploymentService:
                 )
                 if failure_details:
                     failure_details.update(_dynamic_policy_context(policy.content))
-                self._failed(binding, error, failure_details)
+                self.state.mark_failed(binding, error, failure_details)
                 details = {"error": error, **failure_details}
             self._audit(policy.name, policy_type, node.hostname, binding, details)
-            results.append(self._binding_result(binding, binding.application_status))
+            results.append(self.state.binding_result(binding, binding.application_status))
             self.session.flush()
         if binding_id is not None and not results:
             raise RuntimeError(f"policy binding {binding_id} is not active or does not exist")
@@ -209,7 +207,7 @@ class PolicyDeploymentService:
         node: ComputeNode,
     ) -> dict[str, Any]:
         deployment = self.keylime_policy.deploy_measured_boot(policy, node)
-        self._applied(
+        self.state.mark_applied(
             binding,
             policy,
             deployment.external_name,
@@ -225,7 +223,7 @@ class PolicyDeploymentService:
         node: ComputeNode,
     ) -> dict[str, Any]:
         deployment = self.keylime_policy.deploy_ima_runtime(policy, node)
-        self._applied(
+        self.state.mark_applied(
             binding,
             policy,
             deployment.external_name,
@@ -241,7 +239,7 @@ class PolicyDeploymentService:
         node: ComputeNode,
     ) -> dict[str, Any]:
         deployment = self.tpcm_dynamic.deploy(policy, node)
-        self._applied(
+        self.state.mark_applied(
             binding,
             policy,
             deployment.external_name,
@@ -249,105 +247,6 @@ class PolicyDeploymentService:
             deployment_details=deployment.deployment_details,
         )
         return deployment.response
-
-    def _applied(
-        self,
-        binding: PolicyBinding,
-        policy: TrustPolicy,
-        external_name: str,
-        rendered_policy: dict[str, Any],
-        deployment_details: dict[str, Any] | None = None,
-    ) -> None:
-        binding.application_status = POLICY_DEPLOY_APPLIED
-        binding.external_policy_name = external_name
-        binding.rendered_policy = rendered_policy
-        binding.applied_at = datetime.now(timezone.utc)
-        binding.last_error = ""
-        binding.binding_details = {
-            **dict(binding.binding_details or {}),
-            **(deployment_details or {}),
-            "external_policy_name": external_name,
-            "policy_type": canonical_policy_type(policy.policy_type),
-        }
-        other_bindings = self.session.scalars(
-            select(PolicyBinding)
-            .join(TrustPolicy, TrustPolicy.id == PolicyBinding.policy_id)
-            .where(PolicyBinding.target_type == binding.target_type)
-            .where(PolicyBinding.target_id == binding.target_id)
-            .where(PolicyBinding.id != binding.id)
-            .where(PolicyBinding.active.is_(True))
-            .where(TrustPolicy.policy_type == policy.policy_type)
-        ).all()
-        for old_binding in other_bindings:
-            old_binding.active = False
-            old_binding.application_status = POLICY_DEPLOY_SUPERSEDED
-
-    def _active_external_policy_name(self, node_id: int, policy_type: str) -> str:
-        binding = self.session.scalars(
-            select(PolicyBinding)
-            .join(TrustPolicy, TrustPolicy.id == PolicyBinding.policy_id)
-            .where(PolicyBinding.target_type == "node")
-            .where(PolicyBinding.target_id == node_id)
-            .where(PolicyBinding.active.is_(True))
-            .where(PolicyBinding.application_status == POLICY_DEPLOY_APPLIED)
-            .where(TrustPolicy.policy_type == policy_type)
-            .order_by(PolicyBinding.applied_at.desc())
-            .limit(1)
-        ).first()
-        if binding and policy_type == POLICY_MEASURED_BOOT:
-            details = dict(binding.binding_details or {})
-            if details.get("keylime_artifact") != "measured_boot_refstate":
-                return ""
-        return binding.external_policy_name if binding else ""
-
-    def _active_boot_policy_adapter(self, node_id: int) -> dict[str, Any]:
-        binding = self.session.scalars(
-            select(PolicyBinding)
-            .join(TrustPolicy, TrustPolicy.id == PolicyBinding.policy_id)
-            .where(PolicyBinding.target_type == "node")
-            .where(PolicyBinding.target_id == node_id)
-            .where(PolicyBinding.active.is_(True))
-            .where(PolicyBinding.application_status == POLICY_DEPLOY_APPLIED)
-            .where(TrustPolicy.policy_type == POLICY_MEASURED_BOOT)
-            .order_by(PolicyBinding.applied_at.desc())
-            .limit(1)
-        ).first()
-        if not binding:
-            return {}
-        details = dict(binding.binding_details or {})
-        if details.get("keylime_artifact") == "measured_boot_refstate":
-            return {"measured_boot_policy_name": binding.external_policy_name}
-        if details.get("keylime_artifact") == "tpm_pcr_quote_policy":
-            return {
-                "tpm_policy": dict(binding.rendered_policy or {}),
-                "disable_measured_boot": True,
-            }
-        return {}
-
-    @staticmethod
-    def _failed(
-        binding: PolicyBinding,
-        error: str,
-        extra_details: dict[str, Any] | None = None,
-    ) -> None:
-        display_error = str(
-            (extra_details or {}).get("policy_apply_error_summary")
-            or (extra_details or {}).get("policy_last_result_summary")
-            or error
-        )
-        binding.application_status = POLICY_DEPLOY_FAILED
-        binding.last_error = display_error[:4000]
-        details = {
-            **dict(binding.binding_details or {}),
-            "policy_apply_status": POLICY_DEPLOY_FAILED,
-            "policy_apply_error_summary": display_error[:500],
-            "policy_last_result": "failed",
-            "policy_last_result_summary": display_error[:500],
-            "policy_last_result_at": datetime.now(timezone.utc).isoformat(),
-        }
-        if extra_details:
-            details.update(extra_details)
-        binding.binding_details = details
 
     def _audit(
         self,
@@ -364,16 +263,6 @@ class PolicyDeploymentService:
             binding=binding,
             details=details,
         )
-
-    @staticmethod
-    def _binding_result(binding: PolicyBinding, status: str) -> dict[str, Any]:
-        return {
-            "binding_id": binding.id,
-            "target_id": binding.target_id,
-            "status": status,
-            "external_policy_name": binding.external_policy_name,
-            "error": binding.last_error,
-        }
 
     @staticmethod
     def _require_ansible_success(rc: int, stdout: str, stderr: str) -> None:
