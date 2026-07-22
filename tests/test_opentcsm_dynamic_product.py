@@ -3,7 +3,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 import keylime_openstack.services.tpcm_dynamic_deployment as tpcm_dynamic_deployment
@@ -14,9 +14,10 @@ from keylime_openstack.api.router import (
 )
 from keylime_openstack.config import Settings
 from keylime_openstack.database import Base
-from keylime_openstack.models import ComputeNode, PolicyBinding, TrustPolicy
+from keylime_openstack.models import AuditEvent, ComputeNode, PolicyBinding, TrustPolicy
 from keylime_openstack.schemas import TpcmDynamicGlobalSwitchIn
 from keylime_openstack.services.policy import _binding_last_error_for_output
+from keylime_openstack.services.policy_deployment_audit import PolicyDeploymentAuditRecorder
 from keylime_openstack.services.policy_deployment import (
     PolicyDeploymentService,
     _opentcsm_dynamic_failure_details,
@@ -137,6 +138,45 @@ def test_dynamic_policy_audit_details_show_node_switch_disabled() -> None:
     assert details["operation"] == "策略保存"
     assert details["result"] == "成功"
     assert details["node_dynamic_measure_enabled"] is False
+
+
+def test_policy_deployment_audit_recorder_keeps_dynamic_product_fields() -> None:
+    with _memory_session() as session:
+        binding = PolicyBinding(
+            id=77,
+            executor="ansible",
+            application_status="failed",
+        )
+        recorder = PolicyDeploymentAuditRecorder(session)
+
+        recorder.record_policy_deployment(
+            policy_name="hygon23-dynamic",
+            policy_type="tpcm_dynamic_measurement",
+            hostname="hygon23",
+            binding=binding,
+            details={
+                "policy_apply_error_code": "TPCM_AUTH_REJECTED",
+                "policy_apply_error_summary": "TPCM authorization rejected",
+                "rendered_policy_sha256": "rendered-sha256",
+                "environment_object_configs": {
+                    "kernel_section": {"enabled": True, "interval_milli": 60000},
+                    "syscall_table": {"enabled": False, "interval_milli": 60000},
+                },
+            },
+        )
+
+        event = session.scalars(select(AuditEvent)).one()
+
+    assert event.event_type == "tpcm_dynamic_policy_apply"
+    assert event.target == "hygon23-dynamic:hygon23"
+    assert event.severity == "warning"
+    assert event.message == "TPCM authorization rejected"
+    assert event.event_details["binding_id"] == 77
+    assert event.event_details["log_type"] == "tpcm_authorization"
+    assert event.event_details["object_name"] == "kernel_section"
+    assert event.event_details["measurement_type"] == "授权检测"
+    assert event.event_details["measurement_baseline"] == "rendered-sha256"
+    assert event.event_details["hash"] == "rendered-sha256"
 
 
 def test_tpcm_dynamic_deployment_returns_productized_result(monkeypatch, tmp_path: Path) -> None:

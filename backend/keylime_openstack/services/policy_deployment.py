@@ -25,11 +25,12 @@ from keylime_openstack.constants import (
     TRUST_AGENT_KEYLIME,
     TRUST_AGENT_OPENTCSM_TPCM,
 )
-from keylime_openstack.models import AuditEvent, ComputeNode, PolicyBinding, TrustPolicy
+from keylime_openstack.models import ComputeNode, PolicyBinding, TrustPolicy
 from keylime_openstack.services.ansible import AnsibleExecutor
 from keylime_openstack.services.keylime import KeylimeClient
 from keylime_openstack.services.keylime_policy_deployment import KeylimePolicyDeployment
 from keylime_openstack.services.policy import canonical_policy_type, load_policy
+from keylime_openstack.services.policy_deployment_audit import PolicyDeploymentAuditRecorder
 from keylime_openstack.services.trust_agents import (
     node_trust_agent_name,
     node_trust_agent_type,
@@ -84,6 +85,7 @@ class PolicyDeploymentService:
         self.settings = settings
         self.ansible = AnsibleExecutor(settings)
         self.keylime = KeylimeClient(settings)
+        self.audit_recorder = PolicyDeploymentAuditRecorder(session)
         self.keylime_policy = KeylimePolicyDeployment(
             settings=settings,
             ansible=self.ansible,
@@ -355,51 +357,12 @@ class PolicyDeploymentService:
         binding: PolicyBinding,
         details: dict[str, Any],
     ) -> None:
-        is_dynamic = policy_type == POLICY_TPCM_DYNAMIC_MEASUREMENT
-        event_details = {
-            "binding_id": binding.id,
-            "executor": binding.executor,
-            **details,
-        }
-        if is_dynamic:
-            baseline = (
-                details.get("dmeasure_policy_sha256")
-                or details.get("policy_sha256")
-                or details.get("rendered_policy_sha256")
-                or ""
-            )
-            auth_code = str(details.get("policy_apply_error_code") or "")
-            is_auth_event = auth_code.startswith("TPCM_AUTH_")
-            event_details = {
-                **event_details,
-                "log_type": "tpcm_authorization" if is_auth_event else "dynamic_measurement",
-                "policy_type": policy_type,
-                "subject_name": "TPCM",
-                "object_name": _dynamic_audit_object_name(details),
-                "measurement_type": "授权检测" if is_auth_event else "策略生效",
-                "measurement_baseline": baseline,
-                "operation": "授权检测" if is_auth_event else "策略生效",
-                "result": "成功"
-                if binding.application_status == POLICY_DEPLOY_APPLIED
-                else "失败",
-                "hash": baseline,
-            }
-        self.session.add(
-            AuditEvent(
-                event_type="tpcm_dynamic_policy_apply" if is_dynamic else "policy_deploy",
-                target=f"{policy_name}:{hostname}",
-                severity=(
-                    "info"
-                    if binding.application_status == POLICY_DEPLOY_APPLIED
-                    else "warning"
-                ),
-                message=(
-                    details.get("policy_apply_error_summary")
-                    if is_dynamic and binding.application_status != POLICY_DEPLOY_APPLIED
-                    else f"policy deployment {binding.application_status}"
-                ),
-                event_details=event_details,
-            )
+        self.audit_recorder.record_policy_deployment(
+            policy_name=policy_name,
+            policy_type=policy_type,
+            hostname=hostname,
+            binding=binding,
+            details=details,
         )
 
     @staticmethod
