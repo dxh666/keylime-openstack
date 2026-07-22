@@ -14,7 +14,9 @@ from keylime_openstack.schemas import ComputeNodeOut
 from keylime_openstack.seed import ensure_default_environment
 from keylime_openstack.services.trust_agents import (
     node_trust_agent_name,
+    node_trust_managed,
     node_trust_agent_type,
+    node_trusted_root_type,
     node_trusted_root,
 )
 
@@ -38,6 +40,8 @@ def nodes(
                 **item.__dict__,
                 "trust_agent_type": node_trust_agent_type(item, settings),
                 "trust_agent_name": node_trust_agent_name(item, settings),
+                "trust_managed": node_trust_managed(item, settings),
+                "trusted_root_type": node_trusted_root_type(item, settings),
                 "trusted_root": node_trusted_root(item, settings),
                 "hardware_profile": item.hardware_profile,
                 "openstack_state": states.get(item.id),

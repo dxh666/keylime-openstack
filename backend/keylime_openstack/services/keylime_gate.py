@@ -12,6 +12,7 @@ from keylime_openstack.constants import (
     PROVIDER_OPENTCSM,
     TRUST_AGENT_KEYLIME,
     TRUST_AGENT_OPENTCSM_TPCM,
+    TRUST_AGENT_UNMANAGED,
 )
 from keylime_openstack.config import get_settings
 from keylime_openstack.database import SessionLocal
@@ -22,7 +23,9 @@ from keylime_openstack.services.sync import keylime_status_to_evidence, latest_e
 from keylime_openstack.services.trust_agents import (
     node_trust_agent_name,
     node_trust_agent_type,
+    node_trust_managed,
     node_trusted_root,
+    node_trusted_root_type,
 )
 
 
@@ -98,6 +101,9 @@ def _keylime_only_check_once(
             if agent_type == TRUST_AGENT_KEYLIME:
                 item = _keylime_node_check(client, node, settings)
                 evaluated_count += 1
+            elif agent_type == TRUST_AGENT_UNMANAGED and include_non_keylime:
+                item = _unmanaged_node_check(node, settings)
+                evaluated_count += 1
             elif include_non_keylime:
                 item = _external_trust_agent_node_check(session, node, settings)
                 evaluated_count += 1
@@ -141,6 +147,8 @@ def _keylime_node_check(
         "agent_uuid": node.keylime_agent_uuid,
         "trust_agent_type": TRUST_AGENT_KEYLIME,
         "trust_agent_name": node_trust_agent_name(node, settings),
+        "trust_managed": True,
+        "trusted_root_type": node_trusted_root_type(node, settings),
         "trusted_root": node_trusted_root(node, settings),
         "trust_capabilities": keylime_capabilities,
     }
@@ -293,6 +301,8 @@ def _external_trust_agent_node_check(
         "agent_ip": node.management_ip,
         "trust_agent_type": agent_type,
         "trust_agent_name": node_trust_agent_name(node, settings),
+        "trust_managed": node_trust_managed(node, settings),
+        "trusted_root_type": node_trusted_root_type(node, settings),
         "trusted_root": node_trusted_root(node, settings),
         "trusted": trusted,
         "reason": reason,
@@ -318,6 +328,43 @@ def _external_trust_agent_node_check(
             trusted=trusted,
             host=node.hostname,
             trust_agent_type=agent_type,
+        ),
+    }
+
+
+def _unmanaged_node_check(node: ComputeNode, settings) -> dict[str, object]:
+    reason = "TRUST_AGENT_UNMANAGED"
+    return {
+        "host": node.hostname,
+        "agent_uuid": "",
+        "agent_ip": node.management_ip,
+        "trust_agent_type": TRUST_AGENT_UNMANAGED,
+        "trust_agent_name": node_trust_agent_name(node, settings),
+        "trust_managed": False,
+        "trusted_root_type": node_trusted_root_type(node, settings),
+        "trusted_root": node_trusted_root(node, settings),
+        "trusted": False,
+        "reason": reason,
+        "status": "unmanaged",
+        "source": TRUST_AGENT_UNMANAGED,
+        "attestation_status": "UNMANAGED",
+        "operational_state": "unmanaged",
+        "last_event_id": reason,
+        "has_runtime_policy": False,
+        "last_received_quote": None,
+        "last_successful_attestation": None,
+        "attestation_age_seconds": None,
+        "tpm_policy": {},
+        "evidence": {},
+        "evidence_fresh": {},
+        "evidence_valid_until": {},
+        "trust_capabilities": {},
+        "capability_status": {},
+        "remediation": _remediation(
+            event_id=reason,
+            trusted=False,
+            host=node.hostname,
+            trust_agent_type=TRUST_AGENT_UNMANAGED,
         ),
     }
 
@@ -530,6 +577,14 @@ def _remediation(
         return {"category": "none", "summary": "No action required."}
 
     event = event_id.lower()
+    if trust_agent_type == TRUST_AGENT_UNMANAGED:
+        return {
+            "category": "inventory",
+            "summary": "Compute node is not managed by a trusted-root agent.",
+            "next_commands": [
+                "Install and register a TPM/TPCM trusted agent, then update TRUST_AGENT_TYPE_MAP.",
+            ],
+        }
     if trust_agent_type == TRUST_AGENT_OPENTCSM_TPCM:
         if "stale" in event:
             return {

@@ -51,6 +51,11 @@ PROVIDER_DIM = "dim"
 
 TRUST_AGENT_KEYLIME = "keylime"
 TRUST_AGENT_OPENTCSM_TPCM = "opentcsm_tpcm"
+TRUST_AGENT_UNMANAGED = "unmanaged"
+
+TRUST_ROOT_TPM = "tpm"
+TRUST_ROOT_TPCM = "tpcm"
+TRUST_ROOT_UNKNOWN = "unknown"
 
 TASK_PENDING = "pending"
 TASK_RUNNING = "running"

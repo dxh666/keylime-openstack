@@ -40,9 +40,11 @@ class ComputeNodeOut(BaseModel):
     keylime_agent_uuid: str
     keylime_agent_ip: str
     keylime_agent_port: int
-    trust_agent_type: str = "keylime"
-    trust_agent_name: str = "Keylime Agent"
-    trusted_root: str = "TPM 2.0"
+    trust_agent_type: str = "unmanaged"
+    trust_agent_name: str = "Unmanaged"
+    trust_managed: bool = False
+    trusted_root_type: str = "unknown"
+    trusted_root: str = "unknown"
     facts: dict[str, Any]
     hardware_profile: HardwareProfileOut | None = None
     openstack_state: OpenStackStateOut | None = None
