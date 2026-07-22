@@ -10,7 +10,8 @@ from keylime_openstack.constants import (
     POLICY_DEPLOY_APPLIED,
     POLICY_TPCM_DYNAMIC_MEASUREMENT,
 )
-from keylime_openstack.models import AuditEvent, PolicyBinding
+from keylime_openstack.models import PolicyBinding
+from keylime_openstack.services.audit import record_audit_event
 from keylime_openstack.services.tpcm_dynamic_policies import _dynamic_audit_object_name
 
 __all__ = ["PolicyDeploymentAuditRecorder"]
@@ -58,20 +59,19 @@ class PolicyDeploymentAuditRecorder:
                 else "失败",
                 "hash": baseline,
             }
-        self.session.add(
-            AuditEvent(
-                event_type="tpcm_dynamic_policy_apply" if is_dynamic else "policy_deploy",
-                target=f"{policy_name}:{hostname}",
-                severity=(
-                    "info"
-                    if binding.application_status == POLICY_DEPLOY_APPLIED
-                    else "warning"
-                ),
-                message=(
-                    details.get("policy_apply_error_summary")
-                    if is_dynamic and binding.application_status != POLICY_DEPLOY_APPLIED
-                    else f"policy deployment {binding.application_status}"
-                ),
-                event_details=event_details,
-            )
+        record_audit_event(
+            self.session,
+            event_type="tpcm_dynamic_policy_apply" if is_dynamic else "policy_deploy",
+            target=f"{policy_name}:{hostname}",
+            severity=(
+                "info"
+                if binding.application_status == POLICY_DEPLOY_APPLIED
+                else "warning"
+            ),
+            message=(
+                details.get("policy_apply_error_summary")
+                if is_dynamic and binding.application_status != POLICY_DEPLOY_APPLIED
+                else f"policy deployment {binding.application_status}"
+            ),
+            event_details=event_details,
         )

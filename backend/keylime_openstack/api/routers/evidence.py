@@ -12,9 +12,10 @@ from sqlalchemy.orm import Session
 from keylime_openstack.api.deps import db_session, require_admin, settings_dep
 from keylime_openstack.config import Settings
 from keylime_openstack.constants import TRUST_AGENT_OPENTCSM_TPCM
-from keylime_openstack.models import AuditEvent, ComputeNode
+from keylime_openstack.models import ComputeNode
 from keylime_openstack.schemas import HostIntegrityReportIn, OpenTcsmEvidenceReportIn
 from keylime_openstack.seed import ensure_default_environment
+from keylime_openstack.services.audit import record_audit_event
 from keylime_openstack.services.host_integrity import host_integrity_report_to_evidence
 from keylime_openstack.services.opentcsm import opentcsm_report_to_evidence
 from keylime_openstack.services.opentcsm_collect import OpenTcsmCollector
@@ -46,18 +47,17 @@ def ingest_host_integrity(
     evidence = host_integrity_report_to_evidence(node, report_data, settings)
     session.add(evidence)
     session.flush()
-    session.add(
-        AuditEvent(
-            event_type="host_integrity_evidence_collect",
-            target=node.hostname,
-            severity="info" if evidence.status == "pass" else "warning",
-            message=evidence.summary,
-            event_details={
-                "evidence_id": evidence.id,
-                "status": evidence.status,
-                "provider": evidence.provider,
-            },
-        )
+    record_audit_event(
+        session,
+        event_type="host_integrity_evidence_collect",
+        target=node.hostname,
+        severity="info" if evidence.status == "pass" else "warning",
+        message=evidence.summary,
+        event_details={
+            "evidence_id": evidence.id,
+            "status": evidence.status,
+            "provider": evidence.provider,
+        },
     )
     session.commit()
     return {
@@ -93,18 +93,17 @@ def ingest_opentcsm_evidence(
     for record in records:
         session.add(record)
     session.flush()
-    session.add(
-        AuditEvent(
-            event_type="opentcsm_evidence_collect",
-            target=node.hostname,
-            severity="info" if all(item.status == "pass" for item in records) else "warning",
-            message="collected OpenTCSM/Hygon TPCM evidence",
-            event_details={
-                "evidence_ids": [item.id for item in records],
-                "statuses": {item.evidence_type: item.status for item in records},
-                "provider": "opentcsm",
-            },
-        )
+    record_audit_event(
+        session,
+        event_type="opentcsm_evidence_collect",
+        target=node.hostname,
+        severity="info" if all(item.status == "pass" for item in records) else "warning",
+        message="collected OpenTCSM/Hygon TPCM evidence",
+        event_details={
+            "evidence_ids": [item.id for item in records],
+            "statuses": {item.evidence_type: item.status for item in records},
+            "provider": "opentcsm",
+        },
     )
     session.commit()
     return {
@@ -172,14 +171,13 @@ def check_opentcsm_access(
         session.rollback()
         error = str(exc)
         checks = _opentcsm_failed_access_checks(error)
-        session.add(
-            AuditEvent(
-                event_type="opentcsm_access_check",
-                target=target,
-                severity="error",
-                message="OpenTCSM/TPCM node access check failed",
-                event_details={"provider": "opentcsm", "checks": checks, "error": error},
-            )
+        record_audit_event(
+            session,
+            event_type="opentcsm_access_check",
+            target=target,
+            severity="error",
+            message="OpenTCSM/TPCM node access check failed",
+            event_details={"provider": "opentcsm", "checks": checks, "error": error},
         )
         session.commit()
         return {
@@ -243,20 +241,19 @@ def check_opentcsm_access(
         ),
     ]
     ok = all(item["status"] == "pass" for item in checks)
-    session.add(
-        AuditEvent(
-            event_type="opentcsm_access_check",
-            target=target,
-            severity="info" if ok else "warning",
-            message="OpenTCSM/TPCM node access check completed",
-            event_details={
-                "provider": "opentcsm",
-                "checks": checks,
-                "trusted": result.get("trusted"),
-                "tpcm_id": raw.get("tpcm_id", ""),
-                "evidence_ids": evidence_ids,
-            },
-        )
+    record_audit_event(
+        session,
+        event_type="opentcsm_access_check",
+        target=target,
+        severity="info" if ok else "warning",
+        message="OpenTCSM/TPCM node access check completed",
+        event_details={
+            "provider": "opentcsm",
+            "checks": checks,
+            "trusted": result.get("trusted"),
+            "tpcm_id": raw.get("tpcm_id", ""),
+            "evidence_ids": evidence_ids,
+        },
     )
     session.commit()
     return {

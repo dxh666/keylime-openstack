@@ -7,8 +7,9 @@ from sqlalchemy.orm import Session
 
 from keylime_openstack.config import Settings
 from keylime_openstack.constants import TRUST_AGENT_KEYLIME
-from keylime_openstack.models import AuditEvent, ComputeNode, OpenStackState, TrustDecision
+from keylime_openstack.models import ComputeNode, OpenStackState, TrustDecision
 from keylime_openstack.seed import ensure_default_environment
+from keylime_openstack.services.audit import record_audit_event
 from keylime_openstack.services.decision import evaluate_trust
 from keylime_openstack.services.openstack import OpenStackClient
 from keylime_openstack.services.sync_collectors import (
@@ -80,21 +81,20 @@ class TrustSyncService:
             node.hypervisor_name or node.hostname,
             decision.desired_traits,
         )
-        self.session.add(
-            AuditEvent(
-                event_type="trust_decision",
-                target=node.hostname,
-                severity="info" if decision.trusted else "warning",
-                message=decision.reason,
-                event_details={
-                    "desired_traits": decision.desired_traits,
-                    "trait_result": trait_result,
-                    "trust_managed": node_trust_managed(node, self.settings),
-                    "trusted_root_type": node_trusted_root_type(node, self.settings),
-                    "trusted_root": node_trusted_root(node, self.settings),
-                    "trust_agent_type": trust_agent_type,
-                },
-            )
+        record_audit_event(
+            self.session,
+            event_type="trust_decision",
+            target=node.hostname,
+            severity="info" if decision.trusted else "warning",
+            message=decision.reason,
+            event_details={
+                "desired_traits": decision.desired_traits,
+                "trait_result": trait_result,
+                "trust_managed": node_trust_managed(node, self.settings),
+                "trusted_root_type": node_trusted_root_type(node, self.settings),
+                "trusted_root": node_trusted_root(node, self.settings),
+                "trust_agent_type": trust_agent_type,
+            },
         )
         return {
             "host": node.hostname,

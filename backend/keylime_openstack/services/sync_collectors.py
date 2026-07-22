@@ -16,7 +16,8 @@ from keylime_openstack.constants import (
     TRUST_AGENT_OPENTCSM_TPCM,
     TRUST_AGENT_UNMANAGED,
 )
-from keylime_openstack.models import AuditEvent, ComputeNode, EvidenceRecord, OpenStackState
+from keylime_openstack.models import ComputeNode, EvidenceRecord, OpenStackState
+from keylime_openstack.services.audit import record_audit_event
 from keylime_openstack.services.keylime import KeylimeClient
 from keylime_openstack.services.openstack import OpenStackClient
 from keylime_openstack.services.opentcsm_collect import OpenTcsmCollector
@@ -40,14 +41,13 @@ class OpenStackStateCollector:
         try:
             services = self.openstack.list_compute_services()
         except Exception as exc:  # pragma: no cover - deployment-specific API boundary
-            self.session.add(
-                AuditEvent(
-                    event_type="openstack_state_refresh",
-                    target="nova-compute",
-                    severity="error",
-                    message=str(exc),
-                    event_details={"adapter": "openstacksdk"},
-                )
+            record_audit_event(
+                self.session,
+                event_type="openstack_state_refresh",
+                target="nova-compute",
+                severity="error",
+                message=str(exc),
+                event_details={"adapter": "openstacksdk"},
             )
             return
 
@@ -95,14 +95,13 @@ class TrustEvidenceCollector:
 
     def collect_unmanaged_node(self, node: ComputeNode) -> dict[str, object]:
         details = self._result_base(node)
-        self.session.add(
-            AuditEvent(
-                event_type="trust_agent_evidence_collect",
-                target=node.hostname,
-                severity="warning",
-                message="node is not managed by a trusted-root agent",
-                event_details=details,
-            )
+        record_audit_event(
+            self.session,
+            event_type="trust_agent_evidence_collect",
+            target=node.hostname,
+            severity="warning",
+            message="node is not managed by a trusted-root agent",
+            event_details=details,
         )
         return {
             **details,
@@ -129,14 +128,13 @@ class TrustEvidenceCollector:
         records = latest_evidence_for_decision(self.session, node)
         evidence = {record.evidence_type: record.status for record in records}
         if not records:
-            self.session.add(
-                AuditEvent(
-                    event_type="trust_agent_evidence_collect",
-                    target=node.hostname,
-                    severity="warning",
-                    message=f"no evidence reported by {agent_type}",
-                    event_details=self._result_base(node),
-                )
+            record_audit_event(
+                self.session,
+                event_type="trust_agent_evidence_collect",
+                target=node.hostname,
+                severity="warning",
+                message=f"no evidence reported by {agent_type}",
+                event_details=self._result_base(node),
             )
             result = {
                 **self._result_base(node),
@@ -196,18 +194,17 @@ class TrustEvidenceCollector:
                         payload=payload,
                     )
                 )
-            self.session.add(
-                AuditEvent(
-                    event_type="opentcsm_evidence_collect",
-                    target=node.hostname,
-                    severity="error",
-                    message=error,
-                    event_details={
-                        "provider": PROVIDER_OPENTCSM,
-                        "source": "ansible",
-                        "communication": "error",
-                    },
-                )
+            record_audit_event(
+                self.session,
+                event_type="opentcsm_evidence_collect",
+                target=node.hostname,
+                severity="error",
+                message=error,
+                event_details={
+                    "provider": PROVIDER_OPENTCSM,
+                    "source": "ansible",
+                    "communication": "error",
+                },
             )
             self.session.flush()
             return {
@@ -218,14 +215,13 @@ class TrustEvidenceCollector:
 
     def collect_tpm_evidence(self, node: ComputeNode) -> dict[str, object]:
         if not node.keylime_agent_uuid:
-            self.session.add(
-                AuditEvent(
-                    event_type="keylime_evidence_collect",
-                    target=node.hostname,
-                    severity="warning",
-                    message="missing Keylime agent UUID",
-                    event_details=self._result_base(node),
-                )
+            record_audit_event(
+                self.session,
+                event_type="keylime_evidence_collect",
+                target=node.hostname,
+                severity="warning",
+                message="missing Keylime agent UUID",
+                event_details=self._result_base(node),
             )
             return {
                 **self._result_base(node),
@@ -236,17 +232,16 @@ class TrustEvidenceCollector:
         try:
             status = self.keylime.read_agent_status(node.keylime_agent_uuid)
         except Exception as exc:  # pragma: no cover - deployment-specific API boundary
-            self.session.add(
-                AuditEvent(
-                    event_type="keylime_evidence_collect",
-                    target=node.hostname,
-                    severity="error",
-                    message=str(exc),
-                    event_details={
-                        **self._result_base(node),
-                        "agent_uuid": node.keylime_agent_uuid,
-                    },
-                )
+            record_audit_event(
+                self.session,
+                event_type="keylime_evidence_collect",
+                target=node.hostname,
+                severity="error",
+                message=str(exc),
+                event_details={
+                    **self._result_base(node),
+                    "agent_uuid": node.keylime_agent_uuid,
+                },
             )
             return {
                 **self._result_base(node),

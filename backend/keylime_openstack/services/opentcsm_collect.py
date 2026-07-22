@@ -13,8 +13,9 @@ from sqlalchemy.orm import Session
 
 from keylime_openstack.config import Settings
 from keylime_openstack.constants import TRUST_AGENT_OPENTCSM_TPCM
-from keylime_openstack.models import AuditEvent, ComputeNode
+from keylime_openstack.models import ComputeNode
 from keylime_openstack.services.ansible import AnsibleExecutor, AnsibleResult
+from keylime_openstack.services.audit import record_audit_event
 from keylime_openstack.services.opentcsm import opentcsm_report_to_evidence
 from keylime_openstack.services.opentcsm_policy import parse_dmeasure_policy
 from keylime_openstack.services.trust_agents import node_trust_agent_type
@@ -77,29 +78,28 @@ class OpenTcsmCollector:
         ]
         dmeasure_policy_sha256 = report["raw"].get("dmeasure_policy_sha256") or ""
         trust_report_sha256 = report["raw"].get("trust_report_sha256") or ""
-        self.session.add(
-            AuditEvent(
-                event_type="opentcsm_evidence_collect",
-                target=node.hostname,
-                severity="info" if all(record.status == "pass" for record in records) else "warning",
-                message="collected OpenTCSM/Hygon TPCM evidence from node",
-                event_details={
-                    "provider": "opentcsm",
-                    "source": "ansible",
-                    "statuses": {record.evidence_type: record.status for record in records},
-                    "evidence_ids": [record.id for record in records],
-                    "tpcm_id": report["raw"].get("tpcm_id", ""),
-                    "report_hash": trust_report_sha256,
-                    "log_type": "dynamic_measurement",
-                    "subject_name": "TPCM",
-                    "object_name": ",".join(dynamic_objects) if dynamic_objects else "-",
-                    "measurement_type": "状态采集",
-                    "measurement_baseline": dmeasure_policy_sha256 or trust_report_sha256,
-                    "operation": "状态刷新",
-                    "result": "成功" if report.get("dynamic_measurement_status") == "pass" else "异常",
-                    "hash": dmeasure_policy_sha256 or trust_report_sha256,
-                },
-            )
+        record_audit_event(
+            self.session,
+            event_type="opentcsm_evidence_collect",
+            target=node.hostname,
+            severity="info" if all(record.status == "pass" for record in records) else "warning",
+            message="collected OpenTCSM/Hygon TPCM evidence from node",
+            event_details={
+                "provider": "opentcsm",
+                "source": "ansible",
+                "statuses": {record.evidence_type: record.status for record in records},
+                "evidence_ids": [record.id for record in records],
+                "tpcm_id": report["raw"].get("tpcm_id", ""),
+                "report_hash": trust_report_sha256,
+                "log_type": "dynamic_measurement",
+                "subject_name": "TPCM",
+                "object_name": ",".join(dynamic_objects) if dynamic_objects else "-",
+                "measurement_type": "状态采集",
+                "measurement_baseline": dmeasure_policy_sha256 or trust_report_sha256,
+                "operation": "状态刷新",
+                "result": "成功" if report.get("dynamic_measurement_status") == "pass" else "异常",
+                "hash": dmeasure_policy_sha256 or trust_report_sha256,
+            },
         )
         return {
             "ok": True,

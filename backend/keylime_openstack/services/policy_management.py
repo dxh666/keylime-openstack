@@ -17,6 +17,7 @@ from keylime_openstack.schemas import (
     TrustPolicyOut,
 )
 from keylime_openstack.seed import ensure_default_environment
+from keylime_openstack.services.audit import record_audit_event
 from keylime_openstack.services.keylime import KeylimeClient
 from keylime_openstack.services.policy import (
     bind_policy_to_nodes,
@@ -39,24 +40,23 @@ def set_tpcm_dynamic_global_switch(
 ) -> dict[str, object]:
     ensure_default_environment(session)
     operation = "开启集群动态度量" if request.enabled else "关闭集群动态度量"
-    session.add(
-        AuditEvent(
-            event_type="tpcm_dynamic_global_switch",
-            target="OpenTCSM 动态度量",
-            severity="info",
-            message="updated TPCM dynamic measurement global switch",
-            event_details={
-                "log_type": "dynamic_measurement",
-                "subject_name": "TPCM",
-                "object_name": "全部动态度量对象",
-                "measurement_type": "全局控制",
-                "measurement_baseline": "",
-                "operation": operation,
-                "result": "成功",
-                "global_dynamic_measure_enabled": request.enabled,
-                "hash": "",
-            },
-        )
+    record_audit_event(
+        session,
+        event_type="tpcm_dynamic_global_switch",
+        target="OpenTCSM 动态度量",
+        severity="info",
+        message="updated TPCM dynamic measurement global switch",
+        event_details={
+            "log_type": "dynamic_measurement",
+            "subject_name": "TPCM",
+            "object_name": "全部动态度量对象",
+            "measurement_type": "全局控制",
+            "measurement_baseline": "",
+            "operation": operation,
+            "result": "成功",
+            "global_dynamic_measure_enabled": request.enabled,
+            "hash": "",
+        },
     )
     session.commit()
     return {
@@ -257,14 +257,13 @@ def delete_policy(
         session.delete(binding)
     session.flush()
     session.delete(policy)
-    session.add(
-        AuditEvent(
-            event_type="policy_delete",
-            target=policy_name,
-            severity="info",
-            message="deleted trust policy",
-            event_details={"policy_id": policy_id, "policy_type": policy_type},
-        )
+    record_audit_event(
+        session,
+        event_type="policy_delete",
+        target=policy_name,
+        severity="info",
+        message="deleted trust policy",
+        event_details={"policy_id": policy_id, "policy_type": policy_type},
     )
     session.commit()
     return {"ok": True, "policy_id": policy_id, "deleted": policy_name}
@@ -294,14 +293,13 @@ def _record_policy_audit(
             message = "dynamic measurement policy apply queued"
         else:
             message = "dynamic measurement policy saved"
-    session.add(
-        AuditEvent(
-            event_type=event_type,
-            target=policy.name,
-            severity="info",
-            message=message,
-            event_details=details,
-        )
+    record_audit_event(
+        session,
+        event_type=event_type,
+        target=policy.name,
+        severity="info",
+        message=message,
+        event_details=details,
     )
 
 
