@@ -70,10 +70,10 @@ def node_trust_managed(node: "ComputeNode", settings: "Settings") -> bool:
 def node_trust_agent_name(node: "ComputeNode", settings: "Settings") -> str:
     agent_type = node_trust_agent_type(node, settings)
     facts = node.facts or {}
-    if facts.get("trust_agent_name"):
-        return str(facts["trust_agent_name"])
     if agent_type == TRUST_AGENT_UNMANAGED:
         return "Unmanaged"
+    if facts.get("trust_agent_name"):
+        return str(facts["trust_agent_name"])
     if agent_type == TRUST_AGENT_OPENTCSM_TPCM:
         return "OpenTCSM"
     return "Keylime Agent"

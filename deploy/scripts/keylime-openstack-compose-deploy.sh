@@ -168,7 +168,7 @@ prepare() {
 
   current_trust_agent_map="$(get_env_value TRUST_AGENT_TYPE_MAP)"
   if [ -z "$current_trust_agent_map" ]; then
-    set_env_value TRUST_AGENT_TYPE_MAP "csri8=keylime,csri9=keylime,hygon23=opentcsm_tpcm"
+    set_env_value TRUST_AGENT_TYPE_MAP "csri8=keylime,csri9=keylime,hygon22=unmanaged,hygon23=opentcsm_tpcm"
   fi
 
   current_opentcsm_fresh="$(get_env_value OPENTCSM_EVIDENCE_FRESH_SECONDS)"
