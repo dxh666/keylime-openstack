@@ -12,6 +12,7 @@ from keylime_openstack.constants import (
     BINDING_NODE,
     LEGACY_POLICY_TYPE_ALIASES,
     POLICY_EVM,
+    POLICY_DEPLOY_FAILED,
     POLICY_IMA_RUNTIME,
     POLICY_MEASURED_BOOT,
     POLICY_DEPLOY_NOT_DEPLOYED,
@@ -148,7 +149,7 @@ def policy_out(session: Session, policy: TrustPolicy) -> TrustPolicyOut:
             application_status=binding.application_status,
             external_policy_name=binding.external_policy_name,
             applied_at=binding.applied_at,
-            last_error=binding.last_error,
+            last_error=_binding_last_error_for_output(policy, binding),
             binding_details=binding.binding_details or {},
             keylime_policy=_binding_keylime_policy(binding),
         )
@@ -168,6 +169,22 @@ def policy_out(session: Session, policy: TrustPolicy) -> TrustPolicyOut:
         description=policy.description,
         bindings=bindings,
     )
+
+
+def _binding_last_error_for_output(policy: TrustPolicy, binding: PolicyBinding) -> str:
+    if (
+        canonical_policy_type(policy.policy_type) == POLICY_TPCM_DYNAMIC_MEASUREMENT
+        and binding.application_status == POLICY_DEPLOY_FAILED
+    ):
+        details = dict(binding.binding_details or {})
+        summary = str(
+            details.get("policy_apply_error_summary")
+            or details.get("policy_last_result_summary")
+            or ""
+        ).strip()
+        if summary:
+            return summary
+    return binding.last_error
 
 
 def effective_policies_for_node(session: Session, node: ComputeNode) -> list[TrustPolicy]:

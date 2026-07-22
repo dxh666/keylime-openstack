@@ -9,6 +9,7 @@ from keylime_openstack.api.router import (
 from keylime_openstack.database import Base
 from keylime_openstack.models import PolicyBinding, TrustPolicy
 from keylime_openstack.schemas import TpcmDynamicGlobalSwitchIn
+from keylime_openstack.services.policy import _binding_last_error_for_output
 from keylime_openstack.services.policy_deployment import (
     PolicyDeploymentService,
     _opentcsm_dynamic_failure_details,
@@ -50,6 +51,23 @@ def test_failed_policy_binding_uses_product_summary_as_last_error() -> None:
     assert binding.last_error == details["policy_apply_error_summary"]
     assert "raw ansible traceback" not in binding.last_error
     assert binding.binding_details["policy_apply_error_code"] == "TPCM_COMMAND_NOT_FOUND"
+
+
+def test_policy_output_prefers_dynamic_failure_summary_for_existing_rows() -> None:
+    policy = TrustPolicy(
+        name="hygon22 dynamic",
+        policy_type="tpcm_dynamic_measurement",
+        status="active",
+    )
+    binding = PolicyBinding(
+        application_status="failed",
+        last_error="raw ansible output with traceback",
+        binding_details={
+            "policy_apply_error_summary": "OpenTCSM 动态度量命令不可用。",
+        },
+    )
+
+    assert _binding_last_error_for_output(policy, binding) == "OpenTCSM 动态度量命令不可用。"
 
 
 def test_dynamic_policy_audit_details_use_product_fields() -> None:
