@@ -67,10 +67,6 @@ def validated_policy_payload(policy_in: TrustPolicyIn) -> tuple[dict[str, Any], 
     return payload, target_node_ids, deploy_now
 
 
-def normalized_tpcm_dynamic_measurement_content(content: dict[str, Any]) -> dict[str, Any]:
-    return _validate_tpcm_dynamic_measurement(dict(content or {}))
-
-
 def bind_policy_to_nodes(
     session: Session,
     policy: TrustPolicy,

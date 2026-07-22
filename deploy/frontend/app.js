@@ -111,6 +111,9 @@ createApp({
       dashboard: null,
       overview: null,
       keylime: { ok: null, nodes: [], nodes_total: 0, nodes_trusted: 0, trust_capabilities: {} },
+      globalControls: {
+        tpcm_dynamic_measurement: { enabled: true, source: "default", updated_at: null }
+      },
       nodes: [],
       policies: [],
       auditEvents: [],
@@ -362,16 +365,22 @@ createApp({
     dynamicApplyAuthorization() {
       return this.dynamicBindingAuthorization(this.dynamicSelectedPolicyBinding);
     },
+    tpcmDynamicGlobalControl() {
+      return this.globalControls.tpcm_dynamic_measurement || { enabled: true, source: "default", updated_at: null };
+    },
+    tpcmDynamicGlobalEnabled() {
+      return this.tpcmDynamicGlobalControl.enabled !== false;
+    },
     dynamicStatusItems() {
       const report = this.selectedDynamicReport;
       const auth = this.dynamicApplyAuthorization;
-      const dynamicOn = report.dynamic_measure_on;
+      const globalEnabled = this.tpcmDynamicGlobalEnabled;
       const lastResult = this.dynamicLastApplyResult(this.dynamicSelectedPolicyBinding);
       return [
         {
-          label: "TPCM 全局动态度量",
-          value: this.enabledText(dynamicOn),
-          state: dynamicOn === true ? "ok" : dynamicOn === false ? "bad" : "warn"
+          label: "TPCM 动态度量全局控制",
+          value: globalEnabled ? "开启" : "全局关闭，节点配置暂不生效",
+          state: globalEnabled ? "ok" : "warn"
         },
         {
           label: "策略生效授权状态",
@@ -385,12 +394,12 @@ createApp({
         },
         {
           label: "最近生效结果",
-          value: lastResult.text,
-          state: lastResult.state
+          value: globalEnabled ? lastResult.text : "暂不生效",
+          state: globalEnabled ? lastResult.state : "warn"
         },
         {
           label: "结果说明",
-          value: lastResult.summary
+          value: globalEnabled ? lastResult.summary : "全局关闭时保留节点配置，但不会下发到节点。"
         },
         {
           label: "最近采集时间",
@@ -407,6 +416,7 @@ createApp({
         const binding = policy ? this.dynamicPolicyBinding(policy, node.id) : null;
         const auth = this.dynamicBindingAuthorization(binding);
         const state = policy ? this.bindingState(policy) : "not_configured";
+        const effectiveState = !this.tpcmDynamicGlobalEnabled && policy ? "global_disabled" : state;
         return {
           id: node.id,
           hostname: node.hostname,
@@ -416,9 +426,9 @@ createApp({
           nodeSwitchClass: this.dynamicNodeSwitchClass(policy),
           sourceText: policy ? this.dynamicNodePolicySourceText(policy) : "未配置",
           sourceClass: policy ? this.dynamicPolicyStateClass(state) : "warn",
-          stateText: policy ? this.dynamicPolicyStateText(state) : "未配置",
-          stateClass: policy ? this.dynamicPolicyStateClass(state) : "warn",
-          stateKey: state,
+          stateText: policy ? this.dynamicPolicyStateText(effectiveState) : "未配置",
+          stateClass: policy ? this.dynamicPolicyStateClass(effectiveState) : "warn",
+          stateKey: effectiveState,
           authText: auth.text,
           authClass: auth.state,
           authKey: auth.key,
@@ -441,6 +451,7 @@ createApp({
       const bindingState = policy ? this.bindingState(policy) : "not_deployed";
       const currentObjects = this.dynamicCurrentObjects;
       const nodeEnabled = this.dynamicForm.nodeEnabled === true;
+      const globalEnabled = this.tpcmDynamicGlobalEnabled;
       return DYNAMIC_MEASUREMENT_OBJECTS.map((item) => {
         const config = this.dynamicForm.objects[item.key] || { enabled: false, intervalMilli: 60000 };
         const current = currentObjects.get(item.key);
@@ -448,6 +459,7 @@ createApp({
         const targetInterval = Number(config.intervalMilli || 60000);
         const state = this.dynamicObjectApplyState({
           current,
+          globalEnabled,
           nodeEnabled,
           targetEnabled,
           targetInterval,
@@ -476,15 +488,13 @@ createApp({
       const tpcmNodes = (this.keylime.nodes || []).filter((node) =>
         node.trust_agent_type === "opentcsm_tpcm" || node.trust_agent_name === "OpenTCSM"
       );
-      const dynamicGlobalEnabled = tpcmNodes.length > 0 && tpcmNodes.every((node) =>
-        node.trust_report?.dynamic_measure_on === true
-      );
+      const dynamicGlobalEnabled = this.tpcmDynamicGlobalEnabled;
       return [
         {
           key: "tpcm_dynamic",
           label: "TPCM 动态度量",
           enabled: dynamicGlobalEnabled,
-          summary: dynamicGlobalEnabled ? "集群动态度量已开启" : "集群动态度量未全部开启",
+          summary: dynamicGlobalEnabled ? "全局控制已开启" : "全局关闭，节点配置暂不生效",
           actionable: tpcmNodes.length > 0
         },
         { key: "boot", label: "可信启动", enabled: caps.boot === true },
@@ -626,6 +636,7 @@ createApp({
         dashboard: this.requestJson("/api/dashboard"),
         overview: this.requestJson("/api/overview"),
         keylime: this.requestJson("/api/keylime/check"),
+        globalTpcmDynamic: this.requestJson("/api/policies/tpcm-dynamic/global-switch"),
         nodes: this.requestJson("/api/nodes"),
         policies: this.requestJson("/api/policies"),
         audit: this.requestJson("/api/audit?limit=20"),
@@ -653,6 +664,9 @@ createApp({
           }
         }
         if (key === "nodes" && value) this.nodes = value;
+        if (key === "globalTpcmDynamic" && value) {
+          this.globalControls.tpcm_dynamic_measurement = value;
+        }
         if (key === "policies" && value) this.policies = value;
         if (key === "audit" && value) this.auditEvents = value;
         if (key === "tasks" && value) this.tasks = value;
@@ -734,6 +748,7 @@ createApp({
     dynamicPolicyStateText(state) {
       const names = {
         applied: "一致",
+        global_disabled: "暂不生效",
         queued: "待生效",
         applying: "生效中",
         failed: "生效失败",
@@ -798,8 +813,9 @@ createApp({
       const state = this.bindingState(policy);
       return state === "applied" ? "节点策略" : "节点策略（未生效）";
     },
-    dynamicObjectApplyState({ current, nodeEnabled, targetEnabled, targetInterval, bindingState }) {
+    dynamicObjectApplyState({ current, globalEnabled, nodeEnabled, targetEnabled, targetInterval, bindingState }) {
       if (this.dynamicFormDirty) return { text: "待保存", state: "warn" };
+      if (!globalEnabled) return { text: "暂不生效", state: "warn" };
       if (!nodeEnabled) {
         if (!current) return { text: "一致", state: "ok" };
         if (bindingState === "failed") return { text: "生效失败", state: "bad" };
@@ -1456,7 +1472,7 @@ createApp({
           node: selectedNode.hostname
         },
         target_node_ids: [Number(selectedNode.id)],
-        deploy_now: true
+        deploy_now: this.tpcmDynamicGlobalEnabled
       };
     },
     saveDynamicMeasurementConfig() {
@@ -1468,10 +1484,13 @@ createApp({
         return;
       }
       const existing = this.dynamicMeasurementPolicy;
+      const globalEnabled = this.tpcmDynamicGlobalEnabled;
       this.requireToken({
         title: "确认保存动态度量配置",
-        message: "将保存动态度量对象配置，并使配置在目标节点上生效。",
-        confirmText: "保存并生效",
+        message: globalEnabled
+          ? "将保存动态度量对象配置，并使配置在目标节点上生效。"
+          : "将保存动态度量对象配置；当前全局控制关闭，节点配置暂不生效。",
+        confirmText: globalEnabled ? "保存并生效" : "保存配置",
         action: async (token) => {
           const path = existing ? `/api/policies/${existing.id}` : "/api/policies";
           const method = existing ? "PUT" : "POST";
@@ -1480,7 +1499,7 @@ createApp({
             body: JSON.stringify(payload)
           }, token);
           this.dynamicFormDirty = false;
-          this.showNotice("ok", "动态度量配置已进入生效流程");
+          this.showNotice("ok", globalEnabled ? "动态度量配置已进入生效流程" : "动态度量配置已保存");
           await this.refreshAll(false);
           this.syncDynamicFormFromPolicy(true);
         }

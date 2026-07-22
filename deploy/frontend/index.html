@@ -309,6 +309,7 @@
                   <option value="applied">一致</option>
                   <option value="queued">待生效</option>
                   <option value="applying">生效中</option>
+                  <option value="global_disabled">暂不生效</option>
                   <option value="failed">生效失败</option>
                   <option value="not_configured">未配置</option>
                   <option value="auth_error">授权异常</option>
@@ -348,7 +349,7 @@
                   刷新状态
                 </button>
                 <button class="primary" type="button" :disabled="busy || !selectedDynamicNode" @click="saveDynamicMeasurementConfig">
-                  保存并生效
+                  {{ tpcmDynamicGlobalEnabled ? '保存并生效' : '保存配置' }}
                 </button>
               </div>
             </div>
