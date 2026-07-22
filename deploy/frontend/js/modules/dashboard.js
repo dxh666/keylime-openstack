@@ -89,24 +89,38 @@ export const dashboardComputed = {
         this.keylimeNodesByHost.get(node.hostname) ||
         this.keylimeNodesByUuid.get(node.keylime_agent_uuid) ||
         {};
+      const trustAgentType = node.trust_agent_type || keylimeNode.trust_agent_type || "unmanaged";
+      const trustManaged = node.trust_managed ?? keylimeNode.trust_managed ?? trustAgentType !== "unmanaged";
+      const trustedRootType = node.trusted_root_type || keylimeNode.trusted_root_type || "unknown";
+      const trusted = keylimeNode.trusted;
+      const trustText = trustManaged ? this.trustText(trusted) : "未纳管";
+      const trustClass = trustManaged
+        ? trusted === true
+          ? "ok"
+          : trusted === false
+            ? "bad"
+            : "warn"
+        : "warn";
       return {
         id: node.id,
         host: node.hostname,
         rawNode: node,
         keylimeNode,
-        trustAgentType: node.trust_agent_type || keylimeNode.trust_agent_type || "keylime",
-        trustAgentName: node.trust_agent_name || keylimeNode.trust_agent_name || "Keylime Agent",
-        trustedRoot: node.trusted_root || keylimeNode.trusted_root || "TPM 2.0",
+        trustAgentType,
+        trustManaged,
+        trustedRootType,
+        trustAgentName: node.trust_agent_name || keylimeNode.trust_agent_name || "Unmanaged",
+        trustedRoot: node.trusted_root || keylimeNode.trusted_root || "unknown",
         managementIp: this.primaryController.management_ip || "-",
         ownIp: node.management_ip || node.keylime_agent_ip || keylimeNode.agent_ip || "-",
-        openstackText: this.openStackComputeText(node.openstack_state),
-        openstackClass: this.openStackComputeClass(node.openstack_state),
+        openstackText: this.openStackComputeText(node.openstack_state, node),
+        openstackClass: this.openStackComputeClass(node.openstack_state, node),
         managed: this.keylimeManagedText(node, keylimeNode),
         managedClass: this.keylimeManagedClass(node, keylimeNode),
-        trusted: keylimeNode.trusted,
-        trustText: this.trustText(keylimeNode.trusted),
-        trustClass: keylimeNode.trusted === true ? "ok" : keylimeNode.trusted === false ? "bad" : "warn",
-        attestationTime: this.proofTime(keylimeNode),
+        trusted,
+        trustText,
+        trustClass,
+        attestationTime: trustManaged ? this.proofTime(keylimeNode) : "-",
         reason: keylimeNode.reason || keylimeNode.last_event_id || "-"
       };
     });
@@ -115,7 +129,7 @@ export const dashboardComputed = {
     const total = this.computeRows.length || this.keylime.nodes_total || 0;
     const trusted = this.computeRows.filter((node) => node.trusted === true).length || this.keylime.nodes_trusted || 0;
     const untrusted = Math.max(total - trusted, 0);
-    const managed = this.computeRows.filter((node) => node.managedClass === "ok").length;
+    const managed = this.computeRows.filter((node) => node.trustManaged).length;
     return [
       { label: "计算节点", value: total, state: "" },
       { label: "可信节点", value: trusted, state: "ok" },
@@ -163,11 +177,14 @@ export const dashboardComputed = {
   },
   alertRows() {
     return (this.keylime.nodes || [])
-      .filter((node) => node.trusted === false || node.status === "error")
+      .filter((node) => node.trust_managed === false || node.status === "unmanaged" || node.trusted === false || node.status === "error")
       .map((node) => ({
         target: node.host || node.agent_uuid || "-",
         severity: node.status === "error" ? "重要" : "提醒",
-        message: node.reason || node.last_event_id || "可信状态未通过",
+        state: node.status === "error" || (node.trusted === false && node.status !== "unmanaged") ? "bad" : "warn",
+        message: node.trust_managed === false || node.status === "unmanaged"
+          ? "计算节点未纳入可信代理纳管"
+          : node.reason || node.last_event_id || "可信状态未通过",
         remediation: node.remediation?.summary || "-"
       }));
   },

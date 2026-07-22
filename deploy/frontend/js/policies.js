@@ -83,6 +83,5 @@ export const VIEW_TITLES = {
   global_policy: "全局策略控制",
   alerts: "告警中心",
   tasks: "任务中心",
-  audit: "审计日志",
-  settings: "系统设置"
+  audit: "审计日志"
 };

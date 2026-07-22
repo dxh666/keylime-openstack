@@ -73,7 +73,10 @@ export const nodeMethods = {
     );
   },
   keylimeManagedText(node, keylimeNode) {
-    if ((node.trust_agent_type || keylimeNode.trust_agent_type) === "opentcsm_tpcm") {
+    const agentType = node?.trust_agent_type || keylimeNode?.trust_agent_type || "unmanaged";
+    const managed = node?.trust_managed ?? keylimeNode?.trust_managed ?? agentType !== "unmanaged";
+    if (!managed || agentType === "unmanaged" || keylimeNode?.status === "unmanaged") return "未纳管";
+    if (agentType === "opentcsm_tpcm") {
       if (keylimeNode.status === "collected") return "已纳管";
       return "待上报";
     }
@@ -83,7 +86,10 @@ export const nodeMethods = {
     return "未纳管";
   },
   keylimeManagedClass(node, keylimeNode) {
-    if ((node.trust_agent_type || keylimeNode.trust_agent_type) === "opentcsm_tpcm") {
+    const agentType = node?.trust_agent_type || keylimeNode?.trust_agent_type || "unmanaged";
+    const managed = node?.trust_managed ?? keylimeNode?.trust_managed ?? agentType !== "unmanaged";
+    if (!managed || agentType === "unmanaged" || keylimeNode?.status === "unmanaged") return "warn";
+    if (agentType === "opentcsm_tpcm") {
       if (keylimeNode.status === "collected") return "ok";
       return "warn";
     }
@@ -93,16 +99,23 @@ export const nodeMethods = {
     return "bad";
   },
   trustAgentName(node, keylimeNode) {
-    return node.trust_agent_name || keylimeNode.trust_agent_name || "Keylime Agent";
+    const agentType = node?.trust_agent_type || keylimeNode?.trust_agent_type || "unmanaged";
+    const managed = node?.trust_managed ?? keylimeNode?.trust_managed ?? agentType !== "unmanaged";
+    if (!managed || agentType === "unmanaged") return "未纳管";
+    return node.trust_agent_name || keylimeNode.trust_agent_name || "可信代理";
   },
   trustedRoot(node, keylimeNode) {
-    return node.trusted_root || keylimeNode.trusted_root || "TPM 2.0";
+    return node.trusted_root || keylimeNode.trusted_root || "unknown";
   },
   agentUuidText(node, keylimeNode) {
-    if ((node.trust_agent_type || keylimeNode.trust_agent_type) === "opentcsm_tpcm") return "不适用";
+    const agentType = node?.trust_agent_type || keylimeNode?.trust_agent_type || "unmanaged";
+    const managed = node?.trust_managed ?? keylimeNode?.trust_managed ?? agentType !== "unmanaged";
+    if (!managed) return "-";
+    if (agentType === "opentcsm_tpcm") return "不适用";
     return node.keylime_agent_uuid || keylimeNode.agent_uuid || "-";
   },
   agentPortText(node) {
+    if (node.trust_managed === false) return "-";
     if (node.trust_agent_type === "opentcsm_tpcm") return "不适用";
     return node.keylime_agent_port || "-";
   },

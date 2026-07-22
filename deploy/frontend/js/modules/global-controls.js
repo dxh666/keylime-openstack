@@ -6,9 +6,10 @@ export const globalControlsComputed = {
     return this.tpcmDynamicGlobalControl.enabled !== false;
   },
   trustCapabilityItems() {
-    const caps = this.keylime.trust_capabilities || {};
-    const tpcmNodes = (this.keylime.nodes || []).filter((node) =>
-      node.trust_agent_type === "opentcsm_tpcm" || node.trust_agent_name === "OpenTCSM"
+    const inventory = this.nodes?.length ? this.nodes : this.keylime.nodes || [];
+    const tpcmNodes = inventory.filter((node) =>
+      node.trust_managed !== false &&
+      (node.trusted_root_type === "tpcm" || node.trust_agent_type === "opentcsm_tpcm")
     );
     const dynamicGlobalEnabled = this.tpcmDynamicGlobalEnabled;
     return [
@@ -18,11 +19,7 @@ export const globalControlsComputed = {
         enabled: dynamicGlobalEnabled,
         summary: dynamicGlobalEnabled ? "全局控制已开启" : "全局关闭，节点配置暂不生效",
         actionable: tpcmNodes.length > 0
-      },
-      { key: "boot", label: "可信启动", enabled: caps.boot === true },
-      { key: "ima", label: "IMA 运行时", enabled: caps.ima === true },
-      { key: "evm", label: "EVM", enabled: caps.evm === true },
-      { key: "openstack_service", label: "OpenStack 服务状态", enabled: caps.openstack_service === true }
+      }
     ];
   },
 };
@@ -34,8 +31,8 @@ export const globalControlsMethods = {
     this.requireToken({
       title: nextEnabled ? "确认开启集群动态度量" : "确认关闭集群动态度量",
       message: nextEnabled
-        ? "将开启所有 OpenTCSM 节点的动态度量总开关，并使对应节点策略生效。"
-        : "将关闭所有 OpenTCSM 节点的动态度量总开关，并使对应节点策略生效。",
+        ? "将开启所有 TPCM 纳管节点的动态度量总开关，并使对应节点策略生效。"
+        : "将关闭所有 TPCM 纳管节点的动态度量总开关，并使对应节点策略生效。",
       confirmText: nextEnabled ? "开启并生效" : "关闭并生效",
       action: async (token) => {
         await this.requestJson("/api/policies/tpcm-dynamic/global-switch", {
