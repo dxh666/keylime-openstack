@@ -707,6 +707,85 @@ h3 {
   font-size: 13px;
 }
 
+.list-toolbar,
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 34px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.list-toolbar {
+  margin: -4px 0 10px;
+}
+
+.pager {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.pager span {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.page-size-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.page-size-control select {
+  width: 76px;
+  min-height: 32px;
+  padding: 5px 8px;
+}
+
+.audit-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: -2px 0 14px;
+}
+
+.audit-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 6px 10px;
+  background: var(--panel-soft);
+  color: var(--text);
+  font-weight: 650;
+}
+
+.audit-tabs button.active {
+  border-color: var(--blue);
+  background: #eef4ff;
+  color: var(--blue);
+}
+
+.audit-tabs em {
+  min-width: 22px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #e5eaf2;
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  text-align: center;
+}
+
+.audit-tabs button.active em {
+  background: #dbeafe;
+  color: var(--blue);
+}
+
 .info-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1472,6 +1551,20 @@ h3 {
   .info-grid,
   .switch-grid {
     grid-template-columns: 1fr;
+  }
+
+  .list-toolbar,
+  .pager {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .pager {
+    align-items: stretch;
+  }
+
+  .pager button {
+    width: 100%;
   }
 
   .target-selector,

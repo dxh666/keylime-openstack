@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Keylime OpenStack 可信管理</title>
-  <link rel="stylesheet" href="styles.css?v=20260723-audit-task-ux">
+  <link rel="stylesheet" href="styles.css?v=20260723-list-pages">
 </head>
 <body>
   <div id="app" v-cloak :class="{ 'login-app': authChecked && !authenticated, 'booting-app': !authChecked }">
@@ -486,18 +486,34 @@
             <h2>告警中心</h2>
             <button type="button" class="page-refresh-button" :disabled="busy" @click="refreshCurrentView(true)">刷新</button>
           </div>
+          <div class="list-toolbar">
+            <span>共 {{ alertPageInfo.total }} 条，显示 {{ alertPageInfo.start }}-{{ alertPageInfo.end }} 条</span>
+            <label class="page-size-control">
+              <span>每页</span>
+              <select :value="listPagination.alerts.pageSize" @change="changeListPageSize('alerts', $event.target.value)">
+                <option v-for="size in listPageSizes" :key="`alerts-${size}`" :value="size">{{ size }}</option>
+              </select>
+            </label>
+          </div>
           <div class="table compact-table alert-table">
             <div class="row header">
               <span>对象</span><span>级别</span><span>事件内容</span><span>处置建议</span>
             </div>
-            <div v-for="item in alertRows" :key="`${item.target}-${item.message}`" class="row">
+            <div v-for="item in paginatedAlertRows" :key="`${item.target}-${item.message}`" class="row">
               <span>{{ item.target }}</span>
               <span><em :class="['pill', item.state]">{{ item.severity }}</em></span>
               <span>{{ item.message }}</span>
               <span>{{ item.remediation }}</span>
             </div>
           </div>
-          <p v-if="!alertRows.length" class="empty">暂无告警。</p>
+          <div v-if="alertPageInfo.total" class="pager">
+            <button type="button" class="small" :disabled="!alertPageInfo.hasPrev" @click="changeListPage('alerts', 1)">首页</button>
+            <button type="button" class="small" :disabled="!alertPageInfo.hasPrev" @click="changeListPage('alerts', alertPageInfo.page - 1)">上一页</button>
+            <span>第 {{ alertPageInfo.page }} 页 / 共 {{ alertPageInfo.totalPages }} 页</span>
+            <button type="button" class="small" :disabled="!alertPageInfo.hasNext" @click="changeListPage('alerts', alertPageInfo.page + 1)">下一页</button>
+            <button type="button" class="small" :disabled="!alertPageInfo.hasNext" @click="changeListPage('alerts', alertPageInfo.totalPages)">末页</button>
+          </div>
+          <p v-if="!alertPageInfo.total" class="empty">暂无告警。</p>
         </section>
       </section>
 
@@ -507,11 +523,20 @@
             <h2>任务中心</h2>
             <button type="button" class="page-refresh-button" :disabled="busy" @click="refreshCurrentView(true)">刷新</button>
           </div>
+          <div class="list-toolbar">
+            <span>共 {{ taskPageInfo.total }} 条，显示 {{ taskPageInfo.start }}-{{ taskPageInfo.end }} 条</span>
+            <label class="page-size-control">
+              <span>每页</span>
+              <select :value="listPagination.tasks.pageSize" @change="changeListPageSize('tasks', $event.target.value)">
+                <option v-for="size in listPageSizes" :key="`tasks-${size}`" :value="size">{{ size }}</option>
+              </select>
+            </label>
+          </div>
           <div class="table compact-table task-table">
             <div class="row header">
               <span>任务类型</span><span>对象</span><span>状态</span><span>说明</span><span>开始时间</span><span>结束时间</span>
             </div>
-            <div v-for="task in visibleTasks" :key="task.id" class="row">
+            <div v-for="task in paginatedVisibleTasks" :key="task.id" class="row">
               <span>{{ taskTypeText(task.task_type) }}</span>
               <span>{{ taskTargetText(task) }}</span>
               <span><em :class="['pill', taskSeverityClass(task.status)]">{{ taskStatusText(task.status) }}</em></span>
@@ -520,7 +545,14 @@
               <span>{{ formatTime(task.finished_at) }}</span>
             </div>
           </div>
-          <p v-if="!visibleTasks.length" class="empty">暂无需要关注的任务。</p>
+          <div v-if="taskPageInfo.total" class="pager">
+            <button type="button" class="small" :disabled="!taskPageInfo.hasPrev" @click="changeListPage('tasks', 1)">首页</button>
+            <button type="button" class="small" :disabled="!taskPageInfo.hasPrev" @click="changeListPage('tasks', taskPageInfo.page - 1)">上一页</button>
+            <span>第 {{ taskPageInfo.page }} 页 / 共 {{ taskPageInfo.totalPages }} 页</span>
+            <button type="button" class="small" :disabled="!taskPageInfo.hasNext" @click="changeListPage('tasks', taskPageInfo.page + 1)">下一页</button>
+            <button type="button" class="small" :disabled="!taskPageInfo.hasNext" @click="changeListPage('tasks', taskPageInfo.totalPages)">末页</button>
+          </div>
+          <p v-if="!taskPageInfo.total" class="empty">暂无需要关注的任务。</p>
         </section>
       </section>
 
@@ -530,11 +562,32 @@
             <h2>审计日志</h2>
             <button type="button" class="page-refresh-button" :disabled="busy" @click="refreshCurrentView(true)">刷新</button>
           </div>
+          <div class="audit-tabs" role="tablist" aria-label="审计日志分类">
+            <button
+              v-for="tab in auditCategoryTabs"
+              :key="tab.key"
+              type="button"
+              :class="{ active: activeAuditCategory === tab.key }"
+              @click="selectAuditCategory(tab.key)"
+            >
+              <span>{{ tab.label }}</span>
+              <em>{{ tab.count }}</em>
+            </button>
+          </div>
+          <div class="list-toolbar">
+            <span>共 {{ auditPageInfo.total }} 条，显示 {{ auditPageInfo.start }}-{{ auditPageInfo.end }} 条</span>
+            <label class="page-size-control">
+              <span>每页</span>
+              <select :value="listPagination.audit.pageSize" @change="changeListPageSize('audit', $event.target.value)">
+                <option v-for="size in listPageSizes" :key="`audit-${size}`" :value="size">{{ size }}</option>
+              </select>
+            </label>
+          </div>
           <div class="table compact-table audit-table">
             <div class="row header">
               <span>时间</span><span>日志类型</span><span>主体名称</span><span>客体名称</span><span>摘要</span><span>操作</span><span>结果</span>
             </div>
-            <div v-for="event in auditEvents" :key="event.id" class="row">
+            <div v-for="event in paginatedAuditEvents" :key="event.id" class="row">
               <span>{{ formatTime(event.created_at) }}</span>
               <span>{{ auditType(event) }}</span>
               <span>{{ auditSubject(event) }}</span>
@@ -544,7 +597,14 @@
               <span><em :class="['pill', auditResultClass(event)]">{{ auditResult(event) }}</em></span>
             </div>
           </div>
-          <p v-if="!auditEvents.length" class="empty">暂无审计日志。</p>
+          <div v-if="auditPageInfo.total" class="pager">
+            <button type="button" class="small" :disabled="!auditPageInfo.hasPrev" @click="changeListPage('audit', 1)">首页</button>
+            <button type="button" class="small" :disabled="!auditPageInfo.hasPrev" @click="changeListPage('audit', auditPageInfo.page - 1)">上一页</button>
+            <span>第 {{ auditPageInfo.page }} 页 / 共 {{ auditPageInfo.totalPages }} 页</span>
+            <button type="button" class="small" :disabled="!auditPageInfo.hasNext" @click="changeListPage('audit', auditPageInfo.page + 1)">下一页</button>
+            <button type="button" class="small" :disabled="!auditPageInfo.hasNext" @click="changeListPage('audit', auditPageInfo.totalPages)">末页</button>
+          </div>
+          <p v-if="!auditPageInfo.total" class="empty">暂无审计日志。</p>
         </section>
       </section>
 
@@ -722,6 +782,6 @@
   </div>
 
   <script src="vendor/vue.global.prod.js"></script>
-  <script type="module" src="app.js?v=20260723-audit-task-ux"></script>
+  <script type="module" src="app.js?v=20260723-list-pages"></script>
 </body>
 </html>

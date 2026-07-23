@@ -1,8 +1,9 @@
-import { displayMethods } from "./js/formatters.js?v=20260723-audit-task-ux";
+import { displayMethods } from "./js/formatters.js?v=20260723-list-pages";
 import { dashboardComputed } from "./js/modules/dashboard.js?v=20260723-audit-task-ux";
 import { globalControlsComputed, globalControlsMethods } from "./js/modules/global-controls.js";
+import { LIST_PAGE_SIZES, listPageComputed, listPageMethods } from "./js/modules/list-pages.js?v=20260723-list-pages";
 import { policyCenterComputed, policyCenterMethods } from "./js/modules/policy-center.js";
-import { shellComputed, shellMethods } from "./js/modules/shell.js?v=20260723-product-closure";
+import { shellComputed, shellMethods } from "./js/modules/shell.js?v=20260723-list-pages";
 import { tpcmDynamicComputed, tpcmDynamicMethods } from "./js/modules/tpcm-dynamic.js";
 import { tokenDialogMethods } from "./js/modules/token-dialog.js";
 import { nodeMethods } from "./js/modules/nodes.js?v=20260723-product-closure";
@@ -25,9 +26,16 @@ createApp({
       },
       policyTypes: POLICY_TYPES,
       activePolicyType: "measured_boot",
+      activeAuditCategory: "all",
       activeDynamicNodeId: null,
       dynamicNodeSearch: "",
       dynamicNodeStatusFilter: "all",
+      listPageSizes: LIST_PAGE_SIZES,
+      listPagination: {
+        alerts: { page: 1, pageSize: 20 },
+        tasks: { page: 1, pageSize: 20 },
+        audit: { page: 1, pageSize: 20 }
+      },
       busy: false,
       loading: true,
       authChecked: false,
@@ -78,6 +86,7 @@ createApp({
   computed: {
     ...shellComputed,
     ...dashboardComputed,
+    ...listPageComputed,
     ...tpcmDynamicComputed,
     ...policyCenterComputed,
     ...globalControlsComputed
@@ -105,6 +114,7 @@ createApp({
   methods: {
     ...displayMethods,
     ...shellMethods,
+    ...listPageMethods,
     ...tpcmDynamicMethods,
     ...nodeMethods,
     ...policyCenterMethods,

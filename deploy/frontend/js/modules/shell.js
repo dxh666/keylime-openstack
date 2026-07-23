@@ -205,8 +205,8 @@ export const shellMethods = {
         overview: this.requestJson("/api/overview"),
         keylime: this.requestJson("/api/trust/check"),
         nodes: this.requestJson("/api/nodes"),
-        audit: this.requestJson("/api/audit?limit=20"),
-        tasks: this.requestJson("/api/tasks?limit=20")
+        audit: this.requestJson("/api/audit?limit=200"),
+        tasks: this.requestJson("/api/tasks?limit=100")
       };
     }
     if (view === "control_nodes") {
@@ -247,14 +247,14 @@ export const shellMethods = {
       return {
         keylime: this.requestJson("/api/trust/check"),
         nodes: this.requestJson("/api/nodes"),
-        audit: this.requestJson("/api/audit?limit=20")
+        audit: this.requestJson("/api/audit?limit=200")
       };
     }
     if (view === "tasks") {
-      return { tasks: this.requestJson("/api/tasks?limit=20") };
+      return { tasks: this.requestJson("/api/tasks?limit=100") };
     }
     if (view === "audit") {
-      return { audit: this.requestJson("/api/audit?limit=20") };
+      return { audit: this.requestJson("/api/audit?limit=200") };
     }
     return this.refreshRequestsForView(DEFAULT_VIEW);
   },
@@ -271,8 +271,8 @@ export const shellMethods = {
       globalTpcmDynamic: this.requestJson("/api/policies/tpcm-dynamic/global-switch"),
       nodes: this.requestJson("/api/nodes"),
       policies: this.requestJson("/api/policies"),
-      audit: this.requestJson("/api/audit?limit=20"),
-      tasks: this.requestJson("/api/tasks?limit=20")
+      audit: this.requestJson("/api/audit?limit=200"),
+      tasks: this.requestJson("/api/tasks?limit=100")
     }, showBusy);
   },
   async refreshCurrentView(showBusy = true) {
