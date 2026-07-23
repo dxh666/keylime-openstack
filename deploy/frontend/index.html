@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Keylime OpenStack 可信管理</title>
-  <link rel="stylesheet" href="styles.css?v=20260723-list-pages">
+  <link rel="stylesheet" href="styles.css?v=20260723-trust-profile">
 </head>
 <body>
   <div id="app" v-cloak :class="{ 'login-app': authChecked && !authenticated, 'booting-app': !authChecked }">
@@ -276,6 +276,7 @@
               <span>{{ node.attestationTime }}</span>
               <span class="row-actions">
                 <button type="button" class="small" @click="openComputeDetail(node)">查看详情</button>
+                <button type="button" class="small" :disabled="busy" @click="openTrustProfileDialog(node)">纳管配置</button>
                 <button v-if="node.trustManaged" type="button" class="small" :disabled="busy" @click="verifyComputeNodeTrust(node)">验证</button>
                 <button
                   v-if="node.canCollectTpcmDynamic"
@@ -731,6 +732,105 @@
         </section>
       </div>
 
+      <div v-if="trustProfileDialog.open" class="modal-backdrop" @click.self="closeTrustProfileDialog">
+        <section class="modal modal-wide trust-profile-dialog" role="dialog" aria-modal="true">
+          <h2>可信节点纳管配置</h2>
+          <form class="policy-form trust-profile-form" @submit.prevent="saveTrustProfile">
+            <label>
+              <span>节点名称</span>
+              <input v-model="trustProfileDialog.form.hostname" required readonly>
+            </label>
+            <label>
+              <span>OpenStack 计算名称</span>
+              <input v-model="trustProfileDialog.form.openstackComputeName" placeholder="如 hygon23">
+            </label>
+            <label>
+              <span>管理 IP</span>
+              <input v-model="trustProfileDialog.form.managementIp" placeholder="如 172.31.100.23">
+            </label>
+            <label class="toggle-line">
+              <input v-model="trustProfileDialog.form.isOpenStackCompute" type="checkbox">
+              <span>OpenStack 计算节点</span>
+            </label>
+            <label class="toggle-line">
+              <input
+                v-model="trustProfileDialog.form.trustManaged"
+                type="checkbox"
+                @change="syncTrustProfileCapabilityDefaults"
+              >
+              <span>纳入可信代理管理</span>
+            </label>
+            <label>
+              <span>可信根类型</span>
+              <select
+                v-model="trustProfileDialog.form.trustedRootType"
+                :disabled="!trustProfileDialog.form.trustManaged"
+                @change="syncTrustProfileCapabilityDefaults"
+              >
+                <option value="unknown">unknown</option>
+                <option value="tpm">TPM</option>
+                <option value="tpcm">TPCM</option>
+              </select>
+            </label>
+            <template v-if="trustProfileDialog.form.trustManaged">
+              <label>
+                <span>可信代理地址</span>
+                <input v-model="trustProfileDialog.form.agentHost" required placeholder="节点管理 IP 或代理地址">
+              </label>
+              <label v-if="trustProfileDialog.form.trustedRootType === 'tpm'">
+                <span>可信代理端口</span>
+                <input v-model.number="trustProfileDialog.form.agentPort" type="number" min="1" max="65535">
+              </label>
+              <label v-if="trustProfileDialog.form.trustedRootType === 'tpcm'">
+                <span>通信方式</span>
+                <select v-model="trustProfileDialog.form.agentTransport">
+                  <option value="ssh">SSH</option>
+                </select>
+              </label>
+              <label v-if="trustProfileDialog.form.trustedRootType === 'tpm'" class="wide">
+                <span>TPM 代理 UUID</span>
+                <input v-model="trustProfileDialog.form.tpmAgentUuid" placeholder="可由同步纳管补齐">
+              </label>
+              <label v-if="trustProfileDialog.form.trustedRootType === 'tpcm'" class="wide">
+                <span>TPCM 标识</span>
+                <input v-model="trustProfileDialog.form.tpcmId" placeholder="可由证据采集补齐">
+              </label>
+            </template>
+            <fieldset class="wide target-selector trust-capability-selector">
+              <legend>可信能力</legend>
+              <label class="check-option compact-option">
+                <input
+                  v-model="trustProfileDialog.form.capabilities.trustedBoot"
+                  type="checkbox"
+                  :disabled="!trustProfileDialog.form.trustManaged"
+                >
+                <span>可信启动</span>
+              </label>
+              <label class="check-option compact-option">
+                <input
+                  v-model="trustProfileDialog.form.capabilities.imaRuntime"
+                  type="checkbox"
+                  :disabled="!trustProfileDialog.form.trustManaged || trustProfileDialog.form.trustedRootType !== 'tpm'"
+                >
+                <span>IMA 运行时</span>
+              </label>
+              <label class="check-option compact-option">
+                <input
+                  v-model="trustProfileDialog.form.capabilities.tpcmDynamicMeasurement"
+                  type="checkbox"
+                  :disabled="!trustProfileDialog.form.trustManaged || trustProfileDialog.form.trustedRootType !== 'tpcm'"
+                >
+                <span>TPCM 动态度量</span>
+              </label>
+            </fieldset>
+            <div class="form-actions">
+              <button type="button" :disabled="busy" @click="closeTrustProfileDialog">取消</button>
+              <button class="primary" type="submit" :disabled="busy">保存配置</button>
+            </div>
+          </form>
+        </section>
+      </div>
+
       <div v-if="detailNode" class="drawer-backdrop" @click.self="closeNodeDetail">
         <aside class="node-drawer" role="dialog" aria-modal="true">
           <header class="drawer-head">
@@ -782,6 +882,6 @@
   </div>
 
   <script src="vendor/vue.global.prod.js"></script>
-  <script type="module" src="app.js?v=20260723-list-pages"></script>
+  <script type="module" src="app.js?v=20260723-trust-profile"></script>
 </body>
 </html>

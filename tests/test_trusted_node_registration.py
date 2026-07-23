@@ -10,6 +10,7 @@ from keylime_openstack.database import Base
 from keylime_openstack.constants import (
     ADAPTER_KEYLIME,
     ADAPTER_OPENTCSM,
+    CAPABILITY_EVM,
     CAPABILITY_IMA_RUNTIME,
     CAPABILITY_TPCM_DYNAMIC_MEASUREMENT,
     CAPABILITY_TRUSTED_BOOT,
@@ -163,13 +164,62 @@ def test_registration_upsert_infers_tpcm_adapter_and_capabilities() -> None:
                 "trust_managed": True,
                 "trusted_root_type": "tpcm",
                 "agent_identity": {"tpcm_id": "tpcm-id"},
+                "capabilities": {
+                    CAPABILITY_TRUSTED_BOOT: True,
+                    CAPABILITY_IMA_RUNTIME: True,
+                    CAPABILITY_TPCM_DYNAMIC_MEASUREMENT: True,
+                    CAPABILITY_EVM: True,
+                },
             },
         )
 
     assert profile.adapter_type == ADAPTER_OPENTCSM
     assert profile.capabilities[CAPABILITY_TRUSTED_BOOT] is True
+    assert profile.capabilities[CAPABILITY_IMA_RUNTIME] is False
     assert profile.capabilities[CAPABILITY_TPCM_DYNAMIC_MEASUREMENT] is True
+    assert profile.capabilities[CAPABILITY_EVM] is False
     assert profile.agent_identity["tpcm_id"] == "tpcm-id"
+
+
+def test_registration_upsert_reinfers_adapter_when_root_changes() -> None:
+    with _memory_session() as memory_session:
+        node = ComputeNode(
+            hostname="compute-e2",
+            hypervisor_name="nova-e2",
+            management_ip="10.0.0.152",
+            role="compute",
+            keylime_agent_uuid="old-agent",
+        )
+        memory_session.add(node)
+        memory_session.flush()
+
+        upsert_trusted_node_profile(
+            memory_session,
+            node,
+            Settings(),
+            {
+                "trust_managed": True,
+                "trusted_root_type": "tpm",
+                "adapter_type": ADAPTER_KEYLIME,
+                "agent_identity": {"keylime_agent_uuid": "old-agent"},
+            },
+        )
+        profile = upsert_trusted_node_profile(
+            memory_session,
+            node,
+            Settings(),
+            {
+                "trust_managed": True,
+                "trusted_root_type": "tpcm",
+                "adapter_type": "",
+                "agent_identity": {"tpcm_id": "new-tpcm"},
+            },
+        )
+
+    assert profile.trusted_root_type == TRUST_ROOT_TPCM
+    assert profile.adapter_type == ADAPTER_OPENTCSM
+    assert profile.capabilities[CAPABILITY_IMA_RUNTIME] is False
+    assert profile.capabilities[CAPABILITY_TPCM_DYNAMIC_MEASUREMENT] is True
 
 
 def test_keylime_agent_inventory_payload_normalizes_common_shapes() -> None:
@@ -236,6 +286,49 @@ def test_registration_sync_keeps_env_maps_as_compatibility_input() -> None:
     assert node.trust_profile.trust_managed is True
     assert node.trust_profile.trusted_root_type == TRUST_ROOT_TPM
     assert node.trust_profile.adapter_type == ADAPTER_KEYLIME
+
+
+def test_registration_sync_preserves_manual_product_profile() -> None:
+    with _memory_session() as memory_session:
+        node = ComputeNode(
+            hostname="compute-f2",
+            hypervisor_name="nova-f2",
+            management_ip="10.0.0.162",
+            role="compute",
+        )
+        memory_session.add(node)
+        memory_session.flush()
+
+        upsert_trusted_node_profile(
+            memory_session,
+            node,
+            Settings(),
+            {
+                "trust_managed": True,
+                "trusted_root_type": "tpcm",
+                "adapter_type": ADAPTER_OPENTCSM,
+                "agent_endpoint": {"transport": "ssh", "host": "10.0.0.162"},
+                "agent_identity": {"tpcm_id": "manual-tpcm"},
+                "registration_source": "manual",
+            },
+        )
+        result = sync_trusted_node_registrations(
+            memory_session,
+            Settings(
+                keylime_agent_hosts="compute-f2",
+                keylime_agent_ip_map="compute-f2=10.0.0.162",
+                keylime_agent_uuid_map="compute-f2=99999999-9999-4999-8999-000000000162",
+            ),
+            discover_keylime=False,
+        )
+
+    assert result["static_keylime_registrations"] == []
+    assert result["manual_profiles_preserved"][0]["node"] == "compute-f2"
+    assert node.keylime_agent_uuid == ""
+    assert node.trust_profile.trust_managed is True
+    assert node.trust_profile.trusted_root_type == TRUST_ROOT_TPCM
+    assert node.trust_profile.adapter_type == ADAPTER_OPENTCSM
+    assert node.trust_profile.agent_identity["registration_source"] == "manual"
 
 
 def test_registration_sync_auto_binds_discovered_keylime_agent(monkeypatch) -> None:

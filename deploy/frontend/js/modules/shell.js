@@ -72,6 +72,7 @@ export const shellMethods = {
   activateView(view, { updateRoute = true } = {}) {
     this.closeUserMenu();
     this.closeNodeDetail();
+    this.closeTrustProfileDialog?.();
     this.view = ROUTABLE_VIEWS.has(view) ? view : DEFAULT_VIEW;
     this.detailPolicy = null;
     if (this.groupActive("nodes")) this.expandedGroups.nodes = true;
@@ -196,6 +197,7 @@ export const shellMethods = {
     this.opentcsmAccessChecks = {};
     this.detailPolicy = null;
     this.detailNode = null;
+    this.closeTrustProfileDialog?.();
   },
   refreshRequestsForView(view = this.view) {
     if (view === "dashboard") {

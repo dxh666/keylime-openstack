@@ -92,6 +92,7 @@ def sync_trust_registrations(
             "keylime_agents_discovered": result.get("keylime_agents_discovered"),
             "keylime_agents_matched": result.get("keylime_agents_matched"),
             "registration_conflicts": result.get("registration_conflicts"),
+            "manual_profiles_preserved": result.get("manual_profiles_preserved"),
             "discovery_error": result.get("discovery_error"),
         },
     )
@@ -174,7 +175,9 @@ def register_trust_agent(
     if not node:
         raise HTTPException(status_code=404, detail=f"unknown compute node {hostname}")
 
-    profile = upsert_trusted_node_profile(session, node, settings, payload.model_dump())
+    registration = payload.model_dump()
+    registration["registration_source"] = "manual"
+    profile = upsert_trusted_node_profile(session, node, settings, registration)
     record_audit_event(
         session,
         event_type="trusted_node_register",

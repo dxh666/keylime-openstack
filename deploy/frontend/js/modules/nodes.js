@@ -15,7 +15,11 @@ export const nodeMethods = {
       const staticMatched = result.static_keylime_registrations?.length || 0;
       const tpcmMatched = result.tpcm_registrations?.length || 0;
       const conflicts = result.registration_conflicts?.length || 0;
-      const suffix = conflicts ? `，发现 ${conflicts} 个冲突` : "";
+      const preserved = result.manual_profiles_preserved?.length || 0;
+      const suffixParts = [];
+      if (preserved) suffixParts.push(`保留手工配置 ${preserved} 个`);
+      if (conflicts) suffixParts.push(`发现 ${conflicts} 个冲突`);
+      const suffix = suffixParts.length ? `，${suffixParts.join("，")}` : "";
       const message = result.ok
         ? `可信节点纳管已同步：TPM 自动匹配 ${matched} 个，配置匹配 ${staticMatched} 个，TPCM 匹配 ${tpcmMatched} 个${suffix}。`
         : `可信节点纳管已部分同步：配置匹配 ${staticMatched} 个，TPCM 匹配 ${tpcmMatched} 个，自动发现失败：${result.discovery_error || "原因待确认"}。`;

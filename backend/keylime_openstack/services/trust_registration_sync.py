@@ -30,11 +30,12 @@ from keylime_openstack.constants import (
     TRUST_ROOT_TPCM,
     TRUST_ROOT_TPM,
 )
-from keylime_openstack.models import ComputeNode, EvidenceRecord
+from keylime_openstack.models import ComputeNode, EvidenceRecord, TrustedNodeProfile
 from keylime_openstack.services.keylime import KeylimeClient
 from keylime_openstack.services.trust_agents import normalize_trust_agent_type, parse_host_map
 from keylime_openstack.services.trust_registration import (
     ensure_trusted_node_profile,
+    profile_manually_configured,
     profile_payload,
     upsert_trusted_node_profile,
 )
@@ -71,7 +72,12 @@ def sync_trusted_node_registrations(
     tpcm_result = _sync_tpcm_inventory_profiles(session, settings, nodes)
     discovered_agents: list[dict[str, Any]] = []
     discovery_error = ""
-    remote_result = {"matched": [], "unmatched_agents": [], "conflicts": []}
+    remote_result = {
+        "matched": [],
+        "unmatched_agents": [],
+        "conflicts": [],
+        "manual_profiles_preserved": [],
+    }
     if discover_keylime and settings.keylime_auto_registration_enabled:
         try:
             discovered_agents = KeylimeClient(settings).list_registered_agents(
@@ -110,6 +116,11 @@ def sync_trusted_node_registrations(
             *tpcm_result["conflicts"],
             *remote_result["conflicts"],
         ],
+        "manual_profiles_preserved": [
+            *static_result["manual_profiles_preserved"],
+            *tpcm_result["manual_profiles_preserved"],
+            *remote_result["manual_profiles_preserved"],
+        ],
         "discovery_error": discovery_error,
         "profiles": profiles,
     }
@@ -125,6 +136,7 @@ def _sync_static_keylime_maps(
     uuid_map = parse_host_map(settings.keylime_agent_uuid_map)
     matched: list[dict[str, Any]] = []
     conflicts: list[dict[str, Any]] = []
+    manual_profiles_preserved: list[dict[str, Any]] = []
     for node in nodes:
         host_key = _mapped_node_key(node, [*hosts, *ip_map.keys(), *uuid_map.keys()])
         if not host_key:
@@ -134,6 +146,9 @@ def _sync_static_keylime_maps(
         if not agent_uuid:
             continue
         profile = ensure_trusted_node_profile(session, node, settings)
+        if profile_manually_configured(profile):
+            manual_profiles_preserved.append(_manual_profile_preserved_payload(node, profile, "static-env-map"))
+            continue
         if (
             profile.trust_managed
             and profile.adapter_type
@@ -180,7 +195,11 @@ def _sync_static_keylime_maps(
                 "source": "static-env-map",
             }
         )
-    return {"matched": matched, "conflicts": conflicts}
+    return {
+        "matched": matched,
+        "conflicts": conflicts,
+        "manual_profiles_preserved": manual_profiles_preserved,
+    }
 
 
 def _sync_tpcm_inventory_profiles(
@@ -190,12 +209,18 @@ def _sync_tpcm_inventory_profiles(
 ) -> dict[str, Any]:
     matched: list[dict[str, Any]] = []
     conflicts: list[dict[str, Any]] = []
+    manual_profiles_preserved: list[dict[str, Any]] = []
     for node in nodes:
         candidate = _tpcm_registration_candidate(session, node)
         if not candidate:
             continue
 
         profile = ensure_trusted_node_profile(session, node, settings)
+        if profile_manually_configured(profile):
+            manual_profiles_preserved.append(
+                _manual_profile_preserved_payload(node, profile, str(candidate.get("source") or "tpcm-inventory"))
+            )
+            continue
         if (
             profile.trust_managed
             and profile.adapter_type
@@ -238,7 +263,11 @@ def _sync_tpcm_inventory_profiles(
                 "source": candidate.get("source") or "",
             }
         )
-    return {"matched": matched, "conflicts": conflicts}
+    return {
+        "matched": matched,
+        "conflicts": conflicts,
+        "manual_profiles_preserved": manual_profiles_preserved,
+    }
 
 
 def _sync_discovered_keylime_agents(
@@ -250,6 +279,7 @@ def _sync_discovered_keylime_agents(
     matched: list[dict[str, Any]] = []
     unmatched: list[dict[str, Any]] = []
     conflicts: list[dict[str, Any]] = []
+    manual_profiles_preserved: list[dict[str, Any]] = []
     for agent in agents:
         node = _match_agent_to_node(agent, nodes)
         agent_uuid = str(agent.get("agent_uuid") or "")
@@ -266,6 +296,11 @@ def _sync_discovered_keylime_agents(
             continue
 
         profile = ensure_trusted_node_profile(session, node, settings)
+        if profile_manually_configured(profile):
+            manual_profiles_preserved.append(
+                _manual_profile_preserved_payload(node, profile, str(agent.get("source") or "keylime-discovery"))
+            )
+            continue
         if (
             profile.trust_managed
             and profile.adapter_type
@@ -334,7 +369,27 @@ def _sync_discovered_keylime_agents(
                 "source": agent.get("source") or "",
             }
         )
-    return {"matched": matched, "unmatched_agents": unmatched, "conflicts": conflicts}
+    return {
+        "matched": matched,
+        "unmatched_agents": unmatched,
+        "conflicts": conflicts,
+        "manual_profiles_preserved": manual_profiles_preserved,
+    }
+
+
+def _manual_profile_preserved_payload(
+    node: ComputeNode,
+    profile: TrustedNodeProfile,
+    source: str,
+) -> dict[str, Any]:
+    return {
+        "node": node.hostname,
+        "trusted_root_type": profile.trusted_root_type,
+        "adapter_type": profile.adapter_type,
+        "registration_status": profile.registration_status,
+        "source": source,
+        "reason": "manual-profile-preserved",
+    }
 
 
 def _keylime_registration_payload(

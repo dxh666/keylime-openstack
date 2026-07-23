@@ -39,6 +39,7 @@ from keylime_openstack.services.trust_agents import (
 __all__ = [
     "ensure_trusted_node_profile",
     "legacy_trusted_node_profile_payload",
+    "profile_manually_configured",
     "profile_payload",
     "registration_status_after_verification",
     "trusted_node_capable_of_tpcm_dynamic_measurement",
@@ -146,18 +147,21 @@ def upsert_trusted_node_profile(
     trusted_root_type = _normalize_trusted_root_type(
         str(registration.get("trusted_root_type") or profile.trusted_root_type or "")
     )
+    raw_adapter_type = str(registration.get("adapter_type") or "")
+    if not raw_adapter_type and "trusted_root_type" not in registration:
+        raw_adapter_type = str(profile.adapter_type or "")
     adapter_type = _normalize_adapter_type(
-        str(registration.get("adapter_type") or profile.adapter_type or ""),
+        raw_adapter_type,
         trusted_root_type=trusted_root_type,
         trust_managed=trust_managed,
     )
     capabilities = dict(registration.get("capabilities") or {})
-    if not capabilities:
-        capabilities = _capabilities(
-            trusted_root_type=trusted_root_type,
-            adapter_type=adapter_type,
-            trust_managed=trust_managed,
-        )
+    capabilities = _normalize_capabilities(
+        capabilities,
+        trusted_root_type=trusted_root_type,
+        adapter_type=adapter_type,
+        trust_managed=trust_managed,
+    )
     profile.hostname = str(registration.get("hostname") or node.hostname)
     profile.openstack_compute_name = str(
         registration.get("openstack_compute_name")
@@ -179,11 +183,19 @@ def upsert_trusted_node_profile(
         node,
         adapter_type,
     )
-    profile.agent_identity = dict(registration.get("agent_identity") or {}) or _agent_identity(
+    registration_source = str(
+        registration.get("registration_source")
+        or registration.get("configuration_source")
+        or ""
+    ).strip()
+    agent_identity = dict(registration.get("agent_identity") or {}) or _agent_identity(
         node,
         adapter_type,
         node.facts or {},
     )
+    if registration_source:
+        agent_identity["registration_source"] = registration_source
+    profile.agent_identity = agent_identity
     profile.capabilities = capabilities
     profile.registration_status = str(
         registration.get("registration_status")
@@ -192,6 +204,13 @@ def upsert_trusted_node_profile(
     profile.updated_at = datetime.now(timezone.utc)
     session.flush()
     return profile
+
+
+def profile_manually_configured(profile: TrustedNodeProfile) -> bool:
+    """Return True when a profile was saved from the product configuration UI/API."""
+
+    identity = dict(profile.agent_identity or {})
+    return str(identity.get("registration_source") or "").lower() == "manual"
 
 
 def registration_status_after_verification(result: dict[str, Any]) -> str:
@@ -308,6 +327,50 @@ def _capabilities(
             CAPABILITY_TRUSTED_BOOT: True,
             CAPABILITY_IMA_RUNTIME: False,
             CAPABILITY_TPCM_DYNAMIC_MEASUREMENT: True,
+            CAPABILITY_EVM: False,
+        }
+    return {}
+
+
+def _normalize_capabilities(
+    capabilities: dict[str, Any],
+    *,
+    trusted_root_type: str,
+    adapter_type: str,
+    trust_managed: bool,
+) -> dict[str, bool]:
+    if not trust_managed:
+        return {}
+    defaults = _capabilities(
+        trusted_root_type=trusted_root_type,
+        adapter_type=adapter_type,
+        trust_managed=trust_managed,
+    )
+    if not capabilities:
+        return defaults
+    if trusted_root_type == TRUST_ROOT_TPM or adapter_type == ADAPTER_KEYLIME:
+        return {
+            CAPABILITY_TRUSTED_BOOT: bool(
+                capabilities.get(CAPABILITY_TRUSTED_BOOT, defaults.get(CAPABILITY_TRUSTED_BOOT))
+            ),
+            CAPABILITY_IMA_RUNTIME: bool(
+                capabilities.get(CAPABILITY_IMA_RUNTIME, defaults.get(CAPABILITY_IMA_RUNTIME))
+            ),
+            CAPABILITY_TPCM_DYNAMIC_MEASUREMENT: False,
+            CAPABILITY_EVM: False,
+        }
+    if trusted_root_type == TRUST_ROOT_TPCM or adapter_type == ADAPTER_OPENTCSM:
+        return {
+            CAPABILITY_TRUSTED_BOOT: bool(
+                capabilities.get(CAPABILITY_TRUSTED_BOOT, defaults.get(CAPABILITY_TRUSTED_BOOT))
+            ),
+            CAPABILITY_IMA_RUNTIME: False,
+            CAPABILITY_TPCM_DYNAMIC_MEASUREMENT: bool(
+                capabilities.get(
+                    CAPABILITY_TPCM_DYNAMIC_MEASUREMENT,
+                    defaults.get(CAPABILITY_TPCM_DYNAMIC_MEASUREMENT),
+                )
+            ),
             CAPABILITY_EVM: False,
         }
     return {}

@@ -942,7 +942,7 @@ h3 {
 }
 
 .node-compute-table .row {
-  grid-template-columns: minmax(110px, 1fr) 120px 120px 118px 118px minmax(150px, 1.2fr) 95px 155px 190px;
+  grid-template-columns: minmax(110px, 1fr) 120px 120px 118px 118px minmax(150px, 1.2fr) 95px 155px 250px;
 }
 
 .control-table .row {
@@ -1373,6 +1373,14 @@ h3 {
   align-items: center;
   gap: 9px;
   color: var(--text);
+}
+
+.trust-profile-form select {
+  min-height: 37px;
+}
+
+.trust-capability-selector {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .form-actions {
