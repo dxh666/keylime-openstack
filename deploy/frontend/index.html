@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Keylime OpenStack 可信管理</title>
-  <link rel="stylesheet" href="styles.css?v=20260723-refresh-ux">
+  <link rel="stylesheet" href="styles.css?v=20260723-page-refresh">
 </head>
 <body>
   <div id="app" v-cloak :class="{ 'login-app': authChecked && !authenticated, 'booting-app': !authChecked }">
@@ -102,27 +102,7 @@
         </div>
         <div class="topbar-actions">
           <span class="system-clock">{{ currentTimeText }}</span>
-          <div class="topbar-toolbox" aria-label="页面工具">
-            <button
-              type="button"
-              class="toolbar-button refresh-button"
-              :disabled="busy"
-              title="刷新当前页面数据"
-              @click="refreshCurrentView(true)"
-            >
-              <span class="toolbar-icon" aria-hidden="true">&#8635;</span>
-              <span>{{ busy ? '刷新中' : '刷新本页' }}</span>
-            </button>
-            <button
-              type="button"
-              class="toolbar-button global-refresh-button"
-              :disabled="busy"
-              title="刷新全局状态，包含节点、策略、审计和任务数据"
-              @click="refreshAll(true)"
-            >
-              <span class="toolbar-icon" aria-hidden="true">&#8635;</span>
-              <span>全局刷新</span>
-            </button>
+          <div class="topbar-toolbox" aria-label="用户工具">
             <div class="user-menu-wrap">
               <button
                 type="button"
@@ -154,6 +134,9 @@
       <section v-if="notice.text" :class="['notice', notice.kind]">{{ notice.text }}</section>
 
       <section v-if="view === 'dashboard'" class="screen">
+        <div class="screen-toolbar">
+          <button type="button" class="page-refresh-button" :disabled="busy" @click="refreshCurrentView(true)">刷新</button>
+        </div>
         <section class="dashboard-grid">
           <article class="panel control-info">
             <div class="panel-head">
@@ -247,6 +230,7 @@
         <section class="panel">
           <div class="panel-head">
             <h2>控制节点</h2>
+            <button type="button" class="page-refresh-button" :disabled="busy" @click="refreshCurrentView(true)">刷新</button>
           </div>
           <div class="table compact-table control-table">
             <div class="row header">
@@ -271,6 +255,7 @@
         <section class="panel">
           <div class="panel-head">
             <h2>计算节点</h2>
+            <button type="button" class="page-refresh-button" :disabled="busy" @click="refreshCurrentView(true)">刷新</button>
             <button type="button" :disabled="busy" @click="syncTrustRegistrations">同步纳管</button>
           </div>
           <div class="table compact-table node-compute-table">
@@ -307,6 +292,7 @@
         <section class="panel">
           <div class="panel-head">
             <h2>{{ currentPolicyType.label }}</h2>
+            <button type="button" class="page-refresh-button" :disabled="busy" @click="refreshCurrentView(true)">刷新</button>
             <button
               class="primary"
               type="button"
@@ -339,6 +325,9 @@
       </section>
 
       <section v-if="view === 'environment_dynamic_policy'" class="screen">
+        <div class="screen-toolbar">
+          <button type="button" class="page-refresh-button" :disabled="busy" @click="refreshCurrentView(true)">刷新</button>
+        </div>
         <section class="dynamic-policy-layout">
           <section class="panel dynamic-node-panel">
             <div class="panel-head">
@@ -463,6 +452,7 @@
         <section class="panel">
           <div class="panel-head">
             <h2>全局策略控制</h2>
+            <button type="button" class="page-refresh-button" :disabled="busy" @click="refreshCurrentView(true)">刷新</button>
           </div>
           <div class="switch-grid">
             <article v-for="item in trustCapabilityItems" :key="item.key" class="switch-item">
@@ -490,6 +480,7 @@
         <section class="panel">
           <div class="panel-head">
             <h2>告警中心</h2>
+            <button type="button" class="page-refresh-button" :disabled="busy" @click="refreshCurrentView(true)">刷新</button>
           </div>
           <div class="table compact-table alert-table">
             <div class="row header">
@@ -510,6 +501,7 @@
         <section class="panel">
           <div class="panel-head">
             <h2>任务中心</h2>
+            <button type="button" class="page-refresh-button" :disabled="busy" @click="refreshCurrentView(true)">刷新</button>
           </div>
           <div class="table compact-table task-table">
             <div class="row header">
@@ -531,6 +523,7 @@
         <section class="panel">
           <div class="panel-head">
             <h2>审计日志</h2>
+            <button type="button" class="page-refresh-button" :disabled="busy" @click="refreshCurrentView(true)">刷新</button>
           </div>
           <div class="table compact-table audit-table">
             <div class="row header">
@@ -724,6 +717,6 @@
   </div>
 
   <script src="vendor/vue.global.prod.js"></script>
-  <script type="module" src="app.js?v=20260723-refresh-ux"></script>
+  <script type="module" src="app.js?v=20260723-page-refresh"></script>
 </body>
 </html>

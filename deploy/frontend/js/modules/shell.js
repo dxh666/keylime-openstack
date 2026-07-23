@@ -125,43 +125,6 @@ export const shellMethods = {
       window.history.pushState(null, "", url);
     }
   },
-  installRefreshControls() {
-    this.$nextTick(() => {
-      const refreshButton = document.querySelector(".topbar-toolbox .refresh-button");
-      const toolbox = document.querySelector(".topbar-toolbox");
-      if (!refreshButton || !toolbox) return;
-
-      refreshButton.title = "刷新当前页面数据";
-      const refreshLabel = refreshButton.querySelector("span:last-child");
-      if (refreshLabel && !this.busy) refreshLabel.textContent = "刷新本页";
-      if (!refreshButton.dataset.pageRefreshBound) {
-        refreshButton.addEventListener("click", (event) => {
-          event.preventDefault();
-          event.stopImmediatePropagation();
-          if (!this.busy) this.refreshCurrentView(true);
-        }, true);
-        refreshButton.dataset.pageRefreshBound = "true";
-      }
-
-      let globalButton = toolbox.querySelector(".global-refresh-button");
-      if (!globalButton) {
-        globalButton = document.createElement("button");
-        globalButton.type = "button";
-        globalButton.className = "toolbar-button global-refresh-button";
-        globalButton.title = "刷新全局状态，包含节点、策略、审计和任务数据";
-        globalButton.innerHTML = `
-          <span class="toolbar-icon" aria-hidden="true">&#8635;</span>
-          <span>全局刷新</span>
-        `;
-        globalButton.addEventListener("click", () => {
-          if (!this.busy) this.refreshAll(true);
-        });
-        refreshButton.after(globalButton);
-      }
-      refreshButton.disabled = this.busy;
-      globalButton.disabled = this.busy;
-    });
-  },
   headers(token = "") {
     return jsonHeaders(token);
   },
@@ -191,9 +154,7 @@ export const shellMethods = {
       this.currentUser = null;
       this.resetApplicationState();
     } finally {
-      document.body.classList.remove("auth-booting");
       this.loading = false;
-      this.installRefreshControls();
     }
   },
   async loginSession() {
@@ -213,7 +174,6 @@ export const shellMethods = {
     } finally {
       this.busy = false;
       this.authChecked = true;
-      this.installRefreshControls();
     }
   },
   handleUnauthorized() {
@@ -325,7 +285,6 @@ export const shellMethods = {
   },
   async refreshDataSet(requests, showBusy = true) {
     if (showBusy) this.busy = true;
-    this.installRefreshControls();
     this.loading = true;
     try {
       const entries = await Promise.all(
@@ -368,7 +327,6 @@ export const shellMethods = {
     } finally {
       this.loading = false;
       if (showBusy) this.busy = false;
-      this.installRefreshControls();
     }
   },
   showNotice(kind, text) {
