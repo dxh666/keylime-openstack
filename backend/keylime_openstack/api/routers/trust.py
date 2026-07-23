@@ -114,39 +114,44 @@ def verify_trust_agent(
     ).first()
     if not node:
         raise HTTPException(status_code=404, detail=f"unknown compute node {hostname}")
+    node_hostname = node.hostname
 
     try:
         result = verify_trusted_node(session, settings, node)
     except Exception as exc:
+        error = str(exc)
         session.rollback()
-        record_audit_event(
-            session,
-            event_type="trusted_node_verify",
-            target=node.hostname,
-            severity="error",
-            message="trusted node verification failed",
-            event_details={
-                "log_type": "trust_verification",
-                "subject_name": "可信代理",
-                "object_name": node.hostname,
-                "operation": "可信验证",
-                "result": "失败",
-                "error": str(exc),
-            },
-        )
-        session.commit()
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        try:
+            record_audit_event(
+                session,
+                event_type="trusted_node_verify",
+                target=node_hostname,
+                severity="error",
+                message="trusted node verification failed",
+                event_details={
+                    "log_type": "trust_verification",
+                    "subject_name": "可信代理",
+                    "object_name": node_hostname,
+                    "operation": "可信验证",
+                    "result": "失败",
+                    "error": error,
+                },
+            )
+            session.commit()
+        except Exception:
+            session.rollback()
+        raise HTTPException(status_code=502, detail=error) from exc
 
     record_audit_event(
         session,
         event_type="trusted_node_verify",
-        target=node.hostname,
+        target=node_hostname,
         severity="info" if result.get("trusted") is True else "warning",
         message="trusted node verification completed",
         event_details={
             "log_type": "trust_verification",
             "subject_name": "可信代理",
-            "object_name": node.hostname,
+            "object_name": node_hostname,
             "operation": "可信验证",
             "result": "成功" if result.get("trusted") is True else "异常",
             "trusted": result.get("trusted"),

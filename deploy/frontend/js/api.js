@@ -12,9 +12,13 @@ export async function requestJson(path, options = {}, token = "") {
     credentials: "same-origin",
     headers: { ...jsonHeaders(token), ...(options.headers || {}) }
   });
-  const data = await response.json();
+  const contentType = response.headers.get("content-type") || "";
+  const data = contentType.includes("application/json")
+    ? await response.json()
+    : { detail: await response.text() };
   if (!response.ok) {
-    const error = new Error(data.detail || data.error || `HTTP ${response.status}`);
+    const fallback = response.status >= 500 ? "服务器内部错误，请查看 API 日志。" : `HTTP ${response.status}`;
+    const error = new Error(data.detail || data.error || fallback);
     error.status = response.status;
     error.data = data;
     throw error;

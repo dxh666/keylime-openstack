@@ -1,4 +1,4 @@
-import { requestJson as apiRequestJson, jsonHeaders } from "../api.js";
+import { requestJson as apiRequestJson, jsonHeaders } from "../api.js?v=20260723-json-errors";
 import { VIEW_TITLES } from "../policies.js";
 
 const DEFAULT_VIEW = "dashboard";

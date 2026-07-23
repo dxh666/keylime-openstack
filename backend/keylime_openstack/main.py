@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import logging
+
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from starlette.responses import Response
 from fastapi.staticfiles import StaticFiles
 
 from keylime_openstack.api.router import router
 from keylime_openstack.config import get_settings
+
+LOG = logging.getLogger(__name__)
 
 
 class NoCacheStaticFiles(StaticFiles):
@@ -25,6 +30,15 @@ def create_app() -> FastAPI:
         version="0.2.0",
         description="Production-oriented Keylime + OpenStack trusted compute API.",
     )
+
+    @app.exception_handler(Exception)
+    async def unhandled_exception_handler(_: Request, exc: Exception) -> JSONResponse:
+        LOG.exception("unhandled API exception")
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "服务器内部错误，请查看 API 日志。", "error": str(exc)},
+        )
+
     app.include_router(router)
     if settings.frontend_path.exists():
         app.mount("/", NoCacheStaticFiles(directory=str(settings.frontend_path), html=True), name="frontend")

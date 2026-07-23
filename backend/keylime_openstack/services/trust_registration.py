@@ -201,6 +201,7 @@ def upsert_trusted_node_profile(
         registration.get("registration_status")
         or (REGISTRATION_REGISTERED if trust_managed else REGISTRATION_UNMANAGED)
     )
+    _sync_agent_cache_from_profile(node, settings, profile)
     profile.updated_at = datetime.now(timezone.utc)
     session.flush()
     return profile
@@ -236,6 +237,31 @@ def _sync_node_cache(profile: TrustedNodeProfile, node: ComputeNode) -> TrustedN
     if changed:
         profile.updated_at = datetime.now(timezone.utc)
     return profile
+
+
+def _sync_agent_cache_from_profile(
+    node: ComputeNode,
+    settings: Settings,
+    profile: TrustedNodeProfile,
+) -> None:
+    """Keep legacy adapter fields aligned while verification still reads them."""
+
+    if not profile.trust_managed or profile.adapter_type != ADAPTER_KEYLIME:
+        return
+
+    endpoint = dict(profile.agent_endpoint or {})
+    identity = dict(profile.agent_identity or {})
+    agent_uuid = str(identity.get("keylime_agent_uuid") or "").strip()
+    agent_ip = str(endpoint.get("host") or "").strip()
+    if agent_uuid:
+        node.keylime_agent_uuid = agent_uuid
+    if agent_ip:
+        node.keylime_agent_ip = agent_ip
+    try:
+        agent_port = int(endpoint.get("port") or node.keylime_agent_port or settings.keylime_agent_port)
+    except (TypeError, ValueError):
+        agent_port = settings.keylime_agent_port
+    node.keylime_agent_port = agent_port
 
 
 def _adapter_type(agent_type: str, trust_managed: bool) -> str:

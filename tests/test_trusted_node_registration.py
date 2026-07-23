@@ -222,6 +222,37 @@ def test_registration_upsert_reinfers_adapter_when_root_changes() -> None:
     assert profile.capabilities[CAPABILITY_TPCM_DYNAMIC_MEASUREMENT] is True
 
 
+def test_registration_upsert_syncs_manual_tpm_identity_to_legacy_cache() -> None:
+    with _memory_session() as memory_session:
+        node = ComputeNode(
+            hostname="compute-e3",
+            hypervisor_name="nova-e3",
+            management_ip="10.0.0.153",
+            role="compute",
+        )
+        memory_session.add(node)
+        memory_session.flush()
+
+        upsert_trusted_node_profile(
+            memory_session,
+            node,
+            Settings(),
+            {
+                "trust_managed": True,
+                "trusted_root_type": "tpm",
+                "adapter_type": ADAPTER_KEYLIME,
+                "agent_endpoint": {"host": "10.0.0.253", "port": 9003},
+                "agent_identity": {"keylime_agent_uuid": "manual-agent"},
+                "registration_source": "manual",
+            },
+        )
+
+    assert node.keylime_agent_uuid == "manual-agent"
+    assert node.keylime_agent_ip == "10.0.0.253"
+    assert node.keylime_agent_port == 9003
+    assert node.trust_profile.agent_identity["registration_source"] == "manual"
+
+
 def test_keylime_agent_inventory_payload_normalizes_common_shapes() -> None:
     agents = normalize_agent_inventory_payload(
         {
