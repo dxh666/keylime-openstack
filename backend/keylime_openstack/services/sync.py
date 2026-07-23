@@ -148,7 +148,7 @@ class TrustSyncService:
         return self.session.scalars(
             select(OpenStackState)
             .where(OpenStackState.node_id == node.id)
-            .order_by(OpenStackState.updated_at.desc())
+            .order_by(OpenStackState.updated_at.desc(), OpenStackState.id.desc())
             .limit(1)
         ).first()
 

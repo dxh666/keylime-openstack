@@ -41,42 +41,111 @@ class OpenStackStateCollector:
         try:
             services = self.openstack.list_compute_services()
         except Exception as exc:  # pragma: no cover - deployment-specific API boundary
+            error = str(exc)
             record_audit_event(
                 self.session,
                 event_type="openstack_state_refresh",
                 target="nova-compute",
                 severity="error",
-                message=str(exc),
+                message=error,
                 event_details={"adapter": "openstacksdk"},
             )
+            for node in nodes:
+                self.session.add(_openstack_collection_error_state(node, error))
             return
 
-        services_by_host = {
-            str(item.get("host") or item.get("Host") or ""): item
-            for item in services
-            if item.get("host") or item.get("Host")
-        }
+        services_by_host: dict[str, dict[str, Any]] = {}
+        for service in services:
+            for key in _host_keys(_service_field(service, "host")):
+                services_by_host.setdefault(key, service)
         for node in nodes:
-            service = services_by_host.get(node.hypervisor_name) or services_by_host.get(
-                node.hostname
-            )
+            service = _service_for_node(services_by_host, node)
             if not service:
+                self.session.add(_missing_openstack_service_state(node, services_by_host))
                 continue
-            self.session.add(
-                OpenStackState(
-                    node_id=node.id,
-                    service_binary=str(
-                        service.get("binary") or service.get("Binary") or "nova-compute"
-                    ),
-                    service_status=str(
-                        service.get("status") or service.get("Status") or "unknown"
-                    ).lower(),
-                    service_state=str(
-                        service.get("state") or service.get("State") or "unknown"
-                    ).lower(),
-                    raw=_json_safe(service),
-                )
-            )
+            self.session.add(_openstack_service_state(node, service))
+
+
+def _service_for_node(
+    services_by_host: dict[str, dict[str, Any]],
+    node: ComputeNode,
+) -> dict[str, Any] | None:
+    for key in _host_keys(node.hypervisor_name, node.hostname):
+        service = services_by_host.get(key)
+        if service:
+            return service
+    return None
+
+
+def _openstack_service_state(node: ComputeNode, service: dict[str, Any]) -> OpenStackState:
+    return OpenStackState(
+        node_id=node.id,
+        service_binary=str(_service_field(service, "binary") or "nova-compute"),
+        service_status=str(_service_field(service, "status") or "unknown").lower(),
+        service_state=str(_service_field(service, "state") or "unknown").lower(),
+        raw=_json_safe(service),
+    )
+
+
+def _missing_openstack_service_state(
+    node: ComputeNode,
+    services_by_host: dict[str, dict[str, Any]],
+) -> OpenStackState:
+    known_hosts = sorted(
+        {
+            str(_service_field(service, "host") or "")
+            for service in services_by_host.values()
+            if _service_field(service, "host")
+        }
+    )
+    return OpenStackState(
+        node_id=node.id,
+        service_binary="nova-compute",
+        service_status="missing",
+        service_state="down",
+        raw={
+            "source": "openstack compute service list",
+            "reason": "nova-compute service not found in current refresh",
+            "hostname": node.hostname,
+            "hypervisor_name": node.hypervisor_name,
+            "known_service_hosts": known_hosts,
+        },
+    )
+
+
+def _openstack_collection_error_state(node: ComputeNode, error: str) -> OpenStackState:
+    return OpenStackState(
+        node_id=node.id,
+        service_binary="nova-compute",
+        service_status="unknown",
+        service_state="unknown",
+        raw={
+            "source": "openstack compute service list",
+            "reason": "openstack service collection failed",
+            "hostname": node.hostname,
+            "hypervisor_name": node.hypervisor_name,
+            "error": error,
+        },
+    )
+
+
+def _service_field(service: dict[str, Any], name: str) -> Any:
+    for key, value in service.items():
+        if str(key).lower() == name:
+            return value
+    return None
+
+
+def _host_keys(*values: object) -> set[str]:
+    keys: set[str] = set()
+    for value in values:
+        text = str(value or "").strip().lower()
+        if not text:
+            continue
+        keys.add(text)
+        if "." in text:
+            keys.add(text.split(".", 1)[0])
+    return keys
 
 
 class TrustEvidenceCollector:

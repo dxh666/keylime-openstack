@@ -14,7 +14,7 @@ def _latest_openstack_states(session: Session, node_ids: list[int]) -> dict[int,
     rows = session.scalars(
         select(OpenStackState)
         .where(OpenStackState.node_id.in_(node_ids))
-        .order_by(OpenStackState.updated_at.desc())
+        .order_by(OpenStackState.updated_at.desc(), OpenStackState.id.desc())
     ).all()
     latest: dict[int, OpenStackState] = {}
     for row in rows:
