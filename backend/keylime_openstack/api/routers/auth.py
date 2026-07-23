@@ -36,9 +36,15 @@ def login(
             event_type="auth_login",
             target=username,
             severity="warning",
-            message="login failed",
-            actor=username or "anonymous",
-            event_details={"result": "failed"},
+        message="login failed",
+        actor=username or "anonymous",
+        event_details={
+            "log_type": "system_operation",
+            "subject_name": username or "anonymous",
+            "object_name": "管理系统",
+            "operation": "登录",
+            "result": "失败",
+        },
         )
         session.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid credentials")
@@ -51,7 +57,14 @@ def login(
         target=username,
         severity="info",
         message="login succeeded",
-        event_details={"result": "success", "session_id": auth_session.id},
+        event_details={
+            "log_type": "system_operation",
+            "subject_name": username,
+            "object_name": "管理系统",
+            "operation": "登录",
+            "result": "成功",
+            "session_id": auth_session.id,
+        },
     )
     session.commit()
     response.set_cookie(
@@ -102,7 +115,13 @@ def logout(
         severity="info",
         message="logout succeeded",
         actor=username,
-        event_details={"result": "success"},
+        event_details={
+            "log_type": "system_operation",
+            "subject_name": username,
+            "object_name": "管理系统",
+            "operation": "注销",
+            "result": "成功",
+        },
     )
     session.commit()
     response.delete_cookie(settings.auth_cookie_name, path="/")

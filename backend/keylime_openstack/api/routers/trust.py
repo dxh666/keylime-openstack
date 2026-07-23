@@ -54,6 +54,7 @@ def trust_registrations(
         "profiles_total": result["profiles_total"],
         "profiles": result["profiles"],
         "static_keylime_registrations": result["static_keylime_registrations"],
+        "tpcm_registrations": result["tpcm_registrations"],
     }
 
 
@@ -80,8 +81,14 @@ def sync_trust_registrations(
         severity="info" if result.get("ok") else "warning",
         message="trusted node registrations synchronized",
         event_details={
+            "log_type": "node_management",
+            "subject_name": "可信代理",
+            "object_name": "计算节点",
+            "operation": "同步纳管",
+            "result": "成功" if result.get("ok") else "异常",
             "nodes_seen": result.get("nodes_seen"),
             "static_keylime_registrations": result.get("static_keylime_registrations"),
+            "tpcm_registrations": result.get("tpcm_registrations"),
             "keylime_agents_discovered": result.get("keylime_agents_discovered"),
             "keylime_agents_matched": result.get("keylime_agents_matched"),
             "registration_conflicts": result.get("registration_conflicts"),
@@ -109,9 +116,25 @@ def verify_trust_agent(
 
     try:
         result = verify_trusted_node(session, settings, node)
-    except Exception:
+    except Exception as exc:
         session.rollback()
-        raise
+        record_audit_event(
+            session,
+            event_type="trusted_node_verify",
+            target=node.hostname,
+            severity="error",
+            message="trusted node verification failed",
+            event_details={
+                "log_type": "trust_verification",
+                "subject_name": "可信代理",
+                "object_name": node.hostname,
+                "operation": "可信验证",
+                "result": "失败",
+                "error": str(exc),
+            },
+        )
+        session.commit()
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     record_audit_event(
         session,
@@ -120,6 +143,11 @@ def verify_trust_agent(
         severity="info" if result.get("trusted") is True else "warning",
         message="trusted node verification completed",
         event_details={
+            "log_type": "trust_verification",
+            "subject_name": "可信代理",
+            "object_name": node.hostname,
+            "operation": "可信验证",
+            "result": "成功" if result.get("trusted") is True else "异常",
             "trusted": result.get("trusted"),
             "status": result.get("status"),
             "trusted_node_profile": result.get("trusted_node_profile"),
@@ -154,6 +182,11 @@ def register_trust_agent(
         severity="info",
         message="trusted node registration updated",
         event_details={
+            "log_type": "node_management",
+            "subject_name": "可信代理",
+            "object_name": node.hostname,
+            "operation": "更新纳管参数",
+            "result": "成功",
             "trusted_node_profile": profile_payload(profile, node),
         },
     )

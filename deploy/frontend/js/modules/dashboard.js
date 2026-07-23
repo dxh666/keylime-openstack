@@ -149,10 +149,12 @@ export const dashboardComputed = {
         {};
       const profile = node.trusted_node_profile || {};
       const capabilities = profile.capabilities || node.capabilities || {};
+      const evidenceSummary = profile.last_evidence_summary || node.last_evidence_summary || {};
+      const evidence = evidenceSummary.evidence || keylimeNode.evidence || {};
       const trustAgentType = node.trust_agent_type || keylimeNode.trust_agent_type || "unmanaged";
       const trustManaged = profile.trust_managed ?? node.trust_managed ?? keylimeNode.trust_managed ?? trustAgentType !== "unmanaged";
       const trustedRootType = profile.trusted_root_type || node.trusted_root_type || keylimeNode.trusted_root_type || "unknown";
-      const trusted = keylimeNode.trusted ?? profile.last_evidence_summary?.trusted ?? null;
+      const trusted = keylimeNode.trusted ?? evidenceSummary.trusted ?? null;
       const canCollectTpcmDynamic = (
         trustManaged === true &&
         trustedRootType === "tpcm" &&
@@ -169,6 +171,8 @@ export const dashboardComputed = {
       const proofTime = this.proofTime(keylimeNode);
       const profileTime = this.formatTime(profile.last_verified_at || node.last_verified_at);
       const attestationTime = trustManaged ? (proofTime !== "-" ? proofTime : profileTime) : "-";
+      const registrationStatus = profile.registration_status || node.registration_status || keylimeNode.status || "unmanaged";
+      const trustedRootName = node.trusted_root || keylimeNode.trusted_root || "";
       return {
         id: node.id,
         host: node.hostname,
@@ -179,8 +183,15 @@ export const dashboardComputed = {
         trustManaged,
         trustedRootType,
         canCollectTpcmDynamic,
-        trustAgentName: node.trust_agent_name || keylimeNode.trust_agent_name || "未纳管",
-        trustedRoot: node.trusted_root || keylimeNode.trusted_root || "unknown",
+        evidenceSummary,
+        evidence,
+        capabilities,
+        registrationStatus,
+        registrationText: this.registrationStatusText(registrationStatus),
+        registrationClass: this.registrationStatusClass(registrationStatus),
+        capabilityText: this.trustCapabilityText(capabilities),
+        trustAgentName: trustManaged ? (node.trust_agent_name || keylimeNode.trust_agent_name || "可信代理") : "未纳管",
+        trustedRoot: trustedRootName && trustedRootName !== "unknown" ? trustedRootName : this.trustedRootTypeText(trustedRootType),
         managementIp: this.primaryController.management_ip || "-",
         ownIp: node.management_ip || node.keylime_agent_ip || keylimeNode.agent_ip || "-",
         openstackText: this.openStackComputeText(node.openstack_state, node),
@@ -191,7 +202,7 @@ export const dashboardComputed = {
         trustText,
         trustClass,
         attestationTime,
-        reason: keylimeNode.reason || keylimeNode.last_event_id || "-"
+        reason: keylimeNode.reason || keylimeNode.last_event_id || evidenceSummary.reason || "-"
       };
     });
   },

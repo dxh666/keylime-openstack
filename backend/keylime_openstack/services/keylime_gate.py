@@ -424,7 +424,7 @@ def _sync_external_profile(
             "status": evidence.get("runtime") or "unknown",
             "object_count": len(report.get("dmeasure_policy") or []),
             "dmeasure_times": report.get("dmeasure_times"),
-            "policy_sha256": report.get("policy_report_sha256") or "",
+            "policy_sha256": report.get("dmeasure_policy_sha256") or "",
         },
         "reason": "TRUSTED" if trusted else reason,
         "source": report.get("provider") or "external",
@@ -542,10 +542,14 @@ def _external_report_summary(record) -> dict[str, object]:
     errors = payload.get("errors") if isinstance(payload.get("errors"), list) else []
     boot_records = raw.get("boot_records") if isinstance(raw.get("boot_records"), list) else []
     dmeasure_policy = raw.get("dmeasure_policy") if isinstance(raw.get("dmeasure_policy"), list) else []
+    reference_count = raw.get("boot_measure_ref_number")
     boot_measurement_summary = {
+        "type": "tpcm_boot_measurement",
         "enabled": raw.get("boot_measure_on"),
         "record_count": len(boot_records),
-        "reference_count": raw.get("boot_measure_ref_number"),
+        "reference_count": reference_count,
+        "records_preview": boot_records[:5],
+        "baseline_ready": bool(reference_count),
         "records_sha256": raw.get("boot_measure_records_sha256") or "",
         "trust_report_sha256": raw.get("trust_report_sha256") or "",
     }
@@ -573,6 +577,7 @@ def _external_report_summary(record) -> dict[str, object]:
         "dynamic_measure_ref_number": raw.get("dynamic_measure_ref_number"),
         "dmeasure_policy": dmeasure_policy,
         "trust_report_sha256": raw.get("trust_report_sha256") or "",
+        "dmeasure_policy_sha256": raw.get("dmeasure_policy_sha256") or "",
         "policy_report_sha256": raw.get("policy_report_sha256") or "",
         "global_control_policy_sha256": raw.get("global_control_policy_sha256") or "",
         "boot_measure_records_sha256": raw.get("boot_measure_records_sha256") or "",

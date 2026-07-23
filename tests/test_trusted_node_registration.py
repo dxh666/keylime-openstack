@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
@@ -11,18 +13,21 @@ from keylime_openstack.constants import (
     CAPABILITY_IMA_RUNTIME,
     CAPABILITY_TPCM_DYNAMIC_MEASUREMENT,
     CAPABILITY_TRUSTED_BOOT,
+    PROVIDER_OPENTCSM,
     REGISTRATION_CONFLICT,
+    REGISTRATION_VERIFIED,
     TRUST_AGENT_OPENTCSM_TPCM,
     TRUST_AGENT_UNMANAGED,
     TRUST_ROOT_TPCM,
     TRUST_ROOT_TPM,
 )
-from keylime_openstack.models import ComputeNode, TrustedNodeProfile
+from keylime_openstack.models import ComputeNode, EvidenceRecord, TrustedNodeProfile
 from keylime_openstack.services.auth import authenticate_admin
 from keylime_openstack.services.keylime import (
     normalize_agent_inventory_payload,
     parse_tenant_reglist_stdout,
 )
+from keylime_openstack.services.opentcsm_collect import sync_tpcm_profile
 from keylime_openstack.services.trust_agents import (
     node_trust_agent_type,
     node_trust_managed,
@@ -297,6 +302,148 @@ def test_registration_sync_does_not_turn_tpcm_unmanaged_node_into_keylime(monkey
     assert node.trust_profile.trust_managed is False
     assert node.trust_profile.trusted_root_type == TRUST_ROOT_TPCM
     assert node.trust_profile.registration_status == REGISTRATION_CONFLICT
+
+
+def test_registration_sync_promotes_opentcsm_inventory_to_managed_tpcm() -> None:
+    with _memory_session() as memory_session:
+        node = ComputeNode(
+            hostname="compute-i",
+            hypervisor_name="nova-i",
+            management_ip="10.0.0.19",
+            role="compute",
+            facts={
+                "trusted_root_type": "tpcm",
+                "trusted_root": "Hygon TPCM",
+                "trust_agent_name": "OpenTCSM",
+                "tpcm_id": "tpcm-i",
+            },
+        )
+        memory_session.add(node)
+        memory_session.flush()
+
+        result = sync_trusted_node_registrations(
+            memory_session,
+            Settings(keylime_auto_registration_enabled=False),
+        )
+
+    assert result["tpcm_registrations"][0]["node"] == "compute-i"
+    assert node.trust_profile.trust_managed is True
+    assert node.trust_profile.trusted_root_type == TRUST_ROOT_TPCM
+    assert node.trust_profile.adapter_type == ADAPTER_OPENTCSM
+    assert node.trust_profile.agent_identity["tpcm_id"] == "tpcm-i"
+    assert node.trust_profile.capabilities[CAPABILITY_TPCM_DYNAMIC_MEASUREMENT] is True
+
+
+def test_registration_sync_keeps_tpcm_root_without_agent_unmanaged() -> None:
+    with _memory_session() as memory_session:
+        node = ComputeNode(
+            hostname="compute-j",
+            hypervisor_name="nova-j",
+            management_ip="10.0.0.20",
+            role="compute",
+            facts={"trusted_root_type": "tpcm", "trusted_root": "Hygon TPCM"},
+        )
+        memory_session.add(node)
+        memory_session.flush()
+
+        result = sync_trusted_node_registrations(
+            memory_session,
+            Settings(keylime_auto_registration_enabled=False),
+        )
+
+    assert result["tpcm_registrations"] == []
+    assert node.trust_profile.trust_managed is False
+    assert node.trust_profile.trusted_root_type == TRUST_ROOT_TPCM
+    assert node.trust_profile.capabilities == {}
+
+
+def test_registration_sync_uses_opentcsm_evidence_as_tpcm_registration() -> None:
+    with _memory_session() as memory_session:
+        node = ComputeNode(
+            hostname="compute-k",
+            hypervisor_name="nova-k",
+            management_ip="10.0.0.21",
+            role="compute",
+            facts={"trusted_root_type": "tpcm", "trusted_root": "Hygon TPCM"},
+        )
+        memory_session.add(node)
+        memory_session.flush()
+        memory_session.add(
+            EvidenceRecord(
+                node_id=node.id,
+                provider=PROVIDER_OPENTCSM,
+                evidence_type="runtime",
+                collected_at=datetime.now(timezone.utc),
+                status="pass",
+                summary="TPCM dynamic measurement pass",
+                payload={
+                    "trusted": True,
+                    "raw": {
+                        "tpcm_id": "tpcm-k",
+                        "boot_measure_on": True,
+                        "boot_status": "pass",
+                        "boot_records": ["BIOS/U-BOOT", "shim.efi"],
+                        "boot_measure_ref_number": 2,
+                        "dynamic_measure_on": True,
+                        "dynamic_measurement_status": "pass",
+                        "dmeasure_policy": [{"object": "kernel_section"}],
+                    },
+                },
+            )
+        )
+        memory_session.flush()
+
+        result = sync_trusted_node_registrations(
+            memory_session,
+            Settings(keylime_auto_registration_enabled=False),
+        )
+
+    assert result["tpcm_registrations"][0]["node"] == "compute-k"
+    assert node.trust_profile.trust_managed is True
+    assert node.trust_profile.registration_status == REGISTRATION_VERIFIED
+    assert node.trust_profile.agent_identity["tpcm_id"] == "tpcm-k"
+    assert node.trust_profile.last_evidence_summary["boot_measurement_summary"]["records_preview"] == [
+        "BIOS/U-BOOT",
+        "shim.efi",
+    ]
+
+
+def test_opentcsm_evidence_ingestion_promotes_unmanaged_tpcm_profile() -> None:
+    with _memory_session() as memory_session:
+        node = ComputeNode(
+            hostname="compute-l",
+            hypervisor_name="nova-l",
+            management_ip="10.0.0.22",
+            role="compute",
+            facts={"trusted_root_type": "tpcm", "trusted_root": "Hygon TPCM"},
+        )
+        memory_session.add(node)
+        memory_session.flush()
+
+        sync_tpcm_profile(
+            memory_session,
+            Settings(),
+            node,
+            {
+                "trusted": True,
+                "boot_status": "pass",
+                "dynamic_measurement_status": "pass",
+                "raw": {
+                    "tpcm_id": "tpcm-l",
+                    "boot_measure_on": True,
+                    "dynamic_measure_on": True,
+                    "boot_records": ["BIOS/U-BOOT"],
+                    "boot_measure_ref_number": 1,
+                    "dmeasure_policy": [{"object": "kernel_section"}],
+                    "dmeasure_times": 7,
+                },
+            },
+        )
+
+    assert node.trust_profile.trust_managed is True
+    assert node.trust_profile.adapter_type == ADAPTER_OPENTCSM
+    assert node.trust_profile.agent_identity["registration_source"] == "opentcsm-evidence"
+    assert node.trust_profile.last_evidence_summary["trusted"] is True
 
 
 def _memory_session() -> Session:

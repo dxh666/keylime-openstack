@@ -141,6 +141,24 @@ def collect_opentcsm_evidence(
         result = OpenTcsmCollector(session, settings).collect(node)
     except Exception as exc:
         session.rollback()
+        record_audit_event(
+            session,
+            event_type="opentcsm_evidence_collect",
+            target=node.hostname,
+            severity="error",
+            message="OpenTCSM/TPCM evidence collection failed",
+            event_details={
+                "log_type": "dynamic_measurement",
+                "subject_name": "TPCM",
+                "object_name": node.hostname,
+                "operation": "状态刷新",
+                "result": "失败",
+                "provider": "opentcsm",
+                "source": "ansible",
+                "error": str(exc),
+            },
+        )
+        session.commit()
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     session.commit()
     return result

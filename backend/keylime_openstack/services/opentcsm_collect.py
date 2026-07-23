@@ -15,10 +15,16 @@ from sqlalchemy.orm import Session
 from keylime_openstack.config import Settings
 from keylime_openstack.constants import (
     ADAPTER_OPENTCSM,
+    CAPABILITY_EVM,
+    CAPABILITY_IMA_RUNTIME,
+    CAPABILITY_TPCM_DYNAMIC_MEASUREMENT,
+    CAPABILITY_TRUSTED_BOOT,
+    REGISTRATION_CONFLICT,
+    REGISTRATION_REGISTERED,
     REGISTRATION_UNTRUSTED,
     REGISTRATION_VERIFIED,
-    REGISTRATION_UNMANAGED,
     TRUST_AGENT_OPENTCSM_TPCM,
+    TRUST_ROOT_TPCM,
 )
 from keylime_openstack.models import ComputeNode
 from keylime_openstack.services.ansible import AnsibleExecutor, AnsibleResult
@@ -26,7 +32,10 @@ from keylime_openstack.services.audit import record_audit_event
 from keylime_openstack.services.opentcsm import opentcsm_report_to_evidence
 from keylime_openstack.services.opentcsm_policy import parse_dmeasure_policy
 from keylime_openstack.services.trust_agents import node_trust_agent_type
-from keylime_openstack.services.trust_registration import ensure_trusted_node_profile
+from keylime_openstack.services.trust_registration import (
+    ensure_trusted_node_profile,
+    upsert_trusted_node_profile,
+)
 
 
 NONZERO_TRUST_REPORT_FIELDS = (
@@ -142,15 +151,48 @@ def sync_tpcm_profile(
 ) -> None:
     profile = ensure_trusted_node_profile(session, node, settings)
     raw = report.get("raw") if isinstance(report.get("raw"), dict) else {}
-    if not profile.trust_managed or profile.adapter_type != ADAPTER_OPENTCSM:
-        profile.registration_status = REGISTRATION_UNMANAGED
+    if profile.trust_managed and profile.adapter_type and profile.adapter_type != ADAPTER_OPENTCSM:
+        profile.registration_status = REGISTRATION_CONFLICT
+        profile.last_evidence_summary = {
+            **dict(profile.last_evidence_summary or {}),
+            "trusted": False,
+            "reason": "conflicting-tpcm-evidence",
+            "source": "opentcsm",
+        }
         return
     tpcm_id = str(raw.get("tpcm_id") or "")
+    if not profile.trust_managed or profile.adapter_type != ADAPTER_OPENTCSM:
+        profile = upsert_trusted_node_profile(
+            session,
+            node,
+            settings,
+            {
+                "hostname": node.hostname,
+                "openstack_compute_name": node.hypervisor_name or node.hostname,
+                "management_ip": node.management_ip,
+                "is_openstack_compute": node.role == "compute",
+                "trust_managed": True,
+                "trusted_root_type": TRUST_ROOT_TPCM,
+                "adapter_type": ADAPTER_OPENTCSM,
+                "agent_endpoint": {"transport": "ssh", "host": node.management_ip},
+                "agent_identity": {
+                    "tpcm_id": tpcm_id,
+                    "registration_source": "opentcsm-evidence",
+                },
+                "capabilities": {
+                    CAPABILITY_TRUSTED_BOOT: True,
+                    CAPABILITY_IMA_RUNTIME: False,
+                    CAPABILITY_TPCM_DYNAMIC_MEASUREMENT: True,
+                    CAPABILITY_EVM: False,
+                },
+            },
+        )
     identity = dict(profile.agent_identity or {})
     if tpcm_id:
         identity["tpcm_id"] = tpcm_id
     boot_records = raw.get("boot_records") if isinstance(raw.get("boot_records"), list) else []
     dmeasure_policy = raw.get("dmeasure_policy") if isinstance(raw.get("dmeasure_policy"), list) else []
+    boot_reference_count = raw.get("boot_measure_ref_number")
     profile.agent_identity = identity
     profile.last_verified_at = datetime.now(timezone.utc)
     profile.last_evidence_summary = {
@@ -164,7 +206,9 @@ def sync_tpcm_profile(
             "enabled": raw.get("boot_measure_on"),
             "status": report.get("boot_status") or "unknown",
             "record_count": len(boot_records),
-            "reference_count": raw.get("boot_measure_ref_number"),
+            "reference_count": boot_reference_count,
+            "records_preview": boot_records[:5],
+            "baseline_ready": bool(boot_reference_count),
             "records_sha256": raw.get("boot_measure_records_sha256") or "",
             "trust_report_sha256": raw.get("trust_report_sha256") or "",
         },
@@ -178,9 +222,12 @@ def sync_tpcm_profile(
         },
         "source": "opentcsm",
     }
-    profile.registration_status = (
-        REGISTRATION_VERIFIED if report.get("trusted") is True else REGISTRATION_UNTRUSTED
-    )
+    if report.get("trusted") is True:
+        profile.registration_status = REGISTRATION_VERIFIED
+    elif report.get("trusted") is False:
+        profile.registration_status = REGISTRATION_UNTRUSTED
+    else:
+        profile.registration_status = REGISTRATION_REGISTERED
 
 
 def normalize_opentcsm_collection(node: ComputeNode, collected: dict[str, Any]) -> dict[str, Any]:

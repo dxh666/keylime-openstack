@@ -172,12 +172,15 @@ def _boot_measurement_summary(
 ) -> dict[str, Any]:
     if profile.trusted_root_type == TRUST_ROOT_TPCM:
         boot_records = raw.get("boot_records") if isinstance(raw.get("boot_records"), list) else []
+        reference_count = raw.get("boot_measure_ref_number")
         return {
             "type": "tpcm_boot_measurement",
             "enabled": raw.get("boot_measure_on"),
             "status": evidence.get("boot") or "unknown",
             "record_count": len(boot_records),
-            "reference_count": raw.get("boot_measure_ref_number"),
+            "reference_count": reference_count,
+            "records_preview": boot_records[:5],
+            "baseline_ready": bool(reference_count),
             "records_sha256": raw.get("boot_measure_records_sha256") or "",
             "trust_report_sha256": raw.get("trust_report_sha256") or "",
         }

@@ -1,11 +1,11 @@
 import { displayMethods } from "./js/formatters.js";
-import { dashboardComputed } from "./js/modules/dashboard.js?v=20260723-node-sync";
+import { dashboardComputed } from "./js/modules/dashboard.js?v=20260723-product-closure";
 import { globalControlsComputed, globalControlsMethods } from "./js/modules/global-controls.js";
 import { policyCenterComputed, policyCenterMethods } from "./js/modules/policy-center.js";
-import { shellComputed, shellMethods } from "./js/modules/shell.js?v=20260723-page-refresh";
+import { shellComputed, shellMethods } from "./js/modules/shell.js?v=20260723-product-closure";
 import { tpcmDynamicComputed, tpcmDynamicMethods } from "./js/modules/tpcm-dynamic.js";
 import { tokenDialogMethods } from "./js/modules/token-dialog.js";
-import { nodeMethods } from "./js/modules/nodes.js?v=20260723-node-sync";
+import { nodeMethods } from "./js/modules/nodes.js?v=20260723-product-closure";
 import {
   POLICY_TYPES,
   emptyDynamicForm,

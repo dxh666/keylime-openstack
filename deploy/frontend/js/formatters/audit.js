@@ -20,6 +20,11 @@ export const auditFormatters = {
       policy_update: "更新策略",
       policy_delete: "删除策略",
       policy_deploy_queued: "策略下发已入队",
+      auth_login: "用户登录",
+      auth_logout: "用户注销",
+      trusted_node_registration_sync: "同步可信节点纳管",
+      trusted_node_register: "更新可信节点纳管",
+      trusted_node_verify: "可信节点验证",
       trust_decision: "可信状态判定",
       trust_agent_evidence_collect: "可信代理状态",
       keylime_evidence_collect: "采集 TPM 可信证据",
@@ -30,7 +35,7 @@ export const auditFormatters = {
       tpcm_dynamic_global_switch: "动态度量全局控制",
       host_integrity_evidence_collect: "采集节点完整性证据",
       opentcsm_evidence_collect: "采集 TPCM 可信报告",
-      opentcsm_access_check: "OpenTCSM 接入检查"
+      opentcsm_access_check: "TPCM 接入检查"
     };
     return names[event.event_type] || event.message || event.event_type || "-";
   },
@@ -44,6 +49,7 @@ export const auditFormatters = {
     if (details.log_type === "measured_boot") return "可信启动日志";
     if (details.log_type === "ima_runtime") return "IMA运行时日志";
     if (details.log_type === "node_management") return "节点纳管日志";
+    if (details.log_type === "trust_verification") return "可信验证日志";
     if (details.log_type === "system_operation") return "系统操作日志";
     return this.auditMessage(event);
   },

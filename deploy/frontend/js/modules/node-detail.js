@@ -30,6 +30,14 @@ export const nodeDetailMethods = {
     const node = row.rawNode || {};
     const keylimeNode = row.keylimeNode || {};
     const remediation = keylimeNode.remediation || {};
+    const profile = node.trusted_node_profile || {};
+    const capabilities = row.capabilities || profile.capabilities || node.capabilities || {};
+    const evidenceSummary = row.evidenceSummary || profile.last_evidence_summary || node.last_evidence_summary || {};
+    const evidence = row.evidence || evidenceSummary.evidence || keylimeNode.evidence || {};
+    const bootSummary = evidenceSummary.boot_measurement_summary || {};
+    const dynamicSummary = evidenceSummary.dynamic_measurement_summary || {};
+    const agentIdentity = profile.agent_identity || node.agent_identity || {};
+    const agentEndpoint = profile.agent_endpoint || node.agent_endpoint || {};
     const sections = [
       {
         title: "基本信息",
@@ -55,14 +63,17 @@ export const nodeDetailMethods = {
       {
         title: "可信代理",
         items: [
-          { label: "纳管状态", value: row.managed, state: row.managedClass },
+          { label: "纳管状态", value: row.registrationText || row.managed, state: row.registrationClass || row.managedClass },
           { label: "代理名称", value: row.trustAgentName || this.trustAgentName(node, keylimeNode) },
           { label: "可信根", value: row.trustedRoot || this.trustedRoot(node, keylimeNode) },
-          { label: "Agent UUID", value: this.agentUuidText(node, keylimeNode) },
-          { label: "Agent IP", value: node.keylime_agent_ip || keylimeNode.agent_ip || node.management_ip || "-" },
+          { label: "可信根类型", value: this.trustedRootTypeText(row.trustedRootType || node.trusted_root_type) },
+          { label: "能力", value: row.capabilityText || this.trustCapabilityText(capabilities) },
+          { label: "代理 UUID", value: this.agentUuidText(node, keylimeNode) },
+          { label: "代理 IP", value: agentEndpoint.host || node.keylime_agent_ip || keylimeNode.agent_ip || node.management_ip || "-" },
           { label: "端口", value: this.agentPortText(node) },
-          { label: "证明状态", value: keylimeNode.attestation_status || "-" },
-          { label: "运行状态", value: keylimeNode.operational_state ?? "-" },
+          { label: "TPCM ID", value: agentIdentity.tpcm_id || "-" },
+          { label: "验证状态", value: keylimeNode.attestation_status || "-" },
+          { label: "代理运行状态", value: keylimeNode.operational_state ?? "-" },
           { label: "最近事件", value: keylimeNode.last_event_id || "-" }
         ]
       },
@@ -70,13 +81,23 @@ export const nodeDetailMethods = {
         title: "可信状态",
         items: [
           { label: "可信状态", value: row.trustText, state: row.trustClass },
-          { label: "可信启动", value: this.stateText(keylimeNode.evidence?.boot), state: this.evidenceClass(keylimeNode.evidence?.boot) },
-          { label: "IMA 运行时", value: this.stateText(keylimeNode.evidence?.runtime), state: this.evidenceClass(keylimeNode.evidence?.runtime) },
+          { label: "可信启动", value: this.stateText(evidence.boot), state: this.evidenceClass(evidence.boot) },
+          { label: "运行时证据", value: this.stateText(evidence.runtime), state: this.evidenceClass(evidence.runtime) },
           { label: "最近证明时间", value: row.attestationTime },
+          { label: "证据摘要", value: this.evidenceSummaryText(evidenceSummary) },
           { label: "原因", value: row.reason || "-" }
         ]
       }
     ];
+    if (Object.keys(bootSummary).length || Object.keys(dynamicSummary).length) {
+      sections.push({
+        title: "度量证据摘要",
+        items: [
+          { label: "启动度量", value: this.bootMeasurementSummaryText(bootSummary) },
+          { label: "运行时/动态度量", value: this.dynamicMeasurementSummaryText(dynamicSummary) }
+        ]
+      });
+    }
     if (this.isOpenTcsmNode(row, node, keylimeNode)) {
       const report = keylimeNode.trust_report || {};
       const history = keylimeNode.trust_report_history || [];

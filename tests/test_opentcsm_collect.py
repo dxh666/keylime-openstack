@@ -111,6 +111,8 @@ def test_tpcm_boot_measurement_summary_is_first_class_evidence_payload() -> None
 
     assert boot.payload["boot_measurement"]["record_count"] == 2
     assert boot.payload["boot_measurement"]["reference_count"] == 2
+    assert boot.payload["boot_measurement"]["baseline_ready"] is True
+    assert boot.payload["boot_measurement"]["records_preview"] == ["BIOS/U-BOOT", "shim.efi"]
     assert "records=2" in boot.summary
     assert runtime.payload["dynamic_measurement"]["object_count"] == 1
     assert runtime.payload["dynamic_measurement"]["dmeasure_times"] == 22

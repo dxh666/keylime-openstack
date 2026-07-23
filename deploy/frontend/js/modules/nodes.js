@@ -13,11 +13,12 @@ export const nodeMethods = {
       await this.refreshAll(false);
       const matched = result.keylime_agents_matched?.length || 0;
       const staticMatched = result.static_keylime_registrations?.length || 0;
+      const tpcmMatched = result.tpcm_registrations?.length || 0;
       const conflicts = result.registration_conflicts?.length || 0;
       const suffix = conflicts ? `，发现 ${conflicts} 个冲突` : "";
       const message = result.ok
-        ? `可信节点纳管已同步：自动匹配 ${matched} 个，配置匹配 ${staticMatched} 个${suffix}。`
-        : `可信节点纳管已部分同步：配置匹配 ${staticMatched} 个，自动发现失败：${result.discovery_error || "原因待确认"}。`;
+        ? `可信节点纳管已同步：TPM 自动匹配 ${matched} 个，配置匹配 ${staticMatched} 个，TPCM 匹配 ${tpcmMatched} 个${suffix}。`
+        : `可信节点纳管已部分同步：配置匹配 ${staticMatched} 个，TPCM 匹配 ${tpcmMatched} 个，自动发现失败：${result.discovery_error || "原因待确认"}。`;
       this.showNotice(result.ok ? "ok" : "bad", message);
     } catch (error) {
       this.showNotice("bad", error.message);
@@ -26,11 +27,26 @@ export const nodeMethods = {
     }
   },
   async refreshComputeNodeStatus(row) {
-    if (row?.canCollectTpcmDynamic || row?.trustAgentType === "opentcsm_tpcm") {
-      await this.collectOpenTcsmStatus(row);
-      return;
+    if (row?.trustManaged) return this.verifyComputeNodeTrust(row);
+    await this.refreshCurrentView(true);
+  },
+  async verifyComputeNodeTrust(row) {
+    const hostname = row?.host || row?.rawNode?.hostname || "";
+    const host = encodeURIComponent(hostname);
+    if (!host) return this.showNotice("bad", "节点名称不能为空。");
+    this.busy = true;
+    try {
+      const result = await this.requestJson(`/api/nodes/${host}/trust-agent-verify`, { method: "POST" });
+      await this.refreshAll(false);
+      const freshRow = this.computeRows.find((item) => item.host === hostname) || row;
+      this.openComputeDetail(freshRow);
+      const status = result.trusted === true ? "通过" : "未通过";
+      this.showNotice(result.trusted === true ? "ok" : "bad", `可信验证${status}。`);
+    } catch (error) {
+      this.showNotice("bad", error.message);
+    } finally {
+      this.busy = false;
     }
-    await this.refreshNodeStatus();
   },
   async collectOpenTcsmStatus(row) {
     const host = encodeURIComponent(row?.host || row?.rawNode?.hostname || "");

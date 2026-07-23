@@ -863,7 +863,7 @@ h3 {
 }
 
 .node-compute-table .row {
-  grid-template-columns: minmax(110px, 1fr) 130px 130px 120px 130px 100px 165px 210px;
+  grid-template-columns: minmax(110px, 1fr) 120px 120px 118px 118px minmax(150px, 1.2fr) 95px 155px 190px;
 }
 
 .control-table .row {
@@ -1003,6 +1003,22 @@ h3 {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.trust-capability-cell {
+  display: grid;
+  gap: 3px;
+}
+
+.trust-capability-cell strong {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.trust-capability-cell small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .drawer-backdrop {

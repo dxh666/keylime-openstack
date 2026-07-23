@@ -104,11 +104,15 @@ def _status(value: object, *, overall: object, default: str) -> str:
 
 def _boot_measurement_summary(raw: dict[str, Any]) -> dict[str, Any]:
     boot_records = raw.get("boot_records") if isinstance(raw.get("boot_records"), list) else []
+    reference_count = raw.get("boot_measure_ref_number")
     return {
+        "type": "tpcm_boot_measurement",
         "enabled": raw.get("boot_measure_on"),
         "status": raw.get("boot_status") or "",
         "record_count": len(boot_records),
-        "reference_count": raw.get("boot_measure_ref_number"),
+        "reference_count": reference_count,
+        "records_preview": boot_records[:5],
+        "baseline_ready": bool(reference_count),
         "records_sha256": raw.get("boot_measure_records_sha256") or "",
         "trust_report_sha256": raw.get("trust_report_sha256") or "",
     }
@@ -117,7 +121,9 @@ def _boot_measurement_summary(raw: dict[str, Any]) -> dict[str, Any]:
 def _dynamic_measurement_summary(raw: dict[str, Any]) -> dict[str, Any]:
     policy = raw.get("dmeasure_policy") if isinstance(raw.get("dmeasure_policy"), list) else []
     return {
+        "type": "tpcm_dynamic_measurement",
         "enabled": raw.get("dynamic_measure_on"),
+        "status": raw.get("dynamic_measurement_status") or "",
         "object_count": len(policy),
         "dmeasure_times": raw.get("dmeasure_times"),
         "policy_sha256": raw.get("dmeasure_policy_sha256") or "",
