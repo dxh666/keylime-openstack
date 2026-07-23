@@ -101,12 +101,23 @@ textarea {
   min-height: 100vh;
 }
 
+#app.booting-app {
+  display: block;
+  min-height: 100vh;
+  background: var(--bg);
+}
+
 #app.login-app .login-screen {
   position: fixed;
   inset: 0;
   width: 100vw;
   min-height: 100vh;
   overflow: auto;
+}
+
+.auth-boot-screen {
+  min-height: 100vh;
+  background: var(--bg);
 }
 
 .login-screen {
@@ -380,7 +391,10 @@ textarea {
 .topbar-toolbox {
   display: inline-flex;
   align-items: stretch;
-  background: #1d4ed8;
+  overflow: hidden;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 4px;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
 }
 
@@ -403,10 +417,26 @@ textarea {
   border-left: 1px solid rgba(255, 255, 255, 0.18);
 }
 
+.global-refresh-button {
+  background: #ffffff;
+  color: var(--text);
+}
+
+.global-refresh-button + .toolbar-button,
+.global-refresh-button + .user-menu-wrap,
+.toolbar-button + .global-refresh-button {
+  border-left-color: var(--line);
+}
+
 .toolbar-button:hover {
   background: #1e40af;
   color: #fff;
   border-color: transparent;
+}
+
+.global-refresh-button:hover {
+  background: #f8fafc;
+  color: var(--text);
 }
 
 .toolbar-button:disabled {

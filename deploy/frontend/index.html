@@ -4,18 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Keylime OpenStack 可信管理</title>
-  <link rel="stylesheet" href="styles.css?v=20260723-edge-login">
+  <link rel="stylesheet" href="styles.css?v=20260723-refresh-ux">
 </head>
 <body>
-  <div id="app" v-cloak :class="{ 'login-app': !authenticated }">
-    <section v-if="!authChecked" class="login-screen">
-      <div class="login-shell">
-        <div class="login-panel login-status-panel" aria-live="polite">
-          <div class="login-spinner" aria-hidden="true"></div>
-          <h1>安全管理中心</h1>
-        </div>
-      </div>
-    </section>
+  <div id="app" v-cloak :class="{ 'login-app': authChecked && !authenticated, 'booting-app': !authChecked }">
+    <section v-if="!authChecked" class="auth-boot-screen" aria-hidden="true"></section>
 
     <section v-else-if="!authenticated" class="login-screen">
       <div class="login-shell">
@@ -110,9 +103,25 @@
         <div class="topbar-actions">
           <span class="system-clock">{{ currentTimeText }}</span>
           <div class="topbar-toolbox" aria-label="页面工具">
-            <button type="button" class="toolbar-button refresh-button" :disabled="busy" @click="refreshAll(true)">
-              <span class="toolbar-icon" aria-hidden="true">↻</span>
-              <span>{{ busy ? '刷新中' : '刷新' }}</span>
+            <button
+              type="button"
+              class="toolbar-button refresh-button"
+              :disabled="busy"
+              title="刷新当前页面数据"
+              @click="refreshCurrentView(true)"
+            >
+              <span class="toolbar-icon" aria-hidden="true">&#8635;</span>
+              <span>{{ busy ? '刷新中' : '刷新本页' }}</span>
+            </button>
+            <button
+              type="button"
+              class="toolbar-button global-refresh-button"
+              :disabled="busy"
+              title="刷新全局状态，包含节点、策略、审计和任务数据"
+              @click="refreshAll(true)"
+            >
+              <span class="toolbar-icon" aria-hidden="true">&#8635;</span>
+              <span>全局刷新</span>
             </button>
             <div class="user-menu-wrap">
               <button
@@ -715,6 +724,6 @@
   </div>
 
   <script src="vendor/vue.global.prod.js"></script>
-  <script type="module" src="app.js?v=20260723-edge-login"></script>
+  <script type="module" src="app.js?v=20260723-refresh-ux"></script>
 </body>
 </html>

@@ -2,7 +2,7 @@ import { displayMethods } from "./js/formatters.js";
 import { dashboardComputed } from "./js/modules/dashboard.js?v=20260723-node-sync";
 import { globalControlsComputed, globalControlsMethods } from "./js/modules/global-controls.js";
 import { policyCenterComputed, policyCenterMethods } from "./js/modules/policy-center.js";
-import { shellComputed, shellMethods } from "./js/modules/shell.js";
+import { shellComputed, shellMethods } from "./js/modules/shell.js?v=20260723-refresh-ux";
 import { tpcmDynamicComputed, tpcmDynamicMethods } from "./js/modules/tpcm-dynamic.js";
 import { tokenDialogMethods } from "./js/modules/token-dialog.js";
 import { nodeMethods } from "./js/modules/nodes.js?v=20260723-node-sync";
@@ -11,6 +11,36 @@ import {
   emptyDynamicForm,
   emptyPolicyForm
 } from "./js/policies.js";
+
+const bootStyle = document.createElement("style");
+bootStyle.textContent = `
+  body.auth-booting #app {
+    display: block;
+    min-height: 100vh;
+    background: #f5f7fb;
+  }
+
+  body.auth-booting #app .login-screen {
+    display: none;
+  }
+
+  .global-refresh-button {
+    background: #ffffff !important;
+    color: #1f2937 !important;
+    border-left: 1px solid var(--line) !important;
+  }
+
+  .global-refresh-button:hover {
+    background: #f8fafc !important;
+    color: #1f2937 !important;
+  }
+
+  .global-refresh-button + .user-menu-wrap {
+    border-left-color: var(--line);
+  }
+`;
+document.head.appendChild(bootStyle);
+document.body.classList.add("auth-booting");
 
 const { createApp } = window.Vue;
 
@@ -84,16 +114,23 @@ createApp({
   },
   mounted() {
     this.updateClock();
+    this.applyRouteFromHash();
+    this.syncRouteToHash(true);
     this.initializeSession();
+    this.installRefreshControls();
     this.timer = setInterval(() => {
-      if (this.authenticated) this.refreshAll(false);
+      if (this.authenticated) this.refreshCurrentView(false);
     }, 10000);
     this.clockTimer = setInterval(() => this.updateClock(), 1000);
+    window.addEventListener("hashchange", this.applyRouteFromHash);
+    window.addEventListener("popstate", this.applyRouteFromHash);
     window.addEventListener("click", this.closeUserMenu);
   },
   beforeUnmount() {
     if (this.timer) clearInterval(this.timer);
     if (this.clockTimer) clearInterval(this.clockTimer);
+    window.removeEventListener("hashchange", this.applyRouteFromHash);
+    window.removeEventListener("popstate", this.applyRouteFromHash);
     window.removeEventListener("click", this.closeUserMenu);
   },
   methods: {
