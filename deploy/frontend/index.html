@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Keylime OpenStack 可信管理</title>
-  <link rel="stylesheet" href="styles.css?v=20260723-product-closure">
+  <link rel="stylesheet" href="styles.css?v=20260723-audit-task-ux">
 </head>
 <body>
   <div id="app" v-cloak :class="{ 'login-app': authChecked && !authenticated, 'booting-app': !authChecked }">
@@ -509,17 +509,18 @@
           </div>
           <div class="table compact-table task-table">
             <div class="row header">
-              <span>任务类型</span><span>对象</span><span>状态</span><span>开始时间</span><span>结束时间</span>
+              <span>任务类型</span><span>对象</span><span>状态</span><span>说明</span><span>开始时间</span><span>结束时间</span>
             </div>
-            <div v-for="task in tasks" :key="task.id" class="row">
+            <div v-for="task in visibleTasks" :key="task.id" class="row">
               <span>{{ taskTypeText(task.task_type) }}</span>
-              <span>{{ task.target || '-' }}</span>
+              <span>{{ taskTargetText(task) }}</span>
               <span><em :class="['pill', taskSeverityClass(task.status)]">{{ taskStatusText(task.status) }}</em></span>
+              <span>{{ taskSummaryText(task) }}</span>
               <span>{{ formatTime(task.started_at) }}</span>
               <span>{{ formatTime(task.finished_at) }}</span>
             </div>
           </div>
-          <p v-if="!tasks.length" class="empty">暂无任务。</p>
+          <p v-if="!visibleTasks.length" class="empty">暂无需要关注的任务。</p>
         </section>
       </section>
 
@@ -531,14 +532,14 @@
           </div>
           <div class="table compact-table audit-table">
             <div class="row header">
-              <span>时间</span><span>日志类型</span><span>主体名称</span><span>客体名称</span><span>度量对象基准值</span><span>操作</span><span>结果</span>
+              <span>时间</span><span>日志类型</span><span>主体名称</span><span>客体名称</span><span>摘要</span><span>操作</span><span>结果</span>
             </div>
             <div v-for="event in auditEvents" :key="event.id" class="row">
               <span>{{ formatTime(event.created_at) }}</span>
               <span>{{ auditType(event) }}</span>
               <span>{{ auditSubject(event) }}</span>
               <span>{{ auditObject(event) }}</span>
-              <span class="audit-hash" :title="auditHash(event)">{{ auditHashText(event) }}</span>
+              <span class="audit-hash" :title="auditSummary(event)">{{ auditSummaryText(event) }}</span>
               <span>{{ auditOperation(event) }}</span>
               <span><em :class="['pill', auditResultClass(event)]">{{ auditResult(event) }}</em></span>
             </div>
@@ -721,6 +722,6 @@
   </div>
 
   <script src="vendor/vue.global.prod.js"></script>
-  <script type="module" src="app.js?v=20260723-product-closure"></script>
+  <script type="module" src="app.js?v=20260723-audit-task-ux"></script>
 </body>
 </html>

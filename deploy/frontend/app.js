@@ -1,5 +1,5 @@
-import { displayMethods } from "./js/formatters.js";
-import { dashboardComputed } from "./js/modules/dashboard.js?v=20260723-product-closure";
+import { displayMethods } from "./js/formatters.js?v=20260723-audit-task-ux";
+import { dashboardComputed } from "./js/modules/dashboard.js?v=20260723-audit-task-ux";
 import { globalControlsComputed, globalControlsMethods } from "./js/modules/global-controls.js";
 import { policyCenterComputed, policyCenterMethods } from "./js/modules/policy-center.js";
 import { shellComputed, shellMethods } from "./js/modules/shell.js?v=20260723-product-closure";

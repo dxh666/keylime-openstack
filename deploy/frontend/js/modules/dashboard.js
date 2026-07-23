@@ -56,6 +56,36 @@ function alertRemediationText(node) {
   return summary || "-";
 }
 
+function nodeReason(node) {
+  return String(node.reason || node.last_event_id || "").toUpperCase();
+}
+
+function trustedRootType(node) {
+  return String(node.trusted_root_type || node.trusted_root || node.trust_root_type || "").toLowerCase();
+}
+
+function isRetainedImaPolicyReminder(node) {
+  return (
+    node.trust_managed !== false &&
+    node.status !== "unmanaged" &&
+    node.status !== "error" &&
+    trustedRootType(node) === "tpm" &&
+    nodeReason(node) === "WAITING_FOR_IMA_MISSING"
+  );
+}
+
+function shouldShowAlert(node) {
+  if (isRetainedImaPolicyReminder(node)) return false;
+  return node.trust_managed === false || node.status === "unmanaged" || node.trusted === false || node.status === "error";
+}
+
+function shouldShowTask(task) {
+  if (!task) return false;
+  const isWorkerSync = task.task_type === "sync" && task.requested_by === "worker";
+  if (isWorkerSync) return task.status === "failed";
+  return true;
+}
+
 export const dashboardComputed = {
   controllerNodes() {
     return this.nodes.filter((node) => node.role === "controller");
@@ -229,14 +259,14 @@ export const dashboardComputed = {
         message: this.auditMessage(event)
       });
     }
-    for (const task of this.tasks.slice(0, 5)) {
+    for (const task of this.visibleTasks.slice(0, 5)) {
       const time = task.finished_at || task.started_at;
       if (!time) continue;
       items.push({
         time,
         severity: this.taskSeverity(task.status),
         state: this.taskSeverityClass(task.status),
-        target: task.target || task.task_type,
+        target: this.taskTargetText(task),
         message: `${this.taskTypeText(task.task_type)}：${this.taskStatusText(task.status)}`
       });
     }
@@ -258,7 +288,7 @@ export const dashboardComputed = {
   },
   alertRows() {
     return (this.keylime.nodes || [])
-      .filter((node) => node.trust_managed === false || node.status === "unmanaged" || node.trusted === false || node.status === "error")
+      .filter((node) => shouldShowAlert(node))
       .map((node) => ({
         target: node.host || node.agent_uuid || "-",
         severity: alertSeverityText(node),
@@ -266,6 +296,9 @@ export const dashboardComputed = {
         message: alertMessageText(node),
         remediation: alertRemediationText(node)
       }));
+  },
+  visibleTasks() {
+    return (this.tasks || []).filter((task) => shouldShowTask(task));
   },
   keylimeStatusClass() {
     if (this.keylimeError) return "bad";

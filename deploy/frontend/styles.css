@@ -884,11 +884,11 @@ h3 {
 }
 
 .task-table .row {
-  grid-template-columns: 150px minmax(150px, 1fr) 100px 170px 170px;
+  grid-template-columns: 150px minmax(120px, 0.8fr) 90px minmax(260px, 1.5fr) 170px 170px;
 }
 
 .audit-table .row {
-  grid-template-columns: 170px 120px 100px minmax(150px, 1fr) 190px 120px 90px;
+  grid-template-columns: 170px 130px 110px minmax(140px, 1fr) minmax(210px, 1.4fr) 150px 90px;
 }
 
 .policy-table .row {
