@@ -276,6 +276,10 @@ def _baseline_summary(binding: PolicyBinding | None, capability: str) -> dict[st
                 else details.get("boot_measure_ref_number")
             ),
             "tpcm_write_status": details.get("tpcm_write_status") or "",
+            "tpcm_control_status": details.get("tpcm_control_status") or "",
+            "tpcm_write_error_code": details.get("tpcm_write_error_code") or "",
+            "tpcm_write_error_summary": details.get("tpcm_write_error_summary") or "",
+            "tpcm_write_last_result_at": details.get("tpcm_write_last_result_at") or "",
         }
     return {
         "artifact": details.get("keylime_artifact") or "",

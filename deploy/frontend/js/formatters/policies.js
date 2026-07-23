@@ -81,9 +81,29 @@ export const policyFormatters = {
   policyTpcmBootModeText(policy) {
     const content = policy?.content || {};
     if (content.tpcm_write_enabled === true) {
-      return `预留写入 TPCM（授权：${content.auth_material_ref || "-" }）`;
+      return `允许下发到 TPCM 硬件（授权：${content.auth_material_ref || "-" }）`;
     }
     return "管理侧基线绑定";
+  },
+  tpcmBootHardwareStatusText(binding) {
+    const details = binding?.binding_details || {};
+    return this.tpcmWriteStatusText(details.tpcm_write_status || "not_enabled");
+  },
+  tpcmBootHardwareSummaryText(binding) {
+    const details = binding?.binding_details || {};
+    return details.tpcm_write_error_summary
+      || details.tpcm_write_last_result_summary
+      || "-";
+  },
+  isTpcmBootPolicy(policy) {
+    return policy?.policy_type === "measured_boot"
+      && String(policy?.content?.trusted_root_type || "").toLowerCase() === "tpcm";
+  },
+  canApplyTpcmBootHardware(policy, binding) {
+    if (!this.isTpcmBootPolicy(policy)) return false;
+    if (binding?.application_status !== "applied") return false;
+    const details = binding?.binding_details || {};
+    return details.tpcm_write_status !== "enabled";
   },
   policyTpcmBootBaselineText(policy) {
     const content = policy?.content || {};

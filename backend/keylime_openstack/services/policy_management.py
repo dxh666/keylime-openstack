@@ -27,7 +27,12 @@ from keylime_openstack.services.policy import (
     policy_out,
     validated_policy_payload,
 )
-from keylime_openstack.services.tasks import create_task
+from keylime_openstack.services.tasks import create_task, mark_failed, mark_running, mark_success
+from keylime_openstack.services.tpcm_boot_hardware_apply import (
+    TpcmBootHardwareApplyError,
+    TpcmBootHardwareApplyService,
+    _opentcsm_boot_failure_details,
+)
 
 
 def list_policy_responses(session: Session) -> list[TrustPolicyOut]:
@@ -221,6 +226,108 @@ def deploy_policy_binding(
         "binding_id": binding.id,
         "task_id": task.id,
     }
+
+
+def apply_tpcm_boot_hardware(
+    policy_id: int,
+    binding_id: int,
+    session: Session,
+    settings: Settings,
+) -> dict[str, object]:
+    policy = load_policy(session, policy_id)
+    if not policy:
+        raise HTTPException(status_code=404, detail=f"策略不存在：{policy_id}")
+    binding = session.get(PolicyBinding, binding_id)
+    if not binding or binding.policy_id != policy.id or not binding.active:
+        raise HTTPException(status_code=404, detail=f"策略绑定不存在或已失效：{binding_id}")
+    node = session.get(ComputeNode, binding.target_id)
+    if not node:
+        raise HTTPException(status_code=404, detail=f"计算节点不存在：{binding.target_id}")
+
+    target = f"{policy.name}:{node.hostname}"
+    task = create_task(
+        session,
+        "tpcm_boot_hardware_apply",
+        target=target,
+        requested_by="api",
+        task_args={
+            "policy_id": policy.id,
+            "binding_id": binding.id,
+            "node": node.hostname,
+            "policy_type": policy.policy_type,
+        },
+    )
+    mark_running(task)
+    try:
+        result = TpcmBootHardwareApplyService(session, settings).apply(policy, binding, node)
+    except TpcmBootHardwareApplyError as exc:
+        error = str(exc)
+        if exc.details:
+            binding.binding_details = {
+                **dict(binding.binding_details or {}),
+                **exc.details,
+            }
+        if not exc.details.get("tpcm_boot_hardware_audit_recorded"):
+            record_audit_event(
+                session,
+                event_type="tpcm_boot_hardware_apply",
+                target=target,
+                severity="warning",
+                message="TPCM trusted boot hardware apply failed",
+                event_details={
+                    "log_type": "trusted_boot",
+                    "policy_id": policy.id,
+                    "binding_id": binding.id,
+                    "subject_name": "TPCM",
+                    "object_name": node.hostname,
+                    "measurement_type": "hardware_apply",
+                    "measurement_baseline": dict(binding.binding_details or {}).get(
+                        "rendered_policy_sha256",
+                        "",
+                    ),
+                    "operation": "write_boot_references_and_enable_control",
+                    "result": "failed",
+                    **exc.details,
+                },
+            )
+        mark_failed(task, error, {"ok": False, **exc.details})
+        session.commit()
+        return {"ok": False, "task_id": task.id, "error": error, "details": exc.details}
+    except Exception as exc:  # pragma: no cover - remote execution boundary
+        error = str(exc)
+        details = _opentcsm_boot_failure_details(error)
+        binding.binding_details = {
+            **dict(binding.binding_details or {}),
+            **details,
+        }
+        record_audit_event(
+            session,
+            event_type="tpcm_boot_hardware_apply",
+            target=target,
+            severity="warning",
+            message="TPCM trusted boot hardware apply failed",
+            event_details={
+                "log_type": "trusted_boot",
+                "policy_id": policy.id,
+                "binding_id": binding.id,
+                "subject_name": "TPCM",
+                "object_name": node.hostname,
+                "measurement_type": "hardware_apply",
+                "measurement_baseline": dict(binding.binding_details or {}).get(
+                    "rendered_policy_sha256",
+                    "",
+                ),
+                "operation": "write_boot_references_and_enable_control",
+                "result": "failed",
+                **details,
+            },
+        )
+        mark_failed(task, error, {"ok": False, **details})
+        session.commit()
+        return {"ok": False, "task_id": task.id, "error": error, "details": details}
+    mark_success(task, result)
+    session.commit()
+    return {"ok": True, "task_id": task.id, "result": result}
 
 
 def delete_policy(

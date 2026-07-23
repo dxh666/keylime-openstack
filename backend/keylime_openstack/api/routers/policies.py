@@ -17,6 +17,7 @@ from keylime_openstack.services.policy_management import (
     _record_policy_audit,
     _tpcm_dynamic_global_control,
     _tpcm_dynamic_global_enabled,
+    apply_tpcm_boot_hardware as apply_tpcm_boot_hardware_service,
     create_policy as create_policy_service,
     delete_policy as delete_policy_service,
     deploy_policy as deploy_policy_service,
@@ -94,6 +95,19 @@ def deploy_policy_binding(
     session: Session = Depends(db_session),
 ) -> dict[str, object]:
     return deploy_policy_binding_service(policy_id, binding_id, session)
+
+
+@router.post(
+    "/policies/{policy_id}/bindings/{binding_id}/tpcm-boot/hardware-apply",
+    dependencies=[Depends(require_admin)],
+)
+def apply_tpcm_boot_hardware(
+    policy_id: int,
+    binding_id: int,
+    session: Session = Depends(db_session),
+    settings: Settings = Depends(settings_dep),
+) -> dict[str, object]:
+    return apply_tpcm_boot_hardware_service(policy_id, binding_id, session, settings)
 
 
 @router.delete("/policies/{policy_id}", dependencies=[Depends(require_admin)])

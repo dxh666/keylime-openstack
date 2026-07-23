@@ -181,4 +181,28 @@ export const policyCenterMethods = {
       }
     });
   },
+  applyTpcmBootHardware(policy, binding) {
+    if (!binding) return;
+    const targetText = `${policy.name} / ${binding.target_name}`;
+    this.requireToken({
+      title: "确认下发 TPCM 可信启动硬件策略",
+      message: `将把「${targetText}」的可信启动基线写入 TPCM 启动参考值，并开启启动度量控制。`,
+      confirmText: "下发到 TPCM",
+      action: async (token) => {
+        const result = await this.requestJson(
+          `/api/policies/${policy.id}/bindings/${binding.id}/tpcm-boot/hardware-apply`,
+          { method: "POST" },
+          token
+        );
+        if (result.ok === false) {
+          const summary = result.details?.tpcm_write_error_summary || result.error || "TPCM 可信启动硬件下发失败";
+          throw new Error(summary);
+        }
+        this.showNotice("ok", "TPCM 可信启动硬件下发完成");
+        await this.refreshAll(false);
+        const refreshed = this.policies.find((item) => item.id === policy.id);
+        this.detailPolicy = refreshed || null;
+      }
+    });
+  },
 };

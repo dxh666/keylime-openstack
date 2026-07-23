@@ -50,7 +50,7 @@ function auditCategoryMatches(event, category) {
   if (category === "verification") {
     return (
       ["trusted_node_verify", "trust_decision", "keylime_evidence_collect", "host_integrity_evidence_collect"].includes(eventType) ||
-      ["trust_verification", "measured_boot", "ima_runtime"].includes(logType)
+      ["trust_verification", "trusted_boot", "measured_boot", "ima_runtime"].includes(logType)
     );
   }
   if (category === "policy") {

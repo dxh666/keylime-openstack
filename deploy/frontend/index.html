@@ -734,8 +734,19 @@
                 <small>可信代理对象：{{ binding.external_policy_name || '-' }}</small>
                 <small>生效时间：{{ formatTime(binding.applied_at) }}</small>
                 <small>证据：{{ bindingEvidenceText(binding) }}</small>
+                <small v-if="isTpcmBootPolicy(detailPolicy)">TPCM 硬件下发：{{ tpcmBootHardwareStatusText(binding) }}</small>
+                <small v-if="isTpcmBootPolicy(detailPolicy)">{{ tpcmBootHardwareSummaryText(binding) }}</small>
                 <small v-if="binding.last_error" class="error-text">{{ binding.last_error }}</small>
                 <button type="button" class="small" @click="deployPolicy(detailPolicy, binding)">{{ deployActionText(detailPolicy, 'node') }}</button>
+                <button
+                  v-if="isTpcmBootPolicy(detailPolicy)"
+                  type="button"
+                  class="small"
+                  :disabled="!canApplyTpcmBootHardware(detailPolicy, binding)"
+                  @click="applyTpcmBootHardware(detailPolicy, binding)"
+                >
+                  下发到 TPCM 硬件
+                </button>
               </div>
             </div>
           </section>

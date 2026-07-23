@@ -31,6 +31,10 @@ from keylime_openstack.services.tpcm_boot_deployment import (
     TpcmBootDeployment,
     _tpcm_boot_evidence_failures,
 )
+from keylime_openstack.services.tpcm_boot_hardware_apply import (
+    _opentcsm_boot_apply_error,
+    _opentcsm_boot_failure_details,
+)
 from keylime_openstack.services.trust_capabilities import build_trust_capability_summary
 
 
@@ -99,6 +103,28 @@ def test_tpcm_boot_deployment_binds_management_baseline(monkeypatch, tmp_path: P
     assert result.rendered_policy["expected"]["boot_reference_count"] == 2
     assert result.response["boot_status"] == "pass"
     assert result.response["rendered_policy_sha256"]
+
+
+def test_tpcm_boot_hardware_error_productizes_reference_rejection() -> None:
+    error = _opentcsm_boot_apply_error(
+        {
+            "commands": [
+                {
+                    "name": "update_bmeasure_references",
+                    "command": ["update_bmeasure_references", "-u", "bmeasure-uid", "-k", "***"],
+                    "rc": 136,
+                    "stdout": "tpcm_update_boot_measure_references error: 136(0x88)",
+                    "stderr": "",
+                }
+            ]
+        }
+    )
+
+    details = _opentcsm_boot_failure_details(error)
+
+    assert details["tpcm_write_status"] == "reference_update_rejected"
+    assert details["tpcm_write_error_code"] == "TPCM_BOOT_REFERENCE_UPDATE_REJECTED"
+    assert "TPCM rejected the boot reference update" in details["tpcm_write_error_summary"]
 
 
 def test_trust_capability_summary_uses_tpcm_boot_policy_binding() -> None:

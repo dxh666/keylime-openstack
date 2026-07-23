@@ -79,8 +79,18 @@ export const trustFormatters = {
     const names = {
       not_enabled: "未启用",
       authorization_missing: "授权材料缺失",
+      authorization_failed: "授权检查失败",
+      authorization_invalid: "授权材料无效",
+      authorization_rejected: "授权被拒绝",
       reserved_not_executed: "已预留未执行",
+      precheck_failed: "预检失败",
+      writing: "写入中",
       written: "已写入",
+      enabled: "已启用",
+      reference_update_rejected: "参考值写入被拒绝",
+      command_missing: "命令不可用",
+      control_failed: "控制开关失败",
+      verify_failed: "验证失败",
       failed: "写入失败"
     };
     return names[String(value || "")] || value || "-";

@@ -1,0 +1,185 @@
+---
+- name: Apply OpenTCSM TPCM trusted boot hardware policy
+  hosts: keylime_managed
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Apply OpenTCSM trusted boot commands
+      ansible.builtin.shell: |
+        python3 - <<'PY'
+        import datetime
+        import json
+        import os
+        import re
+        import socket
+        import subprocess
+        import sys
+
+        auth = json.loads(r'''{{ opentcsm_boot_auth | to_json }}''')
+        policy = json.loads(r'''{{ opentcsm_boot_policy | to_json }}''')
+
+        env = os.environ.copy()
+        env["LC_ALL"] = "C"
+        env["PATH"] = (
+            "/usr/local/opentcsm/tcsm/user/test/tcs:"
+            "/usr/local/opentcsm/tcsm/user/utils/tcs:"
+            "/usr/local/opentcsm/tcsm/user/test/tcm:"
+            + env.get("PATH", "")
+        )
+        env["LD_LIBRARY_PATH"] = (
+            "/usr/local/opentcsm/lib:"
+            "/usr/local/opentcsm/tcsm/user:"
+            "/usr/local/opentcsm/tsb:"
+            + env.get("LD_LIBRARY_PATH", "")
+        )
+
+        uid = str(auth["uid"])
+        signing_key = str(auth["private_key"]) + str(auth["public_key"])
+        operation = str(policy.get("operation") or "1")
+        stage = policy.get("stage")
+        flag = policy.get("flag")
+        enable_boot_control = bool(policy.get("enable_boot_control", True))
+
+        def redact(command):
+            safe = list(command)
+            if "-k" in safe:
+                index = safe.index("-k")
+                if index + 1 < len(safe):
+                    safe[index + 1] = "***"
+            return safe
+
+        def run(name, command, timeout=120):
+            try:
+                completed = subprocess.run(
+                    command,
+                    shell=False,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=timeout,
+                    env=env,
+                )
+                return {
+                    "name": name,
+                    "command": redact(command),
+                    "rc": completed.returncode,
+                    "stdout": completed.stdout,
+                    "stderr": completed.stderr,
+                }
+            except FileNotFoundError:
+                return {
+                    "name": name,
+                    "command": redact(command),
+                    "rc": 127,
+                    "stdout": "",
+                    "stderr": f"command not found: {command[0]}",
+                }
+            except subprocess.TimeoutExpired as exc:
+                return {
+                    "name": name,
+                    "command": redact(command),
+                    "rc": 124,
+                    "stdout": (exc.stdout or "") if isinstance(exc.stdout, str) else "",
+                    "stderr": f"command timed out: {command[0]}",
+                }
+            except Exception as exc:
+                return {
+                    "name": name,
+                    "command": redact(command),
+                    "rc": 1,
+                    "stdout": "",
+                    "stderr": str(exc),
+                }
+
+        def parse_observed(text):
+            count = None
+            match = re.search(r"boot_measure_ref_number:\s*(0x[0-9A-Fa-f]+|\d+)", text)
+            if match:
+                count = int(match.group(1), 0)
+            return {
+                "boot_measure_ref_number": count,
+                "sha256_hint": "",
+            }
+
+        commands = []
+        before_refs = run("get_bmeasure_references_before", ["get_bmeasure_references"])
+        commands.append(before_refs)
+        before_info = run("get_tpcm_info_before", ["get_tpcm_info"])
+        commands.append(before_info)
+
+        update_command = [
+            "update_bmeasure_references",
+            "-o", operation,
+            "-u", uid,
+            "-k", signing_key,
+        ]
+        if stage not in (None, ""):
+            update_command.extend(["-m", str(stage)])
+        if flag not in (None, ""):
+            update_command.extend(["-F", str(flag)])
+        commands.append(run("update_bmeasure_references", update_command, timeout=180))
+
+        if enable_boot_control:
+            commands.append(run(
+                "set_measure_ctrl_switch_boot_on",
+                [
+                    "set_measure_ctrl_switch",
+                    "-t", "1",
+                    "-s", "1",
+                    "-u", uid,
+                    "-k", signing_key,
+                ],
+                timeout=120,
+            ))
+
+        after_refs = run("get_bmeasure_references_after", ["get_bmeasure_references"])
+        commands.append(after_refs)
+        after_info = run("get_tpcm_info_after", ["get_tpcm_info"])
+        commands.append(after_info)
+
+        failed = [item for item in commands if int(item.get("rc") or 0) != 0]
+        result = {
+            "hostname": socket.gethostname(),
+            "applied_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "auth_ref": auth.get("ref", ""),
+            "auth_uid": uid,
+            "operation": operation,
+            "operation_name": policy.get("operation_name", ""),
+            "stage": stage,
+            "flag": flag,
+            "enable_boot_control": enable_boot_control,
+            "baseline_sha256": policy.get("baseline_sha256", ""),
+            "observed_before": {
+                "references": parse_observed(before_refs.get("stdout") or ""),
+                "tpcm_info": parse_observed(before_info.get("stdout") or ""),
+            },
+            "observed_after": {
+                "references": parse_observed(after_refs.get("stdout") or ""),
+                "tpcm_info": parse_observed(after_info.get("stdout") or ""),
+            },
+            "commands": commands,
+            "ok": not failed,
+            "error": "; ".join(f"{item['name']} rc={item['rc']}" for item in failed),
+        }
+        print(json.dumps(result, ensure_ascii=False))
+        if failed:
+            sys.exit(1)
+        PY
+      register: opentcsm_boot_apply
+      ignore_errors: true
+      changed_when: opentcsm_boot_apply.rc == 0
+
+    - name: Store OpenTCSM trusted boot result on controller workspace
+      ansible.builtin.copy:
+        content: "{{ opentcsm_boot_apply.stdout }}\n"
+        dest: "{{ result_output_path }}"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+
+    - name: Fail when OpenTCSM trusted boot command failed
+      ansible.builtin.fail:
+        msg: "{{ opentcsm_boot_apply.stdout | default(opentcsm_boot_apply.stderr, true) }}"
+      when: opentcsm_boot_apply.rc != 0

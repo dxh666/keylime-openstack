@@ -16,6 +16,7 @@ const EVENT_TEXT = {
   tpcm_dynamic_policy_apply_queued: "动态度量策略生效已入队",
   tpcm_dynamic_policy_apply: "动态度量策略生效",
   tpcm_dynamic_global_switch: "动态度量全局控制",
+  tpcm_boot_hardware_apply: "TPCM 可信启动硬件下发",
   host_integrity_evidence_collect: "采集节点完整性证据",
   opentcsm_evidence_collect: "采集 TPCM 可信报告",
   opentcsm_access_check: "TPCM 接入检查"
@@ -55,7 +56,17 @@ const MESSAGE_TEXT = {
   "updated trust policy": "更新可信策略",
   "deleted trust policy": "删除可信策略",
   "queued policy deployment": "策略下发已入队",
-  "queued node policy deployment": "节点策略下发已入队"
+  "queued node policy deployment": "节点策略下发已入队",
+  "TPCM trusted boot hardware apply succeeded": "TPCM 可信启动硬件下发成功",
+  "TPCM trusted boot hardware apply failed": "TPCM 可信启动硬件下发失败",
+  "TPCM trusted boot hardware apply precheck failed.": "TPCM 可信启动硬件下发预检失败",
+  "TPCM boot authorization material is not configured.": "TPCM 启动度量授权材料未配置",
+  "TPCM boot authorization material is invalid.": "TPCM 启动度量授权材料无效",
+  "TPCM rejected the boot policy authorization material.": "TPCM 拒绝启动度量授权材料",
+  "TPCM rejected the boot reference update. Check UID, key material, current TPCM policy and reference operation.": "TPCM 拒绝启动参考值写入，请检查 UID、授权密钥、当前 TPCM 策略和写入操作",
+  "TPCM boot measurement control switch failed.": "TPCM 启动度量控制开关开启失败",
+  "TPCM trusted boot hardware apply could not be verified.": "TPCM 可信启动硬件下发后验证失败",
+  write_boot_references_and_enable_control: "写入启动参考值并开启控制"
 };
 
 const RESULT_TEXT = {
@@ -77,6 +88,7 @@ const RESULT_TEXT = {
 const LOG_TYPE_TEXT = {
   dynamic_measurement: "动态度量日志",
   tpcm_authorization: "TPCM 授权日志",
+  trusted_boot: "可信启动日志",
   measured_boot: "可信启动日志",
   ima_runtime: "IMA 运行时日志",
   node_management: "节点纳管日志",
