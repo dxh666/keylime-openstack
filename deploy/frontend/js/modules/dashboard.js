@@ -10,7 +10,15 @@ function alertMessageText(node) {
     WAITING_FOR_IMA_MISSING: "IMA 运行时策略未绑定或未下发",
     WAITING_FOR_BOOT_MISSING: "可信启动证据尚未采集",
     WAITING_FOR_BOOT_FAIL: "可信启动证据未通过",
+    WAITING_FOR_BOOT_UNCONFIGURED: "可信启动策略未生效",
+    WAITING_FOR_BOOT_STALE: "可信启动证据已过期",
     WAITING_FOR_IMA_FAIL: "IMA 运行时证据未通过",
+    WAITING_FOR_TPCM_DYNAMIC_MEASUREMENT: "环境动态度量证据尚未采集",
+    WAITING_FOR_TPCM_DYNAMIC_MEASUREMENT_MISSING: "环境动态度量证据尚未采集",
+    WAITING_FOR_TPCM_DYNAMIC_MEASUREMENT_FAIL: "环境动态度量证据未通过",
+    WAITING_FOR_TPCM_DYNAMIC_MEASUREMENT_UNCONFIGURED: "环境动态度量策略未生效",
+    WAITING_FOR_TPCM_DYNAMIC_MEASUREMENT_DISABLED: "环境动态度量策略已关闭",
+    WAITING_FOR_TPCM_DYNAMIC_MEASUREMENT_STALE: "环境动态度量证据已过期",
     WAITING_FOR_BOOT_FAIL_IMA_FAIL: "可信启动或 IMA 运行时证据未通过",
     WAITING_FOR_BOOT_FAIL_IMA_MISSING: "可信启动未通过，IMA 运行时策略未绑定或未下发",
     WAITING_FOR_BOOT_MISSING_IMA_MISSING: "可信启动与 IMA 运行时证据尚未完备",
@@ -108,14 +116,30 @@ function firstCapabilityAlert(node) {
     const status = String(item.status || "").toLowerCase();
     if (status === "pass") continue;
     if (key === "ima_runtime" && trustedRootType(node) === "tpm" && status === "unconfigured") continue;
-    const bad = ["fail", "error"].includes(status);
+    const bad = ["fail", "error", "stale"].includes(status);
     return {
       state: bad ? "bad" : "warn",
-      message: `${labels[key]}${status === "unconfigured" ? "未配置策略" : status === "missing" ? "缺少证据" : "状态异常"}`,
+      message: `${labels[key]}${capabilityAlertStatusText(status)}`,
       remediation: item.reason || "检查该能力的策略绑定、证据采集和可信代理状态。"
     };
   }
   return null;
+}
+
+function capabilityAlertStatusText(status) {
+  const names = {
+    unconfigured: "策略未生效",
+    missing: "缺少证据",
+    stale: "证据已过期",
+    disabled: "策略已关闭",
+    queued: "策略待生效",
+    applying: "策略生效中",
+    awaiting_reboot: "等待节点重启",
+    external_pending: "等待外部生效",
+    not_deployed: "策略未下发",
+    superseded: "策略已替换"
+  };
+  return names[status] || "状态异常";
 }
 
 function shouldShowTask(task) {

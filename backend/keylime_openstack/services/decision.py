@@ -12,6 +12,10 @@ from typing import Any
 
 from keylime_openstack.config import Settings
 from keylime_openstack.constants import (
+    CAPABILITY_EVM,
+    CAPABILITY_IMA_RUNTIME,
+    CAPABILITY_TPCM_DYNAMIC_MEASUREMENT,
+    CAPABILITY_TRUSTED_BOOT,
     TRAIT_BOOT_TRUSTED,
     TRAIT_LEGACY_ATTESTED,
     TRAIT_RUNTIME_TRUSTED,
@@ -90,7 +94,8 @@ def evaluate_trust(
     openstack_state: OpenStackState | None,
     settings: Settings,
     capabilities: dict[str, bool] | None = None,
-    runtime_capability: str = "ima",
+    runtime_capability: str = CAPABILITY_IMA_RUNTIME,
+    capability_summary: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Return a normalized trust decision for one compute host."""
 
@@ -102,13 +107,27 @@ def evaluate_trust(
     boot_fresh = _fresh(boot)
     runtime_fresh = _fresh(runtime)
     evm_fresh = _fresh(evm)
-    boot_trusted = bool(boot and boot.status == "pass" and boot_fresh)
-    runtime_keylime = bool(runtime and runtime.status == "pass" and runtime_fresh)
-    evm_trusted = bool(evm and evm.status == "pass" and evm_fresh)
+    boot_evidence_trusted = bool(boot and boot.status == "pass" and boot_fresh)
+    runtime_evidence_trusted = bool(runtime and runtime.status == "pass" and runtime_fresh)
+    evm_evidence_trusted = bool(evm and evm.status == "pass" and evm_fresh)
     trust_policy_mode = settings.normalized_trust_policy_mode
     capabilities = capabilities or settings.effective_trust_capabilities
     evm_required = capabilities["evm"]
-    runtime_trusted = runtime_keylime
+    summary = capability_summary or {}
+    boot_trusted = _capability_effective(
+        summary,
+        CAPABILITY_TRUSTED_BOOT,
+        boot_evidence_trusted,
+    )
+    if runtime_capability == CAPABILITY_TPCM_DYNAMIC_MEASUREMENT:
+        runtime_trusted = _capability_effective(
+            summary,
+            CAPABILITY_TPCM_DYNAMIC_MEASUREMENT,
+            runtime_evidence_trusted,
+        )
+    else:
+        runtime_trusted = runtime_evidence_trusted
+    evm_trusted = _capability_effective(summary, CAPABILITY_EVM, evm_evidence_trusted)
 
     service_ok = bool(
         openstack_state
@@ -118,7 +137,7 @@ def evaluate_trust(
 
     capability_status = {
         "boot": boot_trusted,
-        "ima": runtime_keylime,
+        "ima": runtime_trusted,
         "evm": evm_trusted,
         "openstack_service": service_ok,
     }
@@ -143,11 +162,32 @@ def evaluate_trust(
 
     missing = []
     if capabilities["boot"] and not boot_trusted:
-        missing.append(_waiting_reason("boot", boot, boot_fresh))
-    if capabilities["ima"] and not runtime_keylime:
-        missing.append(_waiting_reason(runtime_capability, runtime, runtime_fresh))
+        missing.append(
+            _capability_waiting_reason(
+                "boot",
+                summary.get(CAPABILITY_TRUSTED_BOOT),
+                boot,
+                boot_fresh,
+            )
+        )
+    if capabilities["ima"] and not runtime_trusted:
+        runtime_item = (
+            summary.get(CAPABILITY_TPCM_DYNAMIC_MEASUREMENT)
+            if runtime_capability == CAPABILITY_TPCM_DYNAMIC_MEASUREMENT
+            else None
+        )
+        missing.append(
+            _capability_waiting_reason(
+                runtime_capability,
+                runtime_item,
+                runtime,
+                runtime_fresh,
+            )
+        )
     if capabilities["evm"] and not evm_trusted:
-        missing.append(_waiting_reason("evm", evm, evm_fresh))
+        missing.append(
+            _capability_waiting_reason("evm", summary.get(CAPABILITY_EVM), evm, evm_fresh)
+        )
     if capabilities["openstack_service"] and not service_ok:
         missing.append("openstack-service")
 
@@ -185,7 +225,45 @@ def evaluate_trust(
             "enabled_trust_capabilities": enabled_capabilities,
             "enabled_keylime_trust_capabilities": enabled_keylime_capabilities,
             "capability_status": capability_status,
+            "trust_capability_summary": summary,
             "service_status": openstack_state.service_status if openstack_state else "missing",
             "service_state": openstack_state.service_state if openstack_state else "missing",
         },
     }
+
+
+def _capability_effective(
+    summary: dict[str, dict[str, Any]],
+    capability: str,
+    fallback: bool,
+) -> bool:
+    item = summary.get(capability)
+    if not item:
+        return fallback
+    return item.get("effective") is True or str(item.get("status") or "").lower() == "pass"
+
+
+def _capability_waiting_reason(
+    label: str,
+    item: dict[str, Any] | None,
+    record: EvidenceRecord | None,
+    fresh: bool,
+) -> str:
+    if item:
+        status = str(item.get("status") or "").strip().lower()
+        if status in {
+            "unconfigured",
+            "disabled",
+            "stale",
+            "fail",
+            "unknown",
+            "missing",
+            "queued",
+            "applying",
+            "awaiting_reboot",
+            "external_pending",
+            "not_deployed",
+            "superseded",
+        }:
+            return f"{label}_{status}"
+    return _waiting_reason(label, record, fresh)

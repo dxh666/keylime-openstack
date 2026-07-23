@@ -114,19 +114,20 @@ def _evidence_summary(
         for record in records
     }
     raw = _result_raw(result)
-    trusted = _capability_trusted(profile, evidence, result)
+    trust_capabilities = build_trust_capability_summary(
+        session,
+        node,
+        profile,
+        records,
+    )
+    trusted = _capability_trusted(profile, evidence, trust_capabilities)
     return {
         "trusted": trusted,
         "evidence": evidence,
         "providers": providers,
         "valid_until": valid_until,
-        "capability_status": _capability_status(profile, evidence),
-        "trust_capabilities": build_trust_capability_summary(
-            session,
-            node,
-            profile,
-            records,
-        ),
+        "capability_status": _capability_status(profile, evidence, trust_capabilities),
+        "trust_capabilities": trust_capabilities,
         "boot_measurement_summary": _boot_measurement_summary(profile, evidence, raw),
         "dynamic_measurement_summary": _dynamic_measurement_summary(profile, evidence, raw),
         "reason": result.get("reason") or result.get("summary") or "",
@@ -137,25 +138,34 @@ def _evidence_summary(
 def _capability_trusted(
     profile: TrustedNodeProfile,
     evidence: dict[str, str],
-    result: dict[str, Any],
+    trust_capabilities: dict[str, dict[str, Any]],
 ) -> bool:
-    if isinstance(result.get("trusted"), bool):
-        return bool(result["trusted"])
-    status = _capability_status(profile, evidence)
+    status = _capability_status(profile, evidence, trust_capabilities)
     enabled = [value for value in status.values() if value != "disabled"]
     return bool(enabled) and all(value == "pass" for value in enabled)
 
 
-def _capability_status(profile: TrustedNodeProfile, evidence: dict[str, str]) -> dict[str, str]:
+def _capability_status(
+    profile: TrustedNodeProfile,
+    evidence: dict[str, str],
+    trust_capabilities: dict[str, dict[str, Any]],
+) -> dict[str, str]:
     capabilities = dict(profile.capabilities or {})
     return {
-        CAPABILITY_TRUSTED_BOOT: _enabled_status(capabilities, CAPABILITY_TRUSTED_BOOT, evidence, "boot"),
+        CAPABILITY_TRUSTED_BOOT: _enabled_status(
+            capabilities,
+            CAPABILITY_TRUSTED_BOOT,
+            evidence,
+            "boot",
+            trust_capabilities,
+        ),
         CAPABILITY_IMA_RUNTIME: _enabled_status(capabilities, CAPABILITY_IMA_RUNTIME, evidence, "runtime"),
         CAPABILITY_TPCM_DYNAMIC_MEASUREMENT: _enabled_status(
             capabilities,
             CAPABILITY_TPCM_DYNAMIC_MEASUREMENT,
             evidence,
             "runtime",
+            trust_capabilities,
         ),
         CAPABILITY_EVM: _enabled_status(capabilities, CAPABILITY_EVM, evidence, "evm"),
     }
@@ -166,9 +176,14 @@ def _enabled_status(
     capability: str,
     evidence: dict[str, str],
     evidence_type: str,
+    trust_capabilities: dict[str, dict[str, Any]] | None = None,
 ) -> str:
     if capabilities.get(capability) is not True:
         return "disabled"
+    if capability in {CAPABILITY_TRUSTED_BOOT, CAPABILITY_TPCM_DYNAMIC_MEASUREMENT}:
+        item = (trust_capabilities or {}).get(capability)
+        if item:
+            return str(item.get("status") or "missing")
     return evidence.get(evidence_type) or "missing"
 
 

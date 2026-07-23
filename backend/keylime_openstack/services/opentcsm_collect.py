@@ -21,6 +21,7 @@ from keylime_openstack.constants import (
     CAPABILITY_TRUSTED_BOOT,
     REGISTRATION_CONFLICT,
     REGISTRATION_REGISTERED,
+    REGISTRATION_UNMANAGED,
     REGISTRATION_UNTRUSTED,
     REGISTRATION_VERIFIED,
     TRUST_AGENT_OPENTCSM_TPCM,
@@ -161,6 +162,20 @@ def sync_tpcm_profile(
         }
         return
     tpcm_id = str(raw.get("tpcm_id") or "")
+    if not tpcm_id and not profile.trust_managed:
+        profile.trusted_root_type = TRUST_ROOT_TPCM
+        profile.registration_status = REGISTRATION_UNMANAGED
+        profile.last_verified_at = datetime.now(timezone.utc)
+        profile.last_evidence_summary = {
+            "trusted": False,
+            "evidence": {
+                "boot": report.get("boot_status") or "unknown",
+                "runtime": report.get("dynamic_measurement_status") or "unknown",
+            },
+            "reason": "OpenTCSM evidence does not contain a TPCM identity",
+            "source": "opentcsm",
+        }
+        return
     if not profile.trust_managed or profile.adapter_type != ADAPTER_OPENTCSM:
         profile = upsert_trusted_node_profile(
             session,

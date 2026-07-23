@@ -38,6 +38,7 @@ from keylime_openstack.services.trust_registration import (
     ensure_trusted_node_profile,
     profile_payload,
 )
+from keylime_openstack.services.trust_capabilities import build_trust_capability_summary
 
 
 def keylime_only_check(
@@ -114,7 +115,7 @@ def _keylime_only_check_once(
         for node in nodes:
             agent_type = node_trust_agent_type(node, settings)
             if agent_type == TRUST_AGENT_KEYLIME:
-                item = _keylime_node_check(client, node, settings)
+                item = _keylime_node_check(session, client, node, settings)
                 evaluated_count += 1
             elif agent_type == TRUST_AGENT_UNMANAGED and include_non_keylime:
                 item = _unmanaged_node_check(node, settings)
@@ -148,6 +149,7 @@ def _keylime_only_check_once(
 
 
 def _keylime_node_check(
+    session,
     client: KeylimeClient,
     node: ComputeNode,
     settings,
@@ -205,6 +207,9 @@ def _keylime_node_check(
     if reported_ip and node.keylime_agent_ip != reported_ip:
         node.keylime_agent_ip = reported_ip
     records = keylime_status_to_evidence(node, status, settings)
+    now = datetime.now(timezone.utc)
+    for record in records:
+        record.collected_at = record.collected_at or now
     evidence = {record.evidence_type: record.status for record in records}
     evidence_fresh = {
         record.evidence_type: _record_fresh(record.valid_until)
@@ -220,8 +225,18 @@ def _keylime_node_check(
     boot_fresh = evidence_fresh.get("boot", False)
     runtime_fresh = evidence_fresh.get("runtime", False)
     evm_fresh = evidence_fresh.get("evm", False)
+    profile = getattr(node, "trust_profile", None)
+    trust_capability_summary = (
+        build_trust_capability_summary(session, node, profile, records)
+        if profile
+        else {}
+    )
     capability_status = {
-        "boot": boot_ok and boot_fresh,
+        "boot": _summary_capability_pass(
+            trust_capability_summary,
+            CAPABILITY_TRUSTED_BOOT,
+            boot_ok and boot_fresh,
+        ),
         "ima": runtime_ok and runtime_fresh,
         "evm": evm_ok and evm_fresh,
     }
@@ -236,14 +251,25 @@ def _keylime_node_check(
         trusted=trusted,
         evidence=evidence,
         capability_status=capability_status,
-        reason=_keylime_only_reason(evidence, evidence_fresh, keylime_capabilities),
+        trust_capability_summary=trust_capability_summary,
+        reason=_keylime_only_reason(
+            evidence,
+            evidence_fresh,
+            keylime_capabilities,
+            trust_capability_summary,
+        ),
         reported_ip=reported_ip,
     )
     active_event_id = _active_last_event_id(status)
     reason = (
         "TRUSTED"
         if trusted
-        else _keylime_only_reason(evidence, evidence_fresh, keylime_capabilities)
+        else _keylime_only_reason(
+            evidence,
+            evidence_fresh,
+            keylime_capabilities,
+            trust_capability_summary,
+        )
     )
     return {
         **base,
@@ -264,6 +290,7 @@ def _keylime_node_check(
         "evidence_fresh": evidence_fresh,
         "evidence_valid_until": evidence_valid_until,
         "trust_capabilities": keylime_capabilities,
+        "trust_capability_summary": trust_capability_summary,
         "capability_status": capability_status,
         "remediation": _remediation(
             event_id=str(active_event_id or reason),
@@ -280,6 +307,7 @@ def _sync_keylime_profile(
     trusted: bool,
     evidence: dict[str, str],
     capability_status: dict[str, bool],
+    trust_capability_summary: dict[str, dict[str, object]],
     reason: str,
     reported_ip: str,
 ) -> None:
@@ -298,6 +326,7 @@ def _sync_keylime_profile(
         "trusted": trusted,
         "evidence": evidence,
         "capability_status": capability_status,
+        "trust_capabilities": trust_capability_summary,
         "boot_measurement_summary": {
             "type": "tpm_measured_boot",
             "status": evidence.get("boot") or "unknown",
@@ -325,12 +354,26 @@ def _external_trust_agent_node_check(
         record.evidence_type: record.valid_until.isoformat() if record.valid_until else None
         for record in records
     }
+    profile = getattr(node, "trust_profile", None)
+    trust_capability_summary = (
+        build_trust_capability_summary(session, node, profile, records)
+        if profile
+        else {}
+    )
     boot_ok = evidence.get("boot") == "pass" and evidence_fresh.get("boot", False)
     runtime_ok = evidence.get("runtime") == "pass" and evidence_fresh.get("runtime", False)
     evm_ok = evidence.get("evm") == "pass" and evidence_fresh.get("evm", False)
     capability_status = {
-        "boot": boot_ok,
-        "ima": runtime_ok,
+        "boot": _summary_capability_pass(
+            trust_capability_summary,
+            CAPABILITY_TRUSTED_BOOT,
+            boot_ok,
+        ),
+        "ima": _summary_capability_pass(
+            trust_capability_summary,
+            CAPABILITY_TPCM_DYNAMIC_MEASUREMENT,
+            runtime_ok,
+        ),
         "evm": evm_ok,
     }
     enabled_capabilities = [name for name, enabled in capabilities.items() if enabled]
@@ -340,7 +383,13 @@ def _external_trust_agent_node_check(
     reason = (
         "TRUSTED"
         if trusted
-        else _external_agent_reason(evidence, evidence_fresh, capabilities, agent_type)
+        else _external_agent_reason(
+            evidence,
+            evidence_fresh,
+            capabilities,
+            agent_type,
+            trust_capability_summary,
+        )
     )
     latest_record = max(records, key=lambda item: item.collected_at, default=None)
     report_record = max(
@@ -353,6 +402,7 @@ def _external_trust_agent_node_check(
         trusted=trusted,
         evidence=evidence,
         capability_status=capability_status,
+        trust_capability_summary=trust_capability_summary,
         reason=reason,
         report_record=report_record,
     )
@@ -385,6 +435,7 @@ def _external_trust_agent_node_check(
         "trust_report": _external_report_summary(report_record),
         "trust_report_history": _external_report_history(session, node),
         "trust_capabilities": capabilities,
+        "trust_capability_summary": trust_capability_summary,
         "capability_status": capability_status,
         "remediation": _remediation(
             event_id=reason,
@@ -401,6 +452,7 @@ def _sync_external_profile(
     trusted: bool,
     evidence: dict[str, str],
     capability_status: dict[str, bool],
+    trust_capability_summary: dict[str, dict[str, object]],
     reason: str,
     report_record,
 ) -> None:
@@ -417,6 +469,7 @@ def _sync_external_profile(
         "trusted": trusted,
         "evidence": evidence,
         "capability_status": capability_status,
+        "trust_capabilities": trust_capability_summary,
         "boot_measurement_summary": report.get("boot_measurement_summary") or {},
         "dynamic_measurement_summary": {
             "type": "tpcm_dynamic_measurement",
@@ -612,6 +665,8 @@ def _active_last_event_id(status: dict[str, object]) -> object:
 def _record_fresh(valid_until: datetime | None) -> bool:
     if valid_until is None:
         return True
+    if valid_until.tzinfo is None:
+        valid_until = valid_until.replace(tzinfo=timezone.utc)
     return valid_until >= datetime.now(timezone.utc)
 
 
@@ -635,7 +690,10 @@ def _coerce_epoch(value: object) -> int | None:
 def _external_evidence_age_seconds(record) -> int | None:
     if not record:
         return None
-    return max(0, int((datetime.now(timezone.utc) - record.collected_at).total_seconds()))
+    collected_at = record.collected_at
+    if collected_at.tzinfo is None:
+        collected_at = collected_at.replace(tzinfo=timezone.utc)
+    return max(0, int((datetime.now(timezone.utc) - collected_at).total_seconds()))
 
 
 def _external_record_epoch(record) -> int | None:
@@ -651,15 +709,24 @@ def _keylime_only_reason(
     evidence: dict[str, str],
     evidence_fresh: dict[str, bool],
     capabilities: dict[str, bool],
+    trust_capability_summary: dict[str, dict[str, object]] | None = None,
 ) -> str:
     missing = []
     checks = (
-        ("BOOT", "boot", "boot"),
-        ("IMA", "ima", "runtime"),
-        ("EVM", "evm", "evm"),
+        ("BOOT", "boot", "boot", CAPABILITY_TRUSTED_BOOT),
+        ("IMA", "ima", "runtime", CAPABILITY_IMA_RUNTIME),
+        ("EVM", "evm", "evm", CAPABILITY_EVM),
     )
-    for label, capability_name, evidence_type in checks:
+    for label, capability_name, evidence_type, product_capability in checks:
         if not capabilities.get(capability_name):
+            continue
+        capability_reason = (
+            _summary_capability_reason(trust_capability_summary, product_capability)
+            if product_capability == CAPABILITY_TRUSTED_BOOT
+            else ""
+        )
+        if capability_reason:
+            missing.append(f"{label}_{capability_reason}")
             continue
         status = evidence.get(evidence_type, "missing")
         fresh = evidence_fresh.get(evidence_type, False)
@@ -677,15 +744,27 @@ def _external_agent_reason(
     evidence_fresh: dict[str, bool],
     capabilities: dict[str, bool],
     agent_type: str,
+    trust_capability_summary: dict[str, dict[str, object]] | None = None,
 ) -> str:
     missing = []
     checks = (
-        ("BOOT", "boot", "boot"),
-        ("DYNAMIC", "ima", "runtime"),
-        ("EVM", "evm", "evm"),
+        ("BOOT", "boot", "boot", CAPABILITY_TRUSTED_BOOT),
+        ("TPCM_DYNAMIC_MEASUREMENT", "ima", "runtime", CAPABILITY_TPCM_DYNAMIC_MEASUREMENT),
+        ("EVM", "evm", "evm", CAPABILITY_EVM),
     )
-    for label, capability_name, evidence_type in checks:
+    for label, capability_name, evidence_type, product_capability in checks:
         if not capabilities.get(capability_name):
+            continue
+        capability_reason = (
+            _summary_capability_reason(trust_capability_summary, product_capability)
+            if product_capability in {
+                CAPABILITY_TRUSTED_BOOT,
+                CAPABILITY_TPCM_DYNAMIC_MEASUREMENT,
+            }
+            else ""
+        )
+        if capability_reason:
+            missing.append(f"{label}_{capability_reason}")
             continue
         status = evidence.get(evidence_type, "missing")
         fresh = evidence_fresh.get(evidence_type, False)
@@ -696,6 +775,43 @@ def _external_agent_reason(
     if not missing:
         return f"WAITING_FOR_{agent_type.upper()}_EVIDENCE"
     return "WAITING_FOR_" + "_".join(missing)
+
+
+def _summary_capability_pass(
+    trust_capability_summary: dict[str, dict[str, object]],
+    capability: str,
+    fallback: bool,
+) -> bool:
+    item = trust_capability_summary.get(capability)
+    if not item:
+        return fallback
+    return item.get("effective") is True or str(item.get("status") or "").lower() == "pass"
+
+
+def _summary_capability_reason(
+    trust_capability_summary: dict[str, dict[str, object]] | None,
+    capability: str,
+) -> str:
+    item = (trust_capability_summary or {}).get(capability)
+    if not item:
+        return ""
+    status = str(item.get("status") or "").strip().upper()
+    if status in {
+        "UNCONFIGURED",
+        "DISABLED",
+        "STALE",
+        "FAIL",
+        "UNKNOWN",
+        "MISSING",
+        "QUEUED",
+        "APPLYING",
+        "AWAITING_REBOOT",
+        "EXTERNAL_PENDING",
+        "NOT_DEPLOYED",
+        "SUPERSEDED",
+    }:
+        return status
+    return ""
 
 
 def _profile_check_capabilities(node: ComputeNode, settings) -> dict[str, bool]:

@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from keylime_openstack.constants import CAPABILITY_TPCM_DYNAMIC_MEASUREMENT
+from keylime_openstack.constants import (
+    CAPABILITY_TPCM_DYNAMIC_MEASUREMENT,
+    CAPABILITY_TRUSTED_BOOT,
+)
 from keylime_openstack.models import EvidenceRecord
 from keylime_openstack.services.decision import evaluate_trust, unmanaged_trust_decision
 
@@ -125,6 +128,50 @@ def test_tpcm_dynamic_runtime_capability_uses_product_reason_label() -> None:
     assert result["trusted"] is False
     assert result["reason"] == "WAITING_FOR_TPCM_DYNAMIC_MEASUREMENT"
     assert result["details"]["runtime_capability"] == CAPABILITY_TPCM_DYNAMIC_MEASUREMENT
+
+
+def test_trusted_boot_requires_applied_policy_capability() -> None:
+    result = evaluate_trust(
+        evidence=[_evidence("boot", "pass"), _evidence("runtime", "pass")],
+        openstack_state=None,
+        settings=DummySettings(boot=True, ima=False),
+        capability_summary={
+            CAPABILITY_TRUSTED_BOOT: {
+                "status": "unconfigured",
+                "effective": False,
+            }
+        },
+    )
+
+    assert result["trusted"] is False
+    assert result["boot_trusted"] is False
+    assert result["desired_traits"] == []
+    assert result["reason"] == "WAITING_FOR_BOOT_UNCONFIGURED"
+
+
+def test_tpcm_dynamic_requires_applied_policy_capability() -> None:
+    result = evaluate_trust(
+        evidence=[_evidence("runtime", "pass")],
+        openstack_state=None,
+        settings=DummySettings(boot=False, ima=True),
+        capabilities={
+            "boot": False,
+            "ima": True,
+            "evm": False,
+            "openstack_service": False,
+        },
+        runtime_capability=CAPABILITY_TPCM_DYNAMIC_MEASUREMENT,
+        capability_summary={
+            CAPABILITY_TPCM_DYNAMIC_MEASUREMENT: {
+                "status": "unconfigured",
+                "effective": False,
+            }
+        },
+    )
+
+    assert result["trusted"] is False
+    assert result["runtime_trusted"] is False
+    assert result["reason"] == "WAITING_FOR_TPCM_DYNAMIC_MEASUREMENT_UNCONFIGURED"
 
 
 def test_unmanaged_node_has_product_decision_reason() -> None:

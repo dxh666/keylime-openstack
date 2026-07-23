@@ -15,10 +15,12 @@ from keylime_openstack.constants import (
     CAPABILITY_TRUSTED_BOOT,
     POLICY_DEPLOY_APPLIED,
     POLICY_MEASURED_BOOT,
+    POLICY_TPCM_DYNAMIC_MEASUREMENT,
     TRUST_ROOT_TPCM,
 )
 from keylime_openstack.database import Base
 from keylime_openstack.models import (
+    AuditEvent,
     ComputeNode,
     EvidenceRecord,
     PolicyBinding,
@@ -185,6 +187,115 @@ def test_trust_capability_summary_uses_tpcm_boot_policy_binding() -> None:
     assert trusted_boot["baseline"]["content_sha256"] == "rendered-sha256"
     assert trusted_boot["baseline"]["boot_reference_count"] == 2
     assert trusted_boot["baseline"]["tpcm_write_status"] == "not_enabled"
+
+
+def test_trust_capability_summary_requires_policy_before_boot_pass() -> None:
+    with _memory_session() as session:
+        node = ComputeNode(
+            hostname="hygon23",
+            hypervisor_name="hygon23",
+            management_ip="172.31.100.23",
+            role="compute",
+        )
+        profile = TrustedNodeProfile(
+            node=node,
+            hostname="hygon23",
+            trust_managed=True,
+            trusted_root_type=TRUST_ROOT_TPCM,
+            capabilities={
+                CAPABILITY_TRUSTED_BOOT: True,
+                CAPABILITY_TPCM_DYNAMIC_MEASUREMENT: True,
+            },
+        )
+        session.add_all([node, profile])
+        session.flush()
+        now = datetime.now(timezone.utc)
+        evidence = EvidenceRecord(
+            node_id=node.id,
+            provider="opentcsm",
+            evidence_type="boot",
+            collected_at=now,
+            valid_until=now + timedelta(minutes=5),
+            status="pass",
+            summary="TPCM trusted boot passed",
+            payload={},
+        )
+        session.add(evidence)
+        session.flush()
+
+        summary = build_trust_capability_summary(session, node, profile, [evidence])
+
+    trusted_boot = summary[CAPABILITY_TRUSTED_BOOT]
+    assert trusted_boot["policy_bound"] is False
+    assert trusted_boot["status"] == "unconfigured"
+    assert trusted_boot["effective"] is False
+
+
+def test_trust_capability_summary_honors_tpcm_dynamic_global_switch() -> None:
+    with _memory_session() as session:
+        node = ComputeNode(
+            hostname="hygon23",
+            hypervisor_name="hygon23",
+            management_ip="172.31.100.23",
+            role="compute",
+        )
+        profile = TrustedNodeProfile(
+            node=node,
+            hostname="hygon23",
+            trust_managed=True,
+            trusted_root_type=TRUST_ROOT_TPCM,
+            capabilities={
+                CAPABILITY_TRUSTED_BOOT: True,
+                CAPABILITY_TPCM_DYNAMIC_MEASUREMENT: True,
+            },
+        )
+        policy = TrustPolicy(
+            name="hygon23-dynamic",
+            policy_type=POLICY_TPCM_DYNAMIC_MEASUREMENT,
+            status="active",
+            content={
+                "node_dynamic_measure_enabled": True,
+                "dynamic_measure_required": True,
+            },
+        )
+        session.add_all([node, profile, policy])
+        session.flush()
+        session.add(
+            PolicyBinding(
+                policy=policy,
+                target_type=BINDING_NODE,
+                target_id=node.id,
+                active=True,
+                application_status=POLICY_DEPLOY_APPLIED,
+            )
+        )
+        now = datetime.now(timezone.utc)
+        evidence = EvidenceRecord(
+            node_id=node.id,
+            provider="opentcsm",
+            evidence_type="runtime",
+            collected_at=now,
+            valid_until=now + timedelta(minutes=5),
+            status="pass",
+            summary="TPCM dynamic measurement passed",
+            payload={},
+        )
+        session.add(
+            AuditEvent(
+                event_type="tpcm_dynamic_global_switch",
+                event_details={"global_dynamic_measure_enabled": False},
+            )
+        )
+        session.add(evidence)
+        session.flush()
+
+        summary = build_trust_capability_summary(session, node, profile, [evidence])
+
+    dynamic = summary[CAPABILITY_TPCM_DYNAMIC_MEASUREMENT]
+    assert dynamic["policy_bound"] is True
+    assert dynamic["policy_enabled"] is False
+    assert dynamic["status"] == "disabled"
+    assert dynamic["effective"] is False
 
 
 def _tpcm_policy_content() -> dict[str, object]:

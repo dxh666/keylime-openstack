@@ -81,6 +81,12 @@ class TrustSyncService:
         trust_managed = node_trust_managed(node, self.settings)
         trust_agent_result = self.evidence_collector.collect_for_node(node)
         evidence = latest_evidence_for_decision(self.session, node)
+        capability_summary = build_trust_capability_summary(
+            self.session,
+            node,
+            profile,
+            evidence,
+        )
         openstack_state = self._latest_openstack_state(node)
         if trust_managed:
             decision_data = evaluate_trust(
@@ -89,6 +95,7 @@ class TrustSyncService:
                 settings=self.settings,
                 capabilities=_decision_capabilities(self.settings, profile),
                 runtime_capability=_runtime_capability(profile),
+                capability_summary=capability_summary,
             )
         else:
             decision_data = unmanaged_trust_decision(openstack_state)
@@ -110,6 +117,7 @@ class TrustSyncService:
             decision_data,
             evidence,
             trust_agent_result,
+            capability_summary,
         )
 
         trait_result = self.openstack.set_provider_traits(
@@ -160,6 +168,7 @@ def _update_profile_from_decision(
     decision_data: dict[str, object],
     evidence: list[object],
     trust_agent_result: dict[str, object],
+    capability_summary: dict[str, dict[str, object]] | None = None,
 ) -> None:
     trust_managed = bool(profile.trust_managed)
     trusted = bool(decision_data.get("trusted"))
@@ -172,7 +181,8 @@ def _update_profile_from_decision(
     profile.last_evidence_summary = {
         "trusted": trusted,
         "evidence": evidence_status,
-        "trust_capabilities": build_trust_capability_summary(
+        "trust_capabilities": capability_summary
+        or build_trust_capability_summary(
             session,
             node,
             profile,

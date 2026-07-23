@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import select
@@ -19,7 +20,14 @@ from keylime_openstack.constants import (
     POLICY_TPCM_DYNAMIC_MEASUREMENT,
     TRUST_ROOT_TPCM,
 )
-from keylime_openstack.models import ComputeNode, EvidenceRecord, PolicyBinding, TrustPolicy, TrustedNodeProfile
+from keylime_openstack.models import (
+    AuditEvent,
+    ComputeNode,
+    EvidenceRecord,
+    PolicyBinding,
+    TrustPolicy,
+    TrustedNodeProfile,
+)
 
 CAPABILITY_POLICY_TYPES = {
     CAPABILITY_TRUSTED_BOOT: POLICY_MEASURED_BOOT,
@@ -46,6 +54,7 @@ def build_trust_capability_summary(
     evidence_records = evidence_records or []
     latest = {record.evidence_type: record for record in evidence_records}
     capabilities = dict(profile.capabilities or {})
+    dynamic_global_enabled = _tpcm_dynamic_global_enabled(session)
     return {
         capability: _capability_item(
             session,
@@ -54,6 +63,7 @@ def build_trust_capability_summary(
             capability,
             supported=capabilities.get(capability) is True,
             evidence=latest.get(CAPABILITY_EVIDENCE_TYPES[capability]),
+            dynamic_global_enabled=dynamic_global_enabled,
         )
         for capability in (
             CAPABILITY_TRUSTED_BOOT,
@@ -72,15 +82,31 @@ def _capability_item(
     *,
     supported: bool,
     evidence: EvidenceRecord | None,
+    dynamic_global_enabled: bool,
 ) -> dict[str, Any]:
     binding = _active_capability_binding(session, node, profile, capability)
     policy_bound = bool(binding and binding.application_status == POLICY_DEPLOY_APPLIED)
+    policy_enabled = _policy_enabled(
+        binding,
+        capability,
+        dynamic_global_enabled=dynamic_global_enabled,
+    )
     evidence_status = str(evidence.status) if evidence else "missing"
-    status = _capability_status(supported, policy_bound, evidence_status)
+    evidence_fresh = _evidence_fresh(evidence)
+    status = _capability_status(
+        supported,
+        policy_bound,
+        policy_enabled,
+        evidence_status,
+        evidence_fresh,
+        binding,
+    )
     reason = _capability_reason(
         supported=supported,
         policy_bound=policy_bound,
+        policy_enabled=policy_enabled,
         evidence_status=evidence_status,
+        evidence_fresh=evidence_fresh,
         binding=binding,
         evidence=evidence,
     )
@@ -88,11 +114,15 @@ def _capability_item(
         "supported": supported,
         "enabled": supported,
         "policy_bound": policy_bound,
+        "policy_enabled": policy_enabled,
+        "policy_status": binding.application_status if binding else "not_deployed",
         "status": status,
+        "effective": status == "pass",
         "evidence_type": CAPABILITY_EVIDENCE_TYPES[capability],
         "provider": evidence.provider if evidence else "",
         "last_verified_at": evidence.collected_at.isoformat() if evidence else None,
         "valid_until": evidence.valid_until.isoformat() if evidence and evidence.valid_until else None,
+        "evidence_fresh": evidence_fresh,
         "reason": reason,
         "binding_id": binding.id if binding else None,
         "application_status": binding.application_status if binding else "not_deployed",
@@ -116,29 +146,83 @@ def _active_capability_binding(
         .where(PolicyBinding.target_id == node.id)
         .where(PolicyBinding.active.is_(True))
         .where(TrustPolicy.policy_type == policy_type)
-        .order_by(PolicyBinding.applied_at.desc(), PolicyBinding.id.desc())
-        .limit(5)
+        .order_by(PolicyBinding.id.desc())
     )
+    pending: PolicyBinding | None = None
     for binding in session.scalars(statement).all():
-        content = dict(binding.policy.content or {})
-        if capability == CAPABILITY_TRUSTED_BOOT:
-            root = str(content.get("trusted_root_type") or "tpm").lower()
-            if profile.trusted_root_type == TRUST_ROOT_TPCM:
-                if root == TRUST_ROOT_TPCM:
-                    return binding
-                continue
-            if root != TRUST_ROOT_TPCM:
-                return binding
+        if not _binding_matches_capability(binding, profile, capability):
             continue
-        return binding
-    return None
+        if binding.application_status == POLICY_DEPLOY_APPLIED:
+            return binding
+        if pending is None:
+            pending = binding
+    return pending
 
 
-def _capability_status(supported: bool, policy_bound: bool, evidence_status: str) -> str:
+def _binding_matches_capability(
+    binding: PolicyBinding,
+    profile: TrustedNodeProfile,
+    capability: str,
+) -> bool:
+    content = dict(binding.policy.content or {})
+    if capability != CAPABILITY_TRUSTED_BOOT:
+        return True
+    root = str(content.get("trusted_root_type") or "tpm").lower()
+    if profile.trusted_root_type == TRUST_ROOT_TPCM:
+        return root == TRUST_ROOT_TPCM
+    return root != TRUST_ROOT_TPCM
+
+
+def _policy_enabled(
+    binding: PolicyBinding | None,
+    capability: str,
+    *,
+    dynamic_global_enabled: bool,
+) -> bool:
+    if not binding or binding.application_status != POLICY_DEPLOY_APPLIED:
+        return False
+    if capability != CAPABILITY_TPCM_DYNAMIC_MEASUREMENT:
+        return True
+    if not dynamic_global_enabled:
+        return False
+    content = dict(binding.policy.content or {})
+    return bool(
+        content.get(
+            "node_dynamic_measure_enabled",
+            content.get("dynamic_measure_required", True),
+        )
+    )
+
+
+def _evidence_fresh(evidence: EvidenceRecord | None) -> bool:
+    if not evidence:
+        return False
+    if evidence.valid_until is None:
+        return True
+    valid_until = evidence.valid_until
+    if valid_until.tzinfo is None:
+        valid_until = valid_until.replace(tzinfo=timezone.utc)
+    return valid_until >= datetime.now(timezone.utc)
+
+
+def _capability_status(
+    supported: bool,
+    policy_bound: bool,
+    policy_enabled: bool,
+    evidence_status: str,
+    evidence_fresh: bool,
+    binding: PolicyBinding | None,
+) -> str:
     if not supported:
         return "unsupported"
     if not policy_bound:
-        return "unconfigured" if evidence_status in {"missing", ""} else evidence_status
+        if binding and binding.application_status == "failed":
+            return "fail"
+        return "unconfigured"
+    if not policy_enabled:
+        return "disabled"
+    if evidence_status == "pass" and not evidence_fresh:
+        return "stale"
     return evidence_status or "missing"
 
 
@@ -146,7 +230,9 @@ def _capability_reason(
     *,
     supported: bool,
     policy_bound: bool,
+    policy_enabled: bool,
     evidence_status: str,
+    evidence_fresh: bool,
     binding: PolicyBinding | None,
     evidence: EvidenceRecord | None,
 ) -> str:
@@ -155,7 +241,11 @@ def _capability_reason(
     if binding and binding.application_status != POLICY_DEPLOY_APPLIED:
         return binding.last_error or f"policy deployment {binding.application_status}"
     if not policy_bound:
-        return "policy is not bound"
+        return "policy is not applied"
+    if not policy_enabled:
+        return "policy is disabled"
+    if evidence_status == "pass" and not evidence_fresh:
+        return "capability evidence is stale"
     if evidence_status == "pass":
         return evidence.summary if evidence else "capability evidence passed"
     if evidence:
@@ -193,3 +283,16 @@ def _baseline_summary(binding: PolicyBinding | None, capability: str) -> dict[st
         "content_sha256": details.get("rendered_policy_sha256") or "",
         "evidence_sha256": details.get("evidence_sha256") or "",
     }
+
+
+def _tpcm_dynamic_global_enabled(session: Session) -> bool:
+    event = session.scalars(
+        select(AuditEvent)
+        .where(AuditEvent.event_type == "tpcm_dynamic_global_switch")
+        .order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
+        .limit(1)
+    ).first()
+    if not event:
+        return True
+    details = dict(event.event_details or {})
+    return details.get("global_dynamic_measure_enabled") is not False

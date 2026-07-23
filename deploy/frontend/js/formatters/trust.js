@@ -62,7 +62,8 @@ export const trustFormatters = {
     if (!item) return "-";
     const parts = [
       `状态：${this.stateText(item.status)}`,
-      `策略：${item.policy_bound ? "已绑定" : "未绑定"}`,
+      `策略：${item.policy_bound ? "已生效" : "未生效"}`,
+      `能力：${item.policy_enabled ? "已开启" : "已关闭"}`,
       `证据：${item.provider || "-"} / ${item.evidence_type || "-"}`
     ];
     if (item.baseline?.content_sha256) {
@@ -214,6 +215,13 @@ export const trustFormatters = {
       pass: "通过",
       fail: "失败",
       missing: "缺失",
+      stale: "已过期",
+      disabled: "已关闭",
+      queued: "待生效",
+      applying: "生效中",
+      awaiting_reboot: "待重启",
+      external_pending: "待外部生效",
+      superseded: "已替换",
       unsupported: "不支持",
       unconfigured: "未配置",
       not_deployed: "未下发",
@@ -227,7 +235,7 @@ export const trustFormatters = {
   evidenceClass(value) {
     const normalized = String(value || "").toLowerCase();
     if (normalized === "pass") return "ok";
-    if (normalized === "fail") return "bad";
+    if (["fail", "stale", "error"].includes(normalized)) return "bad";
     return "warn";
   },
 };
