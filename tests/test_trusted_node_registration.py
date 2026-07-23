@@ -16,6 +16,7 @@ from keylime_openstack.constants import (
     CAPABILITY_TRUSTED_BOOT,
     PROVIDER_OPENTCSM,
     REGISTRATION_CONFLICT,
+    REGISTRATION_UNMANAGED,
     REGISTRATION_VERIFIED,
     TRUST_AGENT_OPENTCSM_TPCM,
     TRUST_AGENT_UNMANAGED,
@@ -530,6 +531,101 @@ def test_registration_sync_uses_opentcsm_evidence_as_tpcm_registration() -> None
         "BIOS/U-BOOT",
         "shim.efi",
     ]
+
+
+def test_registration_sync_does_not_manage_tpcm_evidence_without_identity() -> None:
+    with _memory_session() as memory_session:
+        node = ComputeNode(
+            hostname="compute-k2",
+            hypervisor_name="nova-k2",
+            management_ip="10.0.0.212",
+            role="compute",
+            facts={"trusted_root_type": "tpcm", "trusted_root": "Hygon TPCM"},
+        )
+        memory_session.add(node)
+        memory_session.flush()
+        memory_session.add(
+            EvidenceRecord(
+                node_id=node.id,
+                provider=PROVIDER_OPENTCSM,
+                evidence_type="runtime",
+                collected_at=datetime.now(timezone.utc),
+                status="fail",
+                summary="OpenTCSM TPCM report incomplete",
+                payload={
+                    "trusted": False,
+                    "raw": {
+                        "tpcm_id": "",
+                        "boot_measure_on": False,
+                        "boot_status": "fail",
+                        "dynamic_measure_on": False,
+                        "dynamic_measurement_status": "fail",
+                    },
+                },
+            )
+        )
+        memory_session.flush()
+
+        result = sync_trusted_node_registrations(
+            memory_session,
+            Settings(keylime_auto_registration_enabled=False),
+        )
+
+    assert result["tpcm_registrations"] == []
+    assert node.trust_profile.trust_managed is False
+    assert node.trust_profile.trusted_root_type == TRUST_ROOT_TPCM
+    assert node.trust_profile.registration_status == REGISTRATION_UNMANAGED
+    assert node.trust_profile.capabilities == {}
+
+
+def test_registration_sync_demotes_auto_tpcm_profile_when_identity_disappears() -> None:
+    with _memory_session() as memory_session:
+        node = ComputeNode(
+            hostname="compute-k3",
+            hypervisor_name="nova-k3",
+            management_ip="10.0.0.213",
+            role="compute",
+            facts={"trusted_root_type": "tpcm", "trusted_root": "Hygon TPCM"},
+        )
+        memory_session.add(node)
+        memory_session.flush()
+        upsert_trusted_node_profile(
+            memory_session,
+            node,
+            Settings(),
+            {
+                "trust_managed": True,
+                "trusted_root_type": "tpcm",
+                "adapter_type": ADAPTER_OPENTCSM,
+                "agent_identity": {
+                    "tpcm_id": "old-tpcm-id",
+                    "registration_source": "opentcsm-evidence",
+                },
+            },
+        )
+        memory_session.add(
+            EvidenceRecord(
+                node_id=node.id,
+                provider=PROVIDER_OPENTCSM,
+                evidence_type="runtime",
+                collected_at=datetime.now(timezone.utc),
+                status="fail",
+                summary="OpenTCSM TPCM report incomplete",
+                payload={"trusted": False, "raw": {"tpcm_id": ""}},
+            )
+        )
+        memory_session.flush()
+
+        result = sync_trusted_node_registrations(
+            memory_session,
+            Settings(keylime_auto_registration_enabled=False),
+        )
+
+    assert result["tpcm_registrations"] == []
+    assert node.trust_profile.trust_managed is False
+    assert node.trust_profile.adapter_type == ""
+    assert node.trust_profile.registration_status == REGISTRATION_UNMANAGED
+    assert node.trust_profile.capabilities == {}
 
 
 def test_opentcsm_evidence_ingestion_promotes_unmanaged_tpcm_profile() -> None:

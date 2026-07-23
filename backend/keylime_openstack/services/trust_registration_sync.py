@@ -23,6 +23,7 @@ from keylime_openstack.constants import (
     PROVIDER_OPENTCSM,
     REGISTRATION_CONFLICT,
     REGISTRATION_REGISTERED,
+    REGISTRATION_UNMANAGED,
     REGISTRATION_UNTRUSTED,
     REGISTRATION_VERIFIED,
     REGISTRATION_VERIFIER_ENROLLED,
@@ -213,6 +214,15 @@ def _sync_tpcm_inventory_profiles(
     for node in nodes:
         candidate = _tpcm_registration_candidate(session, node)
         if not candidate:
+            _demote_invalid_auto_tpcm_profile(session, node, settings)
+            continue
+        if candidate.get("valid") is False:
+            _demote_invalid_auto_tpcm_profile(
+                session,
+                node,
+                settings,
+                candidate=candidate,
+            )
             continue
 
         profile = ensure_trusted_node_profile(session, node, settings)
@@ -268,6 +278,43 @@ def _sync_tpcm_inventory_profiles(
         "conflicts": conflicts,
         "manual_profiles_preserved": manual_profiles_preserved,
     }
+
+
+def _demote_invalid_auto_tpcm_profile(
+    session: Session,
+    node: ComputeNode,
+    settings: Settings,
+    *,
+    candidate: dict[str, Any] | None = None,
+) -> None:
+    profile = ensure_trusted_node_profile(session, node, settings)
+    if profile_manually_configured(profile):
+        return
+    if profile.adapter_type != ADAPTER_OPENTCSM:
+        return
+    profile.trust_managed = False
+    profile.adapter_type = ""
+    profile.agent_endpoint = {}
+    profile.agent_identity = {
+        "registration_source": str((candidate or {}).get("source") or "tpcm-inventory"),
+    }
+    profile.capabilities = {}
+    profile.registration_status = REGISTRATION_UNMANAGED
+    profile.last_evidence_summary = {
+        **dict(profile.last_evidence_summary or {}),
+        "trusted": False,
+        "reason": str((candidate or {}).get("reason") or "tpcm-agent-identity-missing"),
+    }
+    evidence_summary = (candidate or {}).get("evidence_summary")
+    if isinstance(evidence_summary, dict) and evidence_summary:
+        profile.last_evidence_summary = {
+            **evidence_summary,
+            "trusted": False,
+            "reason": str((candidate or {}).get("reason") or evidence_summary.get("reason") or ""),
+        }
+    if candidate and candidate.get("verified_at"):
+        profile.last_verified_at = candidate["verified_at"]
+    session.flush()
 
 
 def _sync_discovered_keylime_agents(
@@ -485,6 +532,17 @@ def _tpcm_registration_candidate(session: Session, node: ComputeNode) -> dict[st
         "source": source,
         "registration_status": REGISTRATION_REGISTERED,
     }
+    if not tpcm_id:
+        invalid_candidate = {
+            **candidate,
+            "valid": False,
+            "registration_status": REGISTRATION_UNMANAGED,
+            "reason": "OpenTCSM evidence does not contain a TPCM identity",
+        }
+        if latest_evidence is not None:
+            invalid_candidate["verified_at"] = latest_evidence.collected_at
+            invalid_candidate["evidence_summary"] = _opentcsm_evidence_summary(latest_evidence)
+        return invalid_candidate
     if latest_evidence is not None:
         trusted = _evidence_payload_trusted(evidence_payload)
         if trusted is True:
