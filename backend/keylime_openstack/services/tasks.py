@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from collections.abc import Mapping
+from datetime import date, datetime, timezone
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -27,7 +28,7 @@ def create_task(
         status=TASK_PENDING,
         target=target,
         requested_by=requested_by,
-        task_args=task_args or {},
+        task_args=_json_safe(task_args or {}),
     )
     session.add(task)
     session.flush()
@@ -42,11 +43,23 @@ def mark_running(task: TaskRun) -> None:
 def mark_success(task: TaskRun, result: dict[str, Any] | None = None) -> None:
     task.status = TASK_SUCCESS
     task.finished_at = datetime.now(timezone.utc)
-    task.result = result or {}
+    task.result = _json_safe(result or {})
 
 
 def mark_failed(task: TaskRun, error: str, result: dict[str, Any] | None = None) -> None:
     task.status = TASK_FAILED
     task.finished_at = datetime.now(timezone.utc)
     task.error = error
-    task.result = result or {}
+    task.result = _json_safe(result or {})
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, datetime | date):
+        return value.isoformat()
+    if isinstance(value, Mapping):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list | tuple | set):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, str | int | float | bool) or value is None:
+        return value
+    return str(value)
