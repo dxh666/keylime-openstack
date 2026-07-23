@@ -58,6 +58,32 @@ export const trustFormatters = {
     if (caps.tpcm_dynamic_measurement === true) labels.push("TPCM动态度量");
     return labels.length ? labels.join("、") : "-";
   },
+  trustCapabilityItemText(item) {
+    if (!item) return "-";
+    const parts = [
+      `状态：${this.stateText(item.status)}`,
+      `策略：${item.policy_bound ? "已绑定" : "未绑定"}`,
+      `证据：${item.provider || "-"} / ${item.evidence_type || "-"}`
+    ];
+    if (item.baseline?.content_sha256) {
+      parts.push(`基线：${this.shortHash(item.baseline.content_sha256)}`);
+    }
+    if (item.baseline?.tpcm_write_status) {
+      parts.push(`TPCM写入：${this.tpcmWriteStatusText(item.baseline.tpcm_write_status)}`);
+    }
+    if (item.reason) parts.push(`说明：${item.reason}`);
+    return parts.join("\n");
+  },
+  tpcmWriteStatusText(value) {
+    const names = {
+      not_enabled: "未启用",
+      authorization_missing: "授权材料缺失",
+      reserved_not_executed: "已预留未执行",
+      written: "已写入",
+      failed: "写入失败"
+    };
+    return names[String(value || "")] || value || "-";
+  },
   evidenceSummaryText(summary) {
     const evidence = summary?.evidence || {};
     const parts = [];
@@ -79,7 +105,11 @@ export const trustFormatters = {
     if (summary.records_preview?.length) {
       parts.push(`记录预览：${summary.records_preview.join("、")}`);
     }
+    if (summary.references_preview?.length) {
+      parts.push(`参考值预览：${summary.references_preview.join("、")}`);
+    }
     if (summary.records_sha256) parts.push(`记录哈希：${this.shortHash(summary.records_sha256)}`);
+    if (summary.references_sha256) parts.push(`参考值哈希：${this.shortHash(summary.references_sha256)}`);
     return parts.join("\n");
   },
   dynamicMeasurementSummaryText(summary) {
@@ -184,6 +214,9 @@ export const trustFormatters = {
       pass: "通过",
       fail: "失败",
       missing: "缺失",
+      unsupported: "不支持",
+      unconfigured: "未配置",
+      not_deployed: "未下发",
       unknown: "未知",
       none: "-",
       collected: "已采集",

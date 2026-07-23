@@ -104,6 +104,9 @@ def _status(value: object, *, overall: object, default: str) -> str:
 
 def _boot_measurement_summary(raw: dict[str, Any]) -> dict[str, Any]:
     boot_records = raw.get("boot_records") if isinstance(raw.get("boot_records"), list) else []
+    boot_references = (
+        raw.get("boot_references") if isinstance(raw.get("boot_references"), list) else []
+    )
     reference_count = raw.get("boot_measure_ref_number")
     return {
         "type": "tpcm_boot_measurement",
@@ -112,8 +115,10 @@ def _boot_measurement_summary(raw: dict[str, Any]) -> dict[str, Any]:
         "record_count": len(boot_records),
         "reference_count": reference_count,
         "records_preview": boot_records[:5],
+        "references_preview": boot_references[:5],
         "baseline_ready": bool(reference_count),
         "records_sha256": raw.get("boot_measure_records_sha256") or "",
+        "references_sha256": raw.get("boot_measure_references_sha256") or "",
         "trust_report_sha256": raw.get("trust_report_sha256") or "",
     }
 

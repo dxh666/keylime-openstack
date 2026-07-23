@@ -10,6 +10,9 @@ from sqlalchemy.orm import Session, selectinload
 
 from keylime_openstack.constants import (
     BINDING_NODE,
+    CAPABILITY_IMA_RUNTIME,
+    CAPABILITY_TPCM_DYNAMIC_MEASUREMENT,
+    CAPABILITY_TRUSTED_BOOT,
     LEGACY_POLICY_TYPE_ALIASES,
     POLICY_EVM,
     POLICY_DEPLOY_FAILED,
@@ -19,12 +22,16 @@ from keylime_openstack.constants import (
     POLICY_DEPLOY_QUEUED,
     POLICY_TPCM_DYNAMIC_MEASUREMENT,
     SUPPORTED_POLICY_TYPES,
+    TRUST_ROOT_TPCM,
+    TRUST_ROOT_TPM,
 )
+from keylime_openstack.config import Settings
 from keylime_openstack.models import ComputeNode, PolicyBinding, TrustPolicy
 from keylime_openstack.services.opentcsm_policy import (
     OPEN_TCSM_DMEASURE_OBJECTS,
     normalize_dmeasure_objects,
 )
+from keylime_openstack.services.trust_registration import ensure_trusted_node_profile
 from keylime_openstack.schemas import PolicyBindingOut, TrustPolicyIn, TrustPolicyOut
 
 
@@ -74,6 +81,7 @@ def bind_policy_to_nodes(
     node_ids: list[int],
     *,
     deploy_now: bool,
+    settings: Settings | None = None,
 ) -> list[PolicyBinding]:
     nodes = session.scalars(
         select(ComputeNode)
@@ -89,6 +97,8 @@ def bind_policy_to_nodes(
 
     bindings: list[PolicyBinding] = []
     for node in nodes:
+        if settings is not None:
+            _validate_policy_target(session, settings, policy, node)
         binding = PolicyBinding(
             policy=policy,
             target_type=BINDING_NODE,
@@ -108,6 +118,53 @@ def bind_policy_to_nodes(
         bindings.append(binding)
     session.flush()
     return bindings
+
+
+def _validate_policy_target(
+    session: Session,
+    settings: Settings,
+    policy: TrustPolicy,
+    node: ComputeNode,
+) -> None:
+    profile = ensure_trusted_node_profile(session, node, settings)
+    capabilities = dict(profile.capabilities or {})
+    policy_type = canonical_policy_type(policy.policy_type)
+    if policy_type == POLICY_MEASURED_BOOT:
+        trusted_root_type = _trusted_boot_root_type(policy.content)
+        if (
+            not profile.trust_managed
+            or profile.trusted_root_type != trusted_root_type
+            or capabilities.get(CAPABILITY_TRUSTED_BOOT) is not True
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "可信启动策略目标必须是已纳管且支持可信启动的 "
+                    f"{trusted_root_type.upper()} 计算节点：{node.hostname}"
+                ),
+            )
+        return
+    if policy_type == POLICY_IMA_RUNTIME:
+        if (
+            not profile.trust_managed
+            or profile.trusted_root_type != TRUST_ROOT_TPM
+            or capabilities.get(CAPABILITY_IMA_RUNTIME) is not True
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail=f"IMA 运行时策略目标必须是已纳管 TPM 计算节点：{node.hostname}",
+            )
+        return
+    if policy_type == POLICY_TPCM_DYNAMIC_MEASUREMENT:
+        if (
+            not profile.trust_managed
+            or profile.trusted_root_type != TRUST_ROOT_TPCM
+            or capabilities.get(CAPABILITY_TPCM_DYNAMIC_MEASUREMENT) is not True
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail=f"环境动态度量策略目标必须是已纳管 TPCM 计算节点：{node.hostname}",
+            )
 
 
 def load_policy(session: Session, policy_id: int) -> TrustPolicy | None:
@@ -201,6 +258,10 @@ def effective_policies_for_node(session: Session, node: ComputeNode) -> list[Tru
 
 
 def _validate_measured_boot(content: dict[str, Any]) -> dict[str, Any]:
+    trusted_root_type = _trusted_boot_root_type(content)
+    if trusted_root_type == TRUST_ROOT_TPCM:
+        return _validate_tpcm_trusted_boot(content)
+
     normalized_pcrs = _normalize_pcr_list(content.get("pcrs", list(range(8))))
     fallback_pcrs = _normalize_pcr_list(content.get("fallback_pcrs", [7]))
     policy_engine = str(content.get("policy_engine") or "").strip()
@@ -217,12 +278,86 @@ def _validate_measured_boot(content: dict[str, Any]) -> dict[str, Any]:
         )
     return {
         **content,
+        "trusted_root_type": TRUST_ROOT_TPM,
+        "policy_scope": "trusted_boot",
         "policy_engine": policy_engine or "configured",
         "pcrs": normalized_pcrs,
         "fallback_pcrs": fallback_pcrs,
         "reference_state_mode": "provided" if reference_state else "collect_from_node",
         "event_log_fallback": str(content.get("event_log_fallback") or "pcr_quote"),
         "secure_boot_required": bool(content.get("secure_boot_required", True)),
+    }
+
+
+def _trusted_boot_root_type(content: dict[str, Any]) -> str:
+    raw = str(
+        content.get("trusted_root_type")
+        or content.get("trust_root_type")
+        or content.get("root_type")
+        or TRUST_ROOT_TPM
+    ).strip().lower().replace("-", "_")
+    if raw == TRUST_ROOT_TPCM:
+        return TRUST_ROOT_TPCM
+    return TRUST_ROOT_TPM
+
+
+def _validate_tpcm_trusted_boot(content: dict[str, Any]) -> dict[str, Any]:
+    minimum_refs = _bounded_int(
+        content.get("minimum_boot_references", content.get("minimum_references", 1)),
+        "TPCM 启动参考值数量",
+        minimum=0,
+        maximum=100_000,
+    )
+    expected_record_count = content.get("expected_boot_record_count")
+    if expected_record_count in ("", None):
+        normalized_record_count: int | None = None
+    else:
+        normalized_record_count = _bounded_int(
+            expected_record_count,
+            "TPCM 启动记录数量",
+            minimum=0,
+            maximum=100_000,
+        )
+    apply_mode = str(content.get("tpcm_apply_mode") or "").strip().lower()
+    write_enabled = bool(content.get("tpcm_write_enabled", False))
+    if not apply_mode:
+        apply_mode = "tpcm_write" if write_enabled else "management_baseline"
+    if apply_mode not in {"management_baseline", "tpcm_write"}:
+        raise HTTPException(
+            status_code=422,
+            detail="TPCM 可信启动应用模式仅支持 management_baseline 或 tpcm_write",
+        )
+    auth_material_ref = str(
+        content.get("auth_material_ref")
+        or content.get("tpcm_auth_ref")
+        or "bmeasure-uid"
+    ).strip()
+    return {
+        **content,
+        "trusted_root_type": TRUST_ROOT_TPCM,
+        "policy_scope": "trusted_boot",
+        "evidence_type": "tpcm_boot_measurement",
+        "baseline_generation": "auto_collect_tpcm_boot_measurement",
+        "boot_measure_required": bool(content.get("boot_measure_required", True)),
+        "minimum_boot_references": minimum_refs,
+        "expected_boot_record_count": normalized_record_count,
+        "expected_boot_records_sha256": str(content.get("expected_boot_records_sha256") or ""),
+        "expected_trust_report_sha256": str(content.get("expected_trust_report_sha256") or ""),
+        "require_clean_trust_report": bool(content.get("require_clean_trust_report", True)),
+        "require_trust_status": str(content.get("require_trust_status") or "trusted"),
+        "require_trust_report_eval": _bounded_int(
+            content.get("require_trust_report_eval", 100),
+            "TPCM 可信报告评分",
+            minimum=0,
+            maximum=100,
+        ),
+        "tpcm_apply_mode": apply_mode,
+        "tpcm_write_enabled": write_enabled,
+        "auth_material_ref": auth_material_ref,
+        "tpcm_operation": str(content.get("tpcm_operation") or "add"),
+        "tpcm_stage": content.get("tpcm_stage"),
+        "keylime_artifact": "opentcsm_tpcm_boot_policy",
+        "adapter_artifact": "opentcsm_tpcm_boot_policy",
     }
 
 

@@ -36,7 +36,12 @@ export const taskFormatters = {
       return "系统周期同步，已从任务列表折叠";
     }
     if (task?.task_type === "sync") return "同步 OpenStack 节点、可信代理与验证结果";
-    if (task?.task_type === "policy_deploy") return "下发可信策略到目标节点";
+    if (task?.task_type === "policy_deploy") {
+      const policyType = task.result?.policy_type || task.task_args?.policy_type || "";
+      if (policyType === "measured_boot") return "应用可信启动策略并绑定节点基线";
+      if (policyType === "tpcm_dynamic_measurement") return "应用环境动态度量策略";
+      return "下发可信策略到目标节点";
+    }
     if (task?.task_type === "opentcsm_collect") return "采集 TPCM 可信报告";
     return "-";
   },

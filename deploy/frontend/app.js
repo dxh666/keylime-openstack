@@ -1,18 +1,18 @@
-import { displayMethods } from "./js/formatters.js?v=20260723-list-pages";
-import { dashboardComputed } from "./js/modules/dashboard.js?v=20260723-audit-task-ux";
+import { displayMethods } from "./js/formatters.js?v=20260723-trusted-boot";
+import { dashboardComputed } from "./js/modules/dashboard.js?v=20260723-trusted-boot";
 import { globalControlsComputed, globalControlsMethods } from "./js/modules/global-controls.js";
 import { LIST_PAGE_SIZES, listPageComputed, listPageMethods } from "./js/modules/list-pages.js?v=20260723-list-pages";
-import { policyCenterComputed, policyCenterMethods } from "./js/modules/policy-center.js";
+import { policyCenterComputed, policyCenterMethods } from "./js/modules/policy-center.js?v=20260723-trusted-boot";
 import { shellComputed, shellMethods } from "./js/modules/shell.js?v=20260723-json-errors";
 import { tpcmDynamicComputed, tpcmDynamicMethods } from "./js/modules/tpcm-dynamic.js";
 import { tokenDialogMethods } from "./js/modules/token-dialog.js";
-import { nodeMethods } from "./js/modules/nodes.js?v=20260723-trust-profile";
+import { nodeMethods } from "./js/modules/nodes.js?v=20260723-trusted-boot";
 import { emptyTrustProfileForm, trustProfileMethods } from "./js/modules/trust-profile.js?v=20260723-trust-profile";
 import {
   POLICY_TYPES,
   emptyDynamicForm,
   emptyPolicyForm
-} from "./js/policies.js";
+} from "./js/policies.js?v=20260723-trusted-boot";
 
 const { createApp } = window.Vue;
 

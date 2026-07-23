@@ -32,6 +32,7 @@ from keylime_openstack.services.trust_registration import (
     ensure_trusted_node_profile,
     profile_payload,
 )
+from keylime_openstack.services.trust_capabilities import build_trust_capability_summary
 
 __all__ = ["verify_trusted_node"]
 
@@ -120,6 +121,12 @@ def _evidence_summary(
         "providers": providers,
         "valid_until": valid_until,
         "capability_status": _capability_status(profile, evidence),
+        "trust_capabilities": build_trust_capability_summary(
+            session,
+            node,
+            profile,
+            records,
+        ),
         "boot_measurement_summary": _boot_measurement_summary(profile, evidence, raw),
         "dynamic_measurement_summary": _dynamic_measurement_summary(profile, evidence, raw),
         "reason": result.get("reason") or result.get("summary") or "",
@@ -172,6 +179,9 @@ def _boot_measurement_summary(
 ) -> dict[str, Any]:
     if profile.trusted_root_type == TRUST_ROOT_TPCM:
         boot_records = raw.get("boot_records") if isinstance(raw.get("boot_records"), list) else []
+        boot_references = (
+            raw.get("boot_references") if isinstance(raw.get("boot_references"), list) else []
+        )
         reference_count = raw.get("boot_measure_ref_number")
         return {
             "type": "tpcm_boot_measurement",
@@ -180,8 +190,10 @@ def _boot_measurement_summary(
             "record_count": len(boot_records),
             "reference_count": reference_count,
             "records_preview": boot_records[:5],
+            "references_preview": boot_references[:5],
             "baseline_ready": bool(reference_count),
             "records_sha256": raw.get("boot_measure_records_sha256") or "",
+            "references_sha256": raw.get("boot_measure_references_sha256") or "",
             "trust_report_sha256": raw.get("trust_report_sha256") or "",
         }
     return {

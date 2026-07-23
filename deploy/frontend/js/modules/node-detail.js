@@ -34,6 +34,7 @@ export const nodeDetailMethods = {
     const capabilities = row.capabilities || profile.capabilities || node.capabilities || {};
     const evidenceSummary = row.evidenceSummary || profile.last_evidence_summary || node.last_evidence_summary || {};
     const evidence = row.evidence || evidenceSummary.evidence || keylimeNode.evidence || {};
+    const trustCapabilities = evidenceSummary.trust_capabilities || {};
     const bootSummary = evidenceSummary.boot_measurement_summary || {};
     const dynamicSummary = evidenceSummary.dynamic_measurement_summary || {};
     const agentIdentity = profile.agent_identity || node.agent_identity || {};
@@ -89,6 +90,16 @@ export const nodeDetailMethods = {
         ]
       }
     ];
+    if (Object.keys(trustCapabilities).length) {
+      sections.push({
+        title: "可信能力摘要",
+        items: [
+          { label: "可信启动", value: this.trustCapabilityItemText(trustCapabilities.trusted_boot), state: this.evidenceClass(trustCapabilities.trusted_boot?.status) },
+          { label: "运行时完整性", value: this.trustCapabilityItemText(trustCapabilities.ima_runtime), state: this.evidenceClass(trustCapabilities.ima_runtime?.status) },
+          { label: "环境动态度量", value: this.trustCapabilityItemText(trustCapabilities.tpcm_dynamic_measurement), state: this.evidenceClass(trustCapabilities.tpcm_dynamic_measurement?.status) }
+        ]
+      });
+    }
     if (Object.keys(bootSummary).length || Object.keys(dynamicSummary).length) {
       sections.push({
         title: "度量证据摘要",

@@ -60,8 +60,9 @@ def get_policy(policy_id: int, session: Session = Depends(db_session)) -> TrustP
 def create_policy(
     policy_in: TrustPolicyIn,
     session: Session = Depends(db_session),
+    settings: Settings = Depends(settings_dep),
 ) -> TrustPolicyOut:
-    return create_policy_service(policy_in, session)
+    return create_policy_service(policy_in, session, settings)
 
 
 @router.put(
@@ -73,8 +74,9 @@ def update_policy(
     policy_id: int,
     policy_in: TrustPolicyIn,
     session: Session = Depends(db_session),
+    settings: Settings = Depends(settings_dep),
 ) -> TrustPolicyOut:
-    return update_policy_service(policy_id, policy_in, session)
+    return update_policy_service(policy_id, policy_in, session, settings)
 
 
 @router.post("/policies/{policy_id}/deploy", dependencies=[Depends(require_admin)])

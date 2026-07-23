@@ -31,6 +31,10 @@ def test_trusted_tpcm_report_eval_is_not_a_failure_counter() -> None:
                     "[0].name: BIOS/U-BOOT\n"
                     "[1].name: /EFI/anolis/shim.efi\n"
                 ),
+                "boot_measure_references": _command(
+                    "[0].name: BIOS/U-BOOT\n"
+                    "[1].name: /EFI/anolis/shim.efi\n"
+                ),
                 "tpcm_info": _command("dmeasure_times: 22\n"),
                 "dmeasure_policy": _command(
                     "item index: 0\n"
@@ -71,6 +75,8 @@ def test_trusted_tpcm_report_eval_is_not_a_failure_counter() -> None:
     assert report["dynamic_measurement_status"] == "pass"
     assert report["raw"]["trust_report_eval"] == 100
     assert report["raw"]["trust_report_failures"] == {}
+    assert report["raw"]["boot_references"] == ["BIOS/U-BOOT", "/EFI/anolis/shim.efi"]
+    assert report["raw"]["boot_measure_references_sha256"]
     assert report["raw"]["dmeasure_policy"] == [
         {"index": 0, "be_type": 0, "interval_milli": 60000, "object": "kernel_section"},
         {"index": 1, "be_type": 0, "interval_milli": 60000, "object": "syscall_table"},
@@ -91,6 +97,9 @@ def test_tpcm_boot_measurement_summary_is_first_class_evidence_payload() -> None
                     "policy->dynamic_measure_on: ON\n"
                 ),
                 "boot_measure_records": _command("[0].name: BIOS/U-BOOT\n[1].name: shim.efi\n"),
+                "boot_measure_references": _command(
+                    "[0].name: BIOS/U-BOOT\n[1].name: shim.efi\n"
+                ),
                 "tpcm_info": _command(
                     "dmeasure_times: 22\n"
                     "boot_measure_ref_number: 2\n"
@@ -113,6 +122,8 @@ def test_tpcm_boot_measurement_summary_is_first_class_evidence_payload() -> None
     assert boot.payload["boot_measurement"]["reference_count"] == 2
     assert boot.payload["boot_measurement"]["baseline_ready"] is True
     assert boot.payload["boot_measurement"]["records_preview"] == ["BIOS/U-BOOT", "shim.efi"]
+    assert boot.payload["boot_measurement"]["references_preview"] == ["BIOS/U-BOOT", "shim.efi"]
+    assert boot.payload["boot_measurement"]["references_sha256"]
     assert "records=2" in boot.summary
     assert runtime.payload["dynamic_measurement"]["object_count"] == 1
     assert runtime.payload["dynamic_measurement"]["dmeasure_times"] == 22

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Keylime OpenStack 可信管理</title>
   <style>[v-cloak]{display:none!important}</style>
-  <link rel="stylesheet" href="styles.css?v=20260723-trust-profile">
+  <link rel="stylesheet" href="styles.css?v=20260723-trusted-boot">
 </head>
 <body>
   <div id="app" v-cloak :class="{ 'login-app': authChecked && !authenticated, 'booting-app': !authChecked }">
@@ -622,6 +622,29 @@
               <span>描述</span>
               <input v-model="createForm.description" placeholder="简要说明策略用途">
             </label>
+            <fieldset v-if="activePolicyType === 'measured_boot'" class="wide segmented-field">
+              <legend>适用可信根</legend>
+              <label class="check-option compact-option">
+                <input
+                  :checked="createForm.trustedRootType === 'tpm'"
+                  type="radio"
+                  name="trusted-boot-root"
+                  value="tpm"
+                  @change="changeTrustedBootRootType('tpm')"
+                >
+                <span>TPM 可信启动</span>
+              </label>
+              <label class="check-option compact-option">
+                <input
+                  :checked="createForm.trustedRootType === 'tpcm'"
+                  type="radio"
+                  name="trusted-boot-root"
+                  value="tpcm"
+                  @change="changeTrustedBootRootType('tpcm')"
+                >
+                <span>TPCM 可信启动</span>
+              </label>
+            </fieldset>
             <fieldset class="wide target-selector">
               <legend>目标节点</legend>
               <label v-for="node in policyTargetNodes" :key="node.id" class="check-option">
@@ -631,7 +654,7 @@
               </label>
               <p v-if="!policyTargetNodes.length" class="empty">暂无可选目标节点。</p>
             </fieldset>
-            <template v-if="activePolicyType === 'measured_boot'">
+            <template v-if="activePolicyType === 'measured_boot' && createForm.trustedRootType !== 'tpcm'">
               <fieldset class="wide pcr-selector">
                 <legend>TPM PCR 范围</legend>
                 <label v-for="pcr in [0,1,2,3,4,5,6,7]" :key="pcr" class="check-option compact-option">
@@ -642,6 +665,27 @@
               <label class="wide toggle-line">
                 <input v-model="createForm.secureBootRequired" type="checkbox">
                 <span>要求 Secure Boot 已启用</span>
+              </label>
+            </template>
+            <template v-if="activePolicyType === 'measured_boot' && createForm.trustedRootType === 'tpcm'">
+              <div class="wide info-note">
+                TPCM 可信启动将从当前 OpenTCSM 证据采集启动记录并绑定管理侧基线；未配置授权材料时不会写入 TPCM 启动参考值。
+              </div>
+              <label>
+                <span>最少启动参考值</span>
+                <input v-model.number="createForm.tpcmMinimumBootReferences" type="number" min="0" max="100000">
+              </label>
+              <label class="wide toggle-line">
+                <input v-model="createForm.tpcmRequireCleanTrustReport" type="checkbox">
+                <span>要求 TPCM 可信报告无失败项</span>
+              </label>
+              <label class="wide toggle-line">
+                <input v-model="createForm.tpcmWriteEnabled" type="checkbox">
+                <span>预留 TPCM 启动参考值写入能力</span>
+              </label>
+              <label v-if="createForm.tpcmWriteEnabled">
+                <span>授权材料引用</span>
+                <input v-model="createForm.tpcmAuthRef" placeholder="bmeasure-uid">
               </label>
             </template>
 
@@ -698,9 +742,12 @@
           <section v-if="detailPolicy.policy_type === 'measured_boot'" class="detail-block">
             <h3>可信启动规则</h3>
             <div class="detail-grid">
-              <div><span>PCR 范围</span><strong>{{ policyPcrText(detailPolicy) }}</strong></div>
-              <div><span>兼容校验</span><strong>{{ policyFallbackPcrText(detailPolicy) }}</strong></div>
-              <div><span>Secure Boot</span><strong>{{ policySecureBootText(detailPolicy) }}</strong></div>
+              <div><span>可信根</span><strong>{{ policyTrustedRootText(detailPolicy) }}</strong></div>
+              <div v-if="detailPolicy.content.trusted_root_type !== 'tpcm'"><span>PCR 范围</span><strong>{{ policyPcrText(detailPolicy) }}</strong></div>
+              <div v-if="detailPolicy.content.trusted_root_type !== 'tpcm'"><span>兼容校验</span><strong>{{ policyFallbackPcrText(detailPolicy) }}</strong></div>
+              <div v-if="detailPolicy.content.trusted_root_type !== 'tpcm'"><span>Secure Boot</span><strong>{{ policySecureBootText(detailPolicy) }}</strong></div>
+              <div v-if="detailPolicy.content.trusted_root_type === 'tpcm'"><span>应用方式</span><strong>{{ policyTpcmBootModeText(detailPolicy) }}</strong></div>
+              <div v-if="detailPolicy.content.trusted_root_type === 'tpcm'"><span>启动参考值要求</span><strong>{{ policyTpcmBootBaselineText(detailPolicy) }}</strong></div>
               <div><span>可信代理对象</span><strong>{{ policyArtifactText(detailPolicy) }}</strong></div>
             </div>
           </section>
@@ -883,6 +930,6 @@
   </div>
 
   <script src="vendor/vue.global.prod.js"></script>
-  <script type="module" src="app.js?v=20260723-json-errors"></script>
+  <script type="module" src="app.js?v=20260723-trusted-boot"></script>
 </body>
 </html>

@@ -191,6 +191,9 @@ def sync_tpcm_profile(
     if tpcm_id:
         identity["tpcm_id"] = tpcm_id
     boot_records = raw.get("boot_records") if isinstance(raw.get("boot_records"), list) else []
+    boot_references = (
+        raw.get("boot_references") if isinstance(raw.get("boot_references"), list) else []
+    )
     dmeasure_policy = raw.get("dmeasure_policy") if isinstance(raw.get("dmeasure_policy"), list) else []
     boot_reference_count = raw.get("boot_measure_ref_number")
     profile.agent_identity = identity
@@ -208,8 +211,10 @@ def sync_tpcm_profile(
             "record_count": len(boot_records),
             "reference_count": boot_reference_count,
             "records_preview": boot_records[:5],
+            "references_preview": boot_references[:5],
             "baseline_ready": bool(boot_reference_count),
             "records_sha256": raw.get("boot_measure_records_sha256") or "",
+            "references_sha256": raw.get("boot_measure_references_sha256") or "",
             "trust_report_sha256": raw.get("trust_report_sha256") or "",
         },
         "dynamic_measurement_summary": {
@@ -237,6 +242,7 @@ def normalize_opentcsm_collection(node: ComputeNode, collected: dict[str, Any]) 
     global_policy = _stdout(commands, "global_control_policy")
     dmeasure_policy_text = _stdout(commands, "dmeasure_policy")
     boot_records_text = _stdout(commands, "boot_measure_records")
+    boot_references_text = _stdout(commands, "boot_measure_references")
     tpcm_info = _stdout(commands, "tpcm_info")
     tpcm_id_text = _stdout(commands, "tpcm_id")
 
@@ -248,6 +254,7 @@ def normalize_opentcsm_collection(node: ComputeNode, collected: dict[str, Any]) 
     )
     trust_report_clean = _trust_report_failures(trust_report) == {}
     boot_records = _boot_record_names(boot_records_text)
+    boot_references = _boot_record_names(boot_references_text)
 
     boot_status = _status_from_signals(
         trusted=trusted_status,
@@ -276,7 +283,9 @@ def normalize_opentcsm_collection(node: ComputeNode, collected: dict[str, Any]) 
         "trust_report_eval": _trust_report_eval(trust_report),
         "trust_report_failures": _trust_report_failures(trust_report),
         "boot_records": boot_records,
+        "boot_references": boot_references,
         "boot_measure_records_sha256": _sha256(boot_records_text),
+        "boot_measure_references_sha256": _sha256(boot_references_text),
         "trust_report_sha256": _sha256(trust_report),
         "policy_report_sha256": _sha256(_stdout(commands, "policy_report")),
         "global_control_policy_sha256": _sha256(global_policy),

@@ -92,6 +92,7 @@ class Settings(BaseSettings):
     opentcsm_collect_interval_seconds: int = 60
     opentcsm_key_dir: str = "/etc/keylime-openstack/opentcsm/keys"
     opentcsm_default_dynamic_auth_ref: str = "dmeasure-uid"
+    opentcsm_default_boot_auth_ref: str = "bmeasure-uid"
 
     dim_provider_enabled: bool = False
 

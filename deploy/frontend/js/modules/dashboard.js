@@ -1,5 +1,7 @@
 function alertMessageText(node) {
-  if (node.trust_managed === false || node.status === "unmanaged") {
+  const capability = firstCapabilityAlert(node);
+  if (capability) return capability.message;
+  if (nodeTrustManaged(node) === false || nodeStatus(node) === "unmanaged") {
     return "计算节点未纳入可信代理纳管";
   }
   const reason = String(node.reason || node.last_event_id || "");
@@ -18,8 +20,10 @@ function alertMessageText(node) {
 }
 
 function alertStateClass(node) {
-  if (node.status === "error") return "bad";
-  if (node.trust_managed === false || node.status === "unmanaged") return "warn";
+  const capability = firstCapabilityAlert(node);
+  if (capability) return capability.state;
+  if (nodeStatus(node) === "error") return "bad";
+  if (nodeTrustManaged(node) === false || nodeStatus(node) === "unmanaged") return "warn";
   const reason = String(node.reason || node.last_event_id || "").toLowerCase();
   if (reason.includes("_fail") || reason.includes(".fail") || reason.includes("not_reachable")) {
     return "bad";
@@ -32,7 +36,9 @@ function alertSeverityText(node) {
 }
 
 function alertRemediationText(node) {
-  if (node.trust_managed === false || node.status === "unmanaged") {
+  const capability = firstCapabilityAlert(node);
+  if (capability) return capability.remediation;
+  if (nodeTrustManaged(node) === false || nodeStatus(node) === "unmanaged") {
     return "确认该 OpenStack 计算节点是否需要纳管；如需要，安装并配置 TPM/TPCM 可信代理后更新节点纳管配置。";
   }
   const summary = String(node.remediation?.summary || "");
@@ -61,7 +67,7 @@ function nodeReason(node) {
 }
 
 function trustedRootType(node) {
-  return String(node.trusted_root_type || node.trusted_root || node.trust_root_type || "").toLowerCase();
+  return String(node.trusted_root_type || node.trustedRootType || node.trusted_root || node.trust_root_type || "").toLowerCase();
 }
 
 function isRetainedImaPolicyReminder(node) {
@@ -76,7 +82,40 @@ function isRetainedImaPolicyReminder(node) {
 
 function shouldShowAlert(node) {
   if (isRetainedImaPolicyReminder(node)) return false;
-  return node.trust_managed === false || node.status === "unmanaged" || node.trusted === false || node.status === "error";
+  if (firstCapabilityAlert(node)) return true;
+  return nodeTrustManaged(node) === false || nodeStatus(node) === "unmanaged" || node.trusted === false || nodeStatus(node) === "error";
+}
+
+function nodeTrustManaged(node) {
+  return node.trust_managed ?? node.trustManaged;
+}
+
+function nodeStatus(node) {
+  return node.status || node.registrationStatus || "";
+}
+
+function firstCapabilityAlert(node) {
+  const summary = node.evidenceSummary?.trust_capabilities || node.last_evidence_summary?.trust_capabilities || {};
+  const labels = {
+    trusted_boot: "可信启动",
+    ima_runtime: "运行时完整性",
+    tpcm_dynamic_measurement: "环境动态度量",
+    evm: "EVM"
+  };
+  for (const key of ["trusted_boot", "ima_runtime", "tpcm_dynamic_measurement", "evm"]) {
+    const item = summary[key];
+    if (!item || item.supported !== true || item.enabled !== true) continue;
+    const status = String(item.status || "").toLowerCase();
+    if (status === "pass") continue;
+    if (key === "ima_runtime" && trustedRootType(node) === "tpm" && status === "unconfigured") continue;
+    const bad = ["fail", "error"].includes(status);
+    return {
+      state: bad ? "bad" : "warn",
+      message: `${labels[key]}${status === "unconfigured" ? "未配置策略" : status === "missing" ? "缺少证据" : "状态异常"}`,
+      remediation: item.reason || "检查该能力的策略绑定、证据采集和可信代理状态。"
+    };
+  }
+  return null;
 }
 
 function shouldShowTask(task) {
@@ -287,10 +326,10 @@ export const dashboardComputed = {
       .slice(0, 10);
   },
   alertRows() {
-    return (this.keylime.nodes || [])
+    return (this.computeRows || [])
       .filter((node) => shouldShowAlert(node))
       .map((node) => ({
-        target: node.host || node.agent_uuid || "-",
+        target: node.host || node.hostname || node.agent_uuid || "-",
         severity: alertSeverityText(node),
         state: alertStateClass(node),
         message: alertMessageText(node),

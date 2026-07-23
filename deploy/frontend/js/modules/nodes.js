@@ -1,4 +1,4 @@
-import { nodeDetailMethods } from "./node-detail.js?v=20260723-node-sync";
+import { nodeDetailMethods } from "./node-detail.js?v=20260723-trusted-boot";
 
 export const nodeMethods = {
   ...nodeDetailMethods,

@@ -20,6 +20,7 @@ from keylime_openstack.constants import (
     POLICY_TPCM_DYNAMIC_MEASUREMENT,
     TRUST_AGENT_KEYLIME,
     TRUST_AGENT_OPENTCSM_TPCM,
+    TRUST_ROOT_TPCM,
 )
 from keylime_openstack.models import ComputeNode, PolicyBinding, TrustPolicy
 from keylime_openstack.services.ansible import AnsibleExecutor
@@ -44,6 +45,7 @@ from keylime_openstack.services.measured_boot_policies import (
 from keylime_openstack.services.policy_artifacts import _content_hash, _external_name
 from keylime_openstack.services.policy_deployment_errors import AwaitingReboot
 from keylime_openstack.services.tpcm_dynamic_deployment import TpcmDynamicDeployment
+from keylime_openstack.services.tpcm_boot_deployment import TpcmBootDeployment
 from keylime_openstack.services.tpcm_dynamic_policies import (
     _dynamic_audit_object_name,
     _dynamic_object_configs,
@@ -101,6 +103,11 @@ class PolicyDeploymentService:
             workspace_factory=self._workspace,
             require_ansible_success=self._require_ansible_success,
         )
+        self.tpcm_boot = TpcmBootDeployment(
+            session=session,
+            settings=settings,
+            workspace_factory=self._workspace,
+        )
 
     def deploy(self, policy_id: int, binding_id: int | None = None) -> dict[str, Any]:
         policy = load_policy(self.session, policy_id)
@@ -123,8 +130,15 @@ class PolicyDeploymentService:
             self.session.flush()
             policy_type = canonical_policy_type(policy.policy_type)
             agent_type = node_trust_agent_type(node, self.settings)
+            trusted_root_type = str(policy.content.get("trusted_root_type") or "").lower()
             try:
-                if agent_type == TRUST_AGENT_OPENTCSM_TPCM and policy_type == POLICY_TPCM_DYNAMIC_MEASUREMENT:
+                if (
+                    agent_type == TRUST_AGENT_OPENTCSM_TPCM
+                    and policy_type == POLICY_MEASURED_BOOT
+                    and trusted_root_type == TRUST_ROOT_TPCM
+                ):
+                    details = self._deploy_opentcsm_trusted_boot(policy, binding, node)
+                elif agent_type == TRUST_AGENT_OPENTCSM_TPCM and policy_type == POLICY_TPCM_DYNAMIC_MEASUREMENT:
                     details = self._deploy_opentcsm_dynamic_measurement(policy, binding, node)
                 elif agent_type != TRUST_AGENT_KEYLIME:
                     details = self._defer_external_trust_agent_policy(policy, binding, node)
@@ -148,7 +162,21 @@ class PolicyDeploymentService:
                     and policy_type == POLICY_TPCM_DYNAMIC_MEASUREMENT
                     else {}
                 )
-                if failure_details:
+                if (
+                    agent_type == TRUST_AGENT_OPENTCSM_TPCM
+                    and policy_type == POLICY_MEASURED_BOOT
+                    and trusted_root_type == TRUST_ROOT_TPCM
+                ):
+                    failure_details.update(
+                        {
+                            "keylime_artifact": "opentcsm_tpcm_boot_policy",
+                            "adapter_artifact": "opentcsm_tpcm_boot_policy",
+                            "trusted_root_type": TRUST_ROOT_TPCM,
+                            "trust_agent_type": TRUST_AGENT_OPENTCSM_TPCM,
+                            "policy_apply_error_summary": error,
+                        }
+                    )
+                if failure_details and policy_type == POLICY_TPCM_DYNAMIC_MEASUREMENT:
                     failure_details.update(_dynamic_policy_context(policy.content))
                 self.state.mark_failed(binding, error, failure_details)
                 details = {"error": error, **failure_details}
@@ -239,6 +267,22 @@ class PolicyDeploymentService:
         node: ComputeNode,
     ) -> dict[str, Any]:
         deployment = self.tpcm_dynamic.deploy(policy, node)
+        self.state.mark_applied(
+            binding,
+            policy,
+            deployment.external_name,
+            deployment.rendered_policy,
+            deployment_details=deployment.deployment_details,
+        )
+        return deployment.response
+
+    def _deploy_opentcsm_trusted_boot(
+        self,
+        policy: TrustPolicy,
+        binding: PolicyBinding,
+        node: ComputeNode,
+    ) -> dict[str, Any]:
+        deployment = self.tpcm_boot.deploy(policy, node)
         self.state.mark_applied(
             binding,
             policy,

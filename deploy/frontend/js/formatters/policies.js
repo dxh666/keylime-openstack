@@ -1,4 +1,4 @@
-import { DYNAMIC_MEASUREMENT_OBJECTS } from "../policies.js";
+import { DYNAMIC_MEASUREMENT_OBJECTS } from "../policies.js?v=20260723-trusted-boot";
 
 export const policyFormatters = {
   parseLines(text) {
@@ -9,6 +9,7 @@ export const policyFormatters = {
     if (artifact === "measured_boot_refstate") return "可信启动参考状态";
     if (artifact === "measured_boot_refstate_or_tpm_policy") return "可信启动策略";
     if (artifact === "tpm_pcr_quote_policy") return "TPM PCR Quote 策略";
+    if (artifact === "opentcsm_tpcm_boot_policy") return "TPCM 可信启动基线";
     if (artifact === "runtime_policy") return "IMA 运行时策略";
     if (artifact === "opentcsm_dynamic_measurement_policy") return "TPCM 动态度量策略";
     return artifact || "-";
@@ -72,6 +73,24 @@ export const policyFormatters = {
   policySecureBootText(policy) {
     return policy?.content?.secure_boot_required === false ? "不强制" : "要求启用";
   },
+  policyTrustedRootText(policy) {
+    const root = String(policy?.content?.trusted_root_type || "tpm").toLowerCase();
+    if (root === "tpcm") return "TPCM";
+    return "TPM";
+  },
+  policyTpcmBootModeText(policy) {
+    const content = policy?.content || {};
+    if (content.tpcm_write_enabled === true) {
+      return `预留写入 TPCM（授权：${content.auth_material_ref || "-" }）`;
+    }
+    return "管理侧基线绑定";
+  },
+  policyTpcmBootBaselineText(policy) {
+    const content = policy?.content || {};
+    const refs = content.minimum_boot_references ?? 1;
+    const clean = content.require_clean_trust_report === false ? "不强制可信报告干净" : "要求可信报告无失败项";
+    return `启动参考值不少于 ${refs} 条，${clean}`;
+  },
   bindingEvidenceText(binding) {
     const keylimePolicy = binding?.keylime_policy || {};
     const evidenceType = keylimePolicy.evidence_type || "";
@@ -83,6 +102,8 @@ export const policyFormatters = {
         ? "IMA 度量列表"
       : evidenceType === "tpcm_dynamic_measurement"
         ? "TPCM 动态度量"
+      : evidenceType === "tpcm_boot_measurement"
+        ? "TPCM 启动度量"
         : "节点证据";
     const evidenceHash = keylimePolicy.evidence_sha256 || "";
     const policyHash = keylimePolicy.content_sha256 || "";

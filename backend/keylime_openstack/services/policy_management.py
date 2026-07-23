@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from keylime_openstack.config import Settings
-from keylime_openstack.constants import POLICY_TPCM_DYNAMIC_MEASUREMENT
+from keylime_openstack.constants import POLICY_MEASURED_BOOT, POLICY_TPCM_DYNAMIC_MEASUREMENT
 from keylime_openstack.models import AuditEvent, ComputeNode, PolicyBinding, TrustPolicy
 from keylime_openstack.schemas import (
     TpcmDynamicGlobalSwitchIn,
@@ -82,6 +82,7 @@ def get_policy_response(policy_id: int, session: Session) -> TrustPolicyOut:
 def create_policy(
     policy_in: TrustPolicyIn,
     session: Session,
+    settings: Settings,
 ) -> TrustPolicyOut:
     payload, node_ids, deploy_now = validated_policy_payload(policy_in)
     policy_type = canonical_policy_type(payload["policy_type"])
@@ -95,7 +96,7 @@ def create_policy(
     policy = TrustPolicy(**payload)
     session.add(policy)
     session.flush()
-    bind_policy_to_nodes(session, policy, node_ids, deploy_now=deploy_now)
+    bind_policy_to_nodes(session, policy, node_ids, deploy_now=deploy_now, settings=settings)
     if deploy_now:
         create_task(
             session,
@@ -115,6 +116,7 @@ def update_policy(
     policy_id: int,
     policy_in: TrustPolicyIn,
     session: Session,
+    settings: Settings,
 ) -> TrustPolicyOut:
     policy = load_policy(session, policy_id)
     if not policy:
@@ -141,7 +143,7 @@ def update_policy(
     for binding in list(policy.bindings):
         session.delete(binding)
     session.flush()
-    bind_policy_to_nodes(session, policy, node_ids, deploy_now=deploy_now)
+    bind_policy_to_nodes(session, policy, node_ids, deploy_now=deploy_now, settings=settings)
     if deploy_now:
         create_task(
             session,
@@ -293,6 +295,14 @@ def _record_policy_audit(
             message = "dynamic measurement policy apply queued"
         else:
             message = "dynamic measurement policy saved"
+    elif policy_type == POLICY_MEASURED_BOOT:
+        details.update(_trusted_boot_policy_audit_details(policy, event_type))
+        if event_type == "policy_deploy_queued":
+            event_type = "trusted_boot_policy_apply_queued"
+            message = "trusted boot policy apply queued"
+        else:
+            event_type = "trusted_boot_policy_save"
+            message = "trusted boot policy saved"
     record_audit_event(
         session,
         event_type=event_type,
@@ -372,4 +382,31 @@ def _dynamic_policy_audit_details(policy: TrustPolicy, event_type: str) -> dict[
         "environment_object_configs": configs,
         "environment_interval_milli": content.get("environment_interval_milli"),
         "hash": "",
+    }
+
+
+def _trusted_boot_policy_audit_details(policy: TrustPolicy, event_type: str) -> dict[str, Any]:
+    content = dict(policy.content or {})
+    trusted_root_type = str(content.get("trusted_root_type") or "tpm").upper()
+    target_names = [
+        str(dict(binding.binding_details or {}).get("hostname") or binding.target_id)
+        for binding in policy.bindings
+        if binding.active
+    ]
+    baseline = (
+        content.get("expected_boot_records_sha256")
+        or content.get("expected_trust_report_sha256")
+        or ""
+    )
+    return {
+        "log_type": "trusted_boot",
+        "subject_name": trusted_root_type,
+        "object_name": ",".join(target_names) if target_names else "-",
+        "measurement_type": "策略生效" if event_type == "policy_deploy_queued" else "策略保存",
+        "measurement_baseline": baseline,
+        "operation": "策略生效" if event_type == "policy_deploy_queued" else "策略保存",
+        "result": "已入队" if event_type == "policy_deploy_queued" else "成功",
+        "target_nodes": target_names,
+        "trusted_root_type": str(content.get("trusted_root_type") or "tpm"),
+        "hash": baseline,
     }

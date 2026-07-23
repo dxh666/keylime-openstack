@@ -35,6 +35,7 @@ from keylime_openstack.services.trust_agents import (
     node_trusted_root,
     node_trusted_root_type,
 )
+from keylime_openstack.services.trust_capabilities import build_trust_capability_summary
 from keylime_openstack.services.trust_registration import ensure_trusted_node_profile
 from keylime_openstack.services.trust_registration_sync import sync_trusted_node_registrations
 
@@ -102,7 +103,14 @@ class TrustSyncService:
             decision_details=decision_data["details"],
         )
         self.session.add(decision)
-        _update_profile_from_decision(profile, decision_data, evidence, trust_agent_result)
+        _update_profile_from_decision(
+            self.session,
+            node,
+            profile,
+            decision_data,
+            evidence,
+            trust_agent_result,
+        )
 
         trait_result = self.openstack.set_provider_traits(
             node.hypervisor_name or node.hostname,
@@ -146,6 +154,8 @@ class TrustSyncService:
 
 
 def _update_profile_from_decision(
+    session: Session,
+    node: ComputeNode,
     profile: TrustedNodeProfile,
     decision_data: dict[str, object],
     evidence: list[object],
@@ -162,6 +172,12 @@ def _update_profile_from_decision(
     profile.last_evidence_summary = {
         "trusted": trusted,
         "evidence": evidence_status,
+        "trust_capabilities": build_trust_capability_summary(
+            session,
+            node,
+            profile,
+            [record for record in evidence if hasattr(record, "evidence_type")],
+        ),
         "reason": decision_data.get("reason") or trust_agent_result.get("reason") or "",
         "source": (
             trust_agent_result.get("source")

@@ -36,6 +36,7 @@
             "trust_report": "get_trust_report",
             "policy_report": "get_policy_report",
             "boot_measure_records": "get_bmeasure_records",
+            "boot_measure_references": "get_bmeasure_references",
             "global_control_policy": "get_global_control_policy",
             "dmeasure_policy": "get_dmeasure_policy",
             "dmeasure_process_policy": "get_dmeasure_process_policy",

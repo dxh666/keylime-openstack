@@ -1297,6 +1297,7 @@ h3 {
 
 .target-selector,
 .pcr-selector,
+.segmented-field,
 .generation-panel {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1328,7 +1329,8 @@ h3 {
 }
 
 .target-selector legend,
-.pcr-selector legend {
+.pcr-selector legend,
+.segmented-field legend {
   padding: 0 5px;
   color: var(--muted);
   font-size: 13px;
@@ -1348,6 +1350,20 @@ h3 {
 
 .policy-form label.compact-option {
   min-height: 42px;
+}
+
+.segmented-field {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.info-note {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .check-option input,
@@ -1529,7 +1545,8 @@ h3 {
   }
 
   .target-selector,
-  .pcr-selector {
+  .pcr-selector,
+  .segmented-field {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -1576,7 +1593,8 @@ h3 {
   }
 
   .target-selector,
-  .pcr-selector {
+  .pcr-selector,
+  .segmented-field {
     grid-template-columns: 1fr;
   }
 

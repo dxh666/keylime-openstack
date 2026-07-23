@@ -2,9 +2,25 @@ from __future__ import annotations
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
+from keylime_openstack.config import Settings
+from keylime_openstack.constants import (
+    CAPABILITY_TPCM_DYNAMIC_MEASUREMENT,
+    CAPABILITY_TRUSTED_BOOT,
+    TRUST_ROOT_TPCM,
+    TRUST_ROOT_TPM,
+)
+from keylime_openstack.database import Base
+from keylime_openstack.models import ComputeNode, TrustPolicy
 from keylime_openstack.schemas import TrustPolicyIn
-from keylime_openstack.services.policy import canonical_policy_type, validated_policy_payload
+from keylime_openstack.services.policy import (
+    bind_policy_to_nodes,
+    canonical_policy_type,
+    validated_policy_payload,
+)
+from keylime_openstack.services.trust_registration import upsert_trusted_node_profile
 
 
 def test_legacy_tpm_policy_type_maps_to_measured_boot() -> None:
@@ -32,6 +48,31 @@ def test_measured_boot_defaults_to_pcr_zero_through_seven() -> None:
     assert deploy_now is True
 
 
+def test_tpcm_measured_boot_uses_tpcm_baseline_contract() -> None:
+    policy = TrustPolicyIn(
+        name="hygon-tpcm-boot",
+        policy_type="measured_boot",
+        target_node_ids=[4],
+        content={"trusted_root_type": "tpcm"},
+    )
+
+    payload, node_ids, deploy_now = validated_policy_payload(policy)
+
+    assert payload["content"]["trusted_root_type"] == TRUST_ROOT_TPCM
+    assert payload["content"]["policy_scope"] == "trusted_boot"
+    assert payload["content"]["evidence_type"] == "tpcm_boot_measurement"
+    assert payload["content"]["baseline_generation"] == "auto_collect_tpcm_boot_measurement"
+    assert payload["content"]["boot_measure_required"] is True
+    assert payload["content"]["minimum_boot_references"] == 1
+    assert payload["content"]["require_clean_trust_report"] is True
+    assert payload["content"]["tpcm_apply_mode"] == "management_baseline"
+    assert payload["content"]["tpcm_write_enabled"] is False
+    assert payload["content"]["keylime_artifact"] == "opentcsm_tpcm_boot_policy"
+    assert "pcrs" not in payload["content"]
+    assert node_ids == [4]
+    assert deploy_now is True
+
+
 def test_measured_boot_rejects_accept_all() -> None:
     policy = TrustPolicyIn(
         name="unsafe-measured-boot",
@@ -42,6 +83,93 @@ def test_measured_boot_rejects_accept_all() -> None:
 
     with pytest.raises(HTTPException, match="accept-all"):
         validated_policy_payload(policy)
+
+
+def test_tpcm_measured_boot_bind_rejects_unmanaged_tpcm_target() -> None:
+    with _memory_session() as memory_session:
+        node = ComputeNode(
+            hostname="hygon22",
+            hypervisor_name="hygon22",
+            management_ip="172.31.100.22",
+            role="compute",
+        )
+        memory_session.add(node)
+        memory_session.flush()
+        upsert_trusted_node_profile(
+            memory_session,
+            node,
+            Settings(),
+            {
+                "trust_managed": False,
+                "trusted_root_type": TRUST_ROOT_TPCM,
+                "capabilities": {},
+            },
+        )
+        payload, node_ids, _ = validated_policy_payload(
+            TrustPolicyIn(
+                name="hygon22-boot",
+                policy_type="measured_boot",
+                target_node_ids=[node.id],
+                content={"trusted_root_type": "tpcm"},
+            )
+        )
+        policy = TrustPolicy(**payload)
+        memory_session.add(policy)
+        memory_session.flush()
+
+        with pytest.raises(HTTPException, match="已纳管"):
+            bind_policy_to_nodes(
+                memory_session,
+                policy,
+                node_ids,
+                deploy_now=True,
+                settings=Settings(),
+            )
+
+
+def test_tpm_measured_boot_bind_rejects_tpcm_target() -> None:
+    with _memory_session() as memory_session:
+        node = ComputeNode(
+            hostname="hygon23",
+            hypervisor_name="hygon23",
+            management_ip="172.31.100.23",
+            role="compute",
+        )
+        memory_session.add(node)
+        memory_session.flush()
+        upsert_trusted_node_profile(
+            memory_session,
+            node,
+            Settings(),
+            {
+                "trust_managed": True,
+                "trusted_root_type": TRUST_ROOT_TPCM,
+                "capabilities": {
+                    CAPABILITY_TRUSTED_BOOT: True,
+                    CAPABILITY_TPCM_DYNAMIC_MEASUREMENT: True,
+                },
+            },
+        )
+        payload, node_ids, _ = validated_policy_payload(
+            TrustPolicyIn(
+                name="wrong-root-boot",
+                policy_type="measured_boot",
+                target_node_ids=[node.id],
+                content={"trusted_root_type": TRUST_ROOT_TPM},
+            )
+        )
+        policy = TrustPolicy(**payload)
+        memory_session.add(policy)
+        memory_session.flush()
+
+        with pytest.raises(HTTPException, match="TPM"):
+            bind_policy_to_nodes(
+                memory_session,
+                policy,
+                node_ids,
+                deploy_now=True,
+                settings=Settings(),
+            )
 
 
 def test_ima_policy_requires_measure_rule() -> None:
@@ -163,3 +291,9 @@ def test_evm_creation_is_disabled() -> None:
 
     with pytest.raises(HTTPException, match="尚未启用"):
         validated_policy_payload(policy)
+
+
+def _memory_session() -> Session:
+    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    Base.metadata.create_all(engine)
+    return Session(engine, future=True)

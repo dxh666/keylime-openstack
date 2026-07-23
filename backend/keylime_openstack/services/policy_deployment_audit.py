@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from keylime_openstack.constants import (
     POLICY_DEPLOY_APPLIED,
+    POLICY_MEASURED_BOOT,
     POLICY_TPCM_DYNAMIC_MEASUREMENT,
 )
 from keylime_openstack.models import PolicyBinding
@@ -31,11 +32,36 @@ class PolicyDeploymentAuditRecorder:
         details: dict[str, Any],
     ) -> None:
         is_dynamic = policy_type == POLICY_TPCM_DYNAMIC_MEASUREMENT
+        is_tpcm_boot = (
+            policy_type == POLICY_MEASURED_BOOT
+            and details.get("keylime_artifact") == "opentcsm_tpcm_boot_policy"
+        )
         event_details = {
             "binding_id": binding.id,
             "executor": binding.executor,
             **details,
         }
+        if is_tpcm_boot:
+            baseline = (
+                details.get("rendered_policy_sha256")
+                or details.get("boot_measure_records_sha256")
+                or details.get("evidence_sha256")
+                or ""
+            )
+            event_details = {
+                **event_details,
+                "log_type": "trusted_boot",
+                "policy_type": policy_type,
+                "subject_name": "TPCM",
+                "object_name": hostname,
+                "measurement_type": "策略生效",
+                "measurement_baseline": baseline,
+                "operation": "管理侧基线绑定",
+                "result": "成功"
+                if binding.application_status == POLICY_DEPLOY_APPLIED
+                else "失败",
+                "hash": baseline,
+            }
         if is_dynamic:
             baseline = (
                 details.get("dmeasure_policy_sha256")
@@ -59,19 +85,33 @@ class PolicyDeploymentAuditRecorder:
                 else "失败",
                 "hash": baseline,
             }
+        message = f"policy deployment {binding.application_status}"
+        if is_dynamic and binding.application_status != POLICY_DEPLOY_APPLIED:
+            message = str(details.get("policy_apply_error_summary") or message)
+        elif is_tpcm_boot and binding.application_status != POLICY_DEPLOY_APPLIED:
+            message = str(
+                details.get("policy_apply_error_summary")
+                or details.get("error")
+                or "trusted boot policy baseline failed"
+            )
+        elif is_tpcm_boot:
+            message = "trusted boot policy baseline applied"
+
         record_audit_event(
             self.session,
-            event_type="tpcm_dynamic_policy_apply" if is_dynamic else "policy_deploy",
+            event_type=(
+                "tpcm_dynamic_policy_apply"
+                if is_dynamic
+                else "trusted_boot_policy_apply"
+                if is_tpcm_boot
+                else "policy_deploy"
+            ),
             target=f"{policy_name}:{hostname}",
             severity=(
                 "info"
                 if binding.application_status == POLICY_DEPLOY_APPLIED
                 else "warning"
             ),
-            message=(
-                details.get("policy_apply_error_summary")
-                if is_dynamic and binding.application_status != POLICY_DEPLOY_APPLIED
-                else f"policy deployment {binding.application_status}"
-            ),
+            message=message,
             event_details=event_details,
         )

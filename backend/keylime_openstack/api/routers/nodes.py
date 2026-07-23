@@ -23,6 +23,8 @@ from keylime_openstack.services.trust_agents import (
     node_trusted_root_type,
     node_trusted_root,
 )
+from keylime_openstack.services.sync_collectors import latest_evidence_for_decision
+from keylime_openstack.services.trust_capabilities import build_trust_capability_summary
 
 router = APIRouter()
 
@@ -49,6 +51,17 @@ def nodes(
     for item in rows:
         profile = profiles[item.id]
         profile_data = profile_payload(profile, item)
+        evidence_records = latest_evidence_for_decision(session, item)
+        capability_summary = build_trust_capability_summary(
+            session,
+            item,
+            profile,
+            evidence_records,
+        )
+        last_evidence_summary = {
+            **dict(profile_data["last_evidence_summary"] or {}),
+            "trust_capabilities": capability_summary,
+        }
         result.append(
             ComputeNodeOut.model_validate(
                 {
@@ -65,8 +78,11 @@ def nodes(
                     "capabilities": profile_data["capabilities"],
                     "registration_status": profile_data["registration_status"],
                     "last_verified_at": profile_data["last_verified_at"],
-                    "last_evidence_summary": profile_data["last_evidence_summary"],
-                    "trusted_node_profile": profile_data,
+                    "last_evidence_summary": last_evidence_summary,
+                    "trusted_node_profile": {
+                        **profile_data,
+                        "last_evidence_summary": last_evidence_summary,
+                    },
                     "hardware_profile": item.hardware_profile,
                     "openstack_state": states.get(item.id),
                 }

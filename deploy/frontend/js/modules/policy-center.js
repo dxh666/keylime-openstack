@@ -1,4 +1,4 @@
-import { emptyPolicyForm } from "../policies.js";
+import { emptyPolicyForm } from "../policies.js?v=20260723-trusted-boot";
 
 export const policyCenterComputed = {
   filteredPolicies() {
@@ -9,9 +9,10 @@ export const policyCenterComputed = {
       const profile = node.trusted_node_profile || node;
       const capabilities = profile.capabilities || node.capabilities || {};
       if (this.activePolicyType === "measured_boot") {
+        const rootType = this.createForm.trustedRootType || "tpm";
         return (
           profile.trust_managed === true &&
-          profile.trusted_root_type === "tpm" &&
+          profile.trusted_root_type === rootType &&
           capabilities.trusted_boot === true
         );
       }
@@ -26,7 +27,11 @@ export const policyCenterComputed = {
     });
   },
   policyNamePlaceholder() {
-    if (this.activePolicyType === "measured_boot") return "例如 compute-trusted-boot-v1";
+    if (this.activePolicyType === "measured_boot") {
+      return this.createForm.trustedRootType === "tpcm"
+        ? "例如 tpcm-trusted-boot-hygon23"
+        : "例如 tpm-trusted-boot-compute";
+    }
     if (this.activePolicyType === "ima_runtime") return "例如 compute-ima-runtime-v1";
     return "例如 compute-policy-v1";
   },
@@ -51,6 +56,10 @@ export const policyCenterMethods = {
   closePolicyDetail() {
     this.detailPolicy = null;
   },
+  changeTrustedBootRootType(value) {
+    this.createForm.trustedRootType = value;
+    this.createForm.targetNodeIds = [];
+  },
   policyPayload() {
     const name = this.createForm.name.trim();
     if (!name) throw new Error("策略名称不能为空");
@@ -58,15 +67,36 @@ export const policyCenterMethods = {
     let content;
     let excludes = [];
     if (this.activePolicyType === "measured_boot") {
-      content = {
-        pcrs: this.createForm.pcrs.map(Number).sort((a, b) => a - b),
-        fallback_pcrs: [7],
-        secure_boot_required: this.createForm.secureBootRequired,
-        reference_state_mode: "collect_from_node",
-        event_log_fallback: "pcr_quote",
-        baseline_generation: "auto_collect_tpm_event_log",
-        keylime_artifact: "measured_boot_refstate_or_tpm_policy"
-      };
+      if (this.createForm.trustedRootType === "tpcm") {
+        content = {
+          trusted_root_type: "tpcm",
+          policy_scope: "trusted_boot",
+          evidence_type: "tpcm_boot_measurement",
+          baseline_generation: "auto_collect_tpcm_boot_measurement",
+          boot_measure_required: true,
+          minimum_boot_references: Number(this.createForm.tpcmMinimumBootReferences || 1),
+          require_clean_trust_report: this.createForm.tpcmRequireCleanTrustReport,
+          require_trust_status: "trusted",
+          require_trust_report_eval: 100,
+          tpcm_apply_mode: this.createForm.tpcmWriteEnabled ? "tpcm_write" : "management_baseline",
+          tpcm_write_enabled: this.createForm.tpcmWriteEnabled,
+          auth_material_ref: String(this.createForm.tpcmAuthRef || "bmeasure-uid").trim(),
+          keylime_artifact: "opentcsm_tpcm_boot_policy",
+          adapter_artifact: "opentcsm_tpcm_boot_policy"
+        };
+      } else {
+        content = {
+          trusted_root_type: "tpm",
+          policy_scope: "trusted_boot",
+          pcrs: this.createForm.pcrs.map(Number).sort((a, b) => a - b),
+          fallback_pcrs: [7],
+          secure_boot_required: this.createForm.secureBootRequired,
+          reference_state_mode: "collect_from_node",
+          event_log_fallback: "pcr_quote",
+          baseline_generation: "auto_collect_tpm_event_log",
+          keylime_artifact: "measured_boot_refstate_or_tpm_policy"
+        };
+      }
     } else if (this.activePolicyType === "ima_runtime") {
       content = {
         node_ima_policy: this.createForm.nodeImaPolicy,
@@ -92,7 +122,9 @@ export const policyCenterMethods = {
       source: {
         baseline_source: "target_node",
         generation_mode: "auto_collect",
-        keylime_artifact: content.keylime_artifact
+        trusted_root_type: content.trusted_root_type,
+        keylime_artifact: content.keylime_artifact,
+        adapter_artifact: content.adapter_artifact || content.keylime_artifact
       },
       target_node_ids: this.createForm.targetNodeIds.map(Number),
       deploy_now: true
@@ -103,7 +135,7 @@ export const policyCenterMethods = {
       const payload = this.policyPayload();
       this.requireToken({
         title: "确认新增策略",
-      message: `将创建${this.currentPolicyType.label}「${payload.name}」，并从目标节点自动采集基线后下发到对应可信代理。`,
+        message: `将创建${this.currentPolicyType.label}「${payload.name}」，并从目标节点自动采集基线后应用到对应可信能力。`,
         confirmText: "生成并下发",
         action: async (token) => {
           await this.requestJson("/api/policies", {
