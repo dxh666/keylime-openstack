@@ -93,6 +93,56 @@
                     "stderr": str(exc),
                 }
 
+        def command_argument_incompatible(result):
+            text = f"{result.get('stdout') or ''}\n{result.get('stderr') or ''}".lower()
+            return int(result.get("rc") or 0) != 0 and (
+                "invalid option" in text
+                or "option requires an argument" in text
+                or "illegal option" in text
+            )
+
+        def run_boot_control_switch():
+            candidates = [
+                [
+                    "set_measure_ctrl_switch",
+                    "-t", "1",
+                    "-s", "1",
+                    "-u", uid,
+                    "-k", signing_key,
+                ],
+                [
+                    "set_measure_ctrl_switch",
+                    "-t", "1",
+                    "-s1",
+                    "-u", uid,
+                    "-k", signing_key,
+                ],
+                [
+                    "set_measure_ctrl_switch",
+                    "-t", "1",
+                    "-s", "1",
+                    "-k", signing_key,
+                ],
+                [
+                    "set_measure_ctrl_switch",
+                    "-t", "1",
+                    "-s1",
+                    "-k", signing_key,
+                ],
+            ]
+            for index, candidate in enumerate(candidates):
+                name = (
+                    "set_measure_ctrl_switch_boot_on"
+                    if index == 0
+                    else f"set_measure_ctrl_switch_boot_on_compat_{index}"
+                )
+                result = run(name, candidate, timeout=120)
+                commands.append(result)
+                if int(result.get("rc") or 0) == 0:
+                    break
+                if not command_argument_incompatible(result):
+                    break
+
         def parse_observed(text):
             count = None
             match = re.search(r"boot_measure_ref_number:\s*(0x[0-9A-Fa-f]+|\d+)", text)
@@ -122,17 +172,7 @@
         commands.append(run("update_bmeasure_references", update_command, timeout=180))
 
         if enable_boot_control:
-            commands.append(run(
-                "set_measure_ctrl_switch_boot_on",
-                [
-                    "set_measure_ctrl_switch",
-                    "-t", "1",
-                    "-s", "1",
-                    "-u", uid,
-                    "-k", signing_key,
-                ],
-                timeout=120,
-            ))
+            run_boot_control_switch()
 
         after_refs = run("get_bmeasure_references_after", ["get_bmeasure_references"])
         commands.append(after_refs)

@@ -127,6 +127,38 @@ def test_tpcm_boot_hardware_error_productizes_reference_rejection() -> None:
     assert "TPCM rejected the boot reference update" in details["tpcm_write_error_summary"]
 
 
+def test_tpcm_boot_hardware_error_productizes_control_argument_incompatibility() -> None:
+    error = _opentcsm_boot_apply_error(
+        {
+            "commands": [
+                {
+                    "name": "set_measure_ctrl_switch_boot_on",
+                    "command": [
+                        "set_measure_ctrl_switch",
+                        "-t",
+                        "1",
+                        "-s",
+                        "1",
+                        "-u",
+                        "bmeasure-uid",
+                        "-k",
+                        "***",
+                    ],
+                    "rc": 1,
+                    "stdout": "",
+                    "stderr": "./set_measure_ctrl_switch: invalid option -- 'u'",
+                }
+            ]
+        }
+    )
+
+    details = _opentcsm_boot_failure_details(error)
+
+    assert details["tpcm_write_status"] == "command_argument_incompatible"
+    assert details["tpcm_write_error_code"] == "TPCM_BOOT_COMMAND_ARGUMENT_INCOMPATIBLE"
+    assert "command arguments are incompatible" in details["tpcm_write_error_summary"]
+
+
 def test_trust_capability_summary_uses_tpcm_boot_policy_binding() -> None:
     with _memory_session() as session:
         node = ComputeNode(

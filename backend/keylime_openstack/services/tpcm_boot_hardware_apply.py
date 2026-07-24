@@ -464,6 +464,12 @@ def _opentcsm_boot_failure_details(
             "OpenTCSM trusted boot commands are not available on the node. "
             "Check update_bmeasure_references and set_measure_ctrl_switch."
         )
+    elif _looks_like_opentcsm_boot_argument_incompatible(text):
+        normalized_status = "command_argument_incompatible"
+        code = "TPCM_BOOT_COMMAND_ARGUMENT_INCOMPATIBLE"
+        summary = (
+            "OpenTCSM trusted boot command arguments are incompatible with the node version."
+        )
     elif "set_measure_ctrl_switch" in text:
         normalized_status = "control_failed"
         code = "TPCM_BOOT_CONTROL_SWITCH_FAILED"
@@ -520,6 +526,17 @@ def _looks_like_opentcsm_boot_command_missing(text: str) -> bool:
         ):
             return True
     return False
+
+
+def _looks_like_opentcsm_boot_argument_incompatible(text: str) -> bool:
+    lowered = text.lower()
+    if "set_measure_ctrl_switch" not in lowered:
+        return False
+    return (
+        "invalid option" in lowered
+        or "illegal option" in lowered
+        or "option requires an argument" in lowered
+    )
 
 
 def _summarize_apply_result(result: dict[str, Any]) -> dict[str, Any]:
