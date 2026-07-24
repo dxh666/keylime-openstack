@@ -169,9 +169,10 @@
             update_command.extend(["-m", str(stage)])
         if flag not in (None, ""):
             update_command.extend(["-F", str(flag)])
-        commands.append(run("update_bmeasure_references", update_command, timeout=180))
+        update_result = run("update_bmeasure_references", update_command, timeout=180)
+        commands.append(update_result)
 
-        if enable_boot_control:
+        if int(update_result.get("rc") or 0) == 0 and enable_boot_control:
             run_boot_control_switch()
 
         after_refs = run("get_bmeasure_references_after", ["get_bmeasure_references"])
