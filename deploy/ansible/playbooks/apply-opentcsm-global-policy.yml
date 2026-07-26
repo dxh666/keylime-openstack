@@ -1,0 +1,210 @@
+---
+- name: Apply OpenTCSM TPCM global policy controls
+  hosts: keylime_managed
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Apply OpenTCSM global policy commands
+      ansible.builtin.shell: |
+        python3 - <<'PY'
+        import datetime
+        import json
+        import os
+        import re
+        import socket
+        import subprocess
+        import sys
+
+        updates = json.loads(r'''{{ opentcsm_global_policy_updates | to_json }}''')
+
+        env = os.environ.copy()
+        env["LC_ALL"] = "C"
+        env["PATH"] = (
+            "/usr/local/opentcsm/tcsm/user/test/tcs:"
+            "/usr/local/opentcsm/tcsm/user/utils/tcs:"
+            "/usr/local/opentcsm/tcsm/user/test/tcm:"
+            + env.get("PATH", "")
+        )
+        env["LD_LIBRARY_PATH"] = (
+            "/usr/local/opentcsm/lib:"
+            "/usr/local/opentcsm/tcsm/user:"
+            "/usr/local/opentcsm/tsb:"
+            + env.get("LD_LIBRARY_PATH", "")
+        )
+
+        field_defs = {
+            "boot_measure_on": {"id": 1, "value_type": "bool"},
+            "boot_control": {"id": 2, "value_type": "bool"},
+            "program_measure_on": {"id": 3, "value_type": "bool"},
+            "program_control": {"id": 4, "value_type": "bool"},
+            "program_measure_mode": {"id": 5, "value_type": "int"},
+            "program_measure_match_mode": {"id": 6, "value_type": "int"},
+            "dynamic_measure_on": {"id": 7, "value_type": "bool"},
+            "dmeasure_max_busy_delay": {"id": 8, "value_type": "int"},
+            "process_dmeasure_interval": {"id": 9, "value_type": "int"},
+            "process_dmeasure_ref_mode": {"id": 10, "value_type": "int"},
+            "process_dmeasure_match_mode": {"id": 11, "value_type": "int"},
+            "process_dmeasure_sub_process_mode": {"id": 12, "value_type": "int"},
+            "process_dmeasure_old_process_mode": {"id": 13, "value_type": "int"},
+            "process_dmeasure_lib_mode": {"id": 14, "value_type": "int"},
+            "process_verify_lib_mode": {"id": 15, "value_type": "int"},
+            "measure_use_cache": {"id": 16, "value_type": "bool"},
+            "tsb_flag1": {"id": 17, "value_type": "bool"},
+            "tsb_flag2": {"id": 18, "value_type": "bool"},
+            "tsb_flag3": {"id": 19, "value_type": "bool"},
+        }
+
+        def redact(command):
+            safe = list(command)
+            if "-k" in safe:
+                index = safe.index("-k")
+                if index + 1 < len(safe):
+                    safe[index + 1] = "***"
+            return safe
+
+        def run(name, command):
+            try:
+                completed = subprocess.run(
+                    command,
+                    shell=False,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=120,
+                    env=env,
+                )
+                return {
+                    "name": name,
+                    "command": redact(command),
+                    "rc": completed.returncode,
+                    "stdout": completed.stdout,
+                    "stderr": completed.stderr,
+                }
+            except FileNotFoundError:
+                return {
+                    "name": name,
+                    "command": redact(command),
+                    "rc": 127,
+                    "stdout": "",
+                    "stderr": f"command not found: {command[0]}",
+                }
+            except subprocess.TimeoutExpired as exc:
+                return {
+                    "name": name,
+                    "command": redact(command),
+                    "rc": 124,
+                    "stdout": (exc.stdout or "") if isinstance(exc.stdout, str) else "",
+                    "stderr": f"command timed out: {command[0]}",
+                }
+
+        def normalize(raw, value_type):
+            token = str(raw or "").strip().split()[0].strip(",;")
+            lowered = token.lower()
+            if value_type == "bool":
+                if lowered in {"on", "enable", "enabled", "true", "yes", "y", "1"}:
+                    return True
+                if lowered in {"off", "disable", "disabled", "false", "no", "n", "0"}:
+                    return False
+                try:
+                    return int(token, 0) != 0
+                except ValueError:
+                    return None
+            try:
+                return int(token, 0)
+            except ValueError:
+                return None
+
+        def parse_global_policy(text):
+            parsed = {}
+            for field, meta in field_defs.items():
+                pattern = rf"(?:policy->|global_policy->|be_)?{re.escape(field)}\s*:\s*([^\r\n]+)"
+                match = re.search(pattern, text or "", re.IGNORECASE)
+                if not match:
+                    continue
+                raw = match.group(1).strip().rstrip(";")
+                parsed[field] = {
+                    "id": meta["id"],
+                    "value": normalize(raw, meta["value_type"]),
+                    "raw": raw,
+                }
+            return parsed
+
+        commands = []
+        before = run("get_global_control_policy_before", ["get_global_control_policy"])
+        commands.append(before)
+
+        applied = []
+        for item in updates:
+            field = str(item.get("field") or "").strip()
+            if field not in field_defs:
+                raise SystemExit(f"unsupported global policy field: {field}")
+            auth = item.get("auth") or {}
+            uid = str(auth.get("uid") or "")
+            signing_key = str(auth.get("private_key") or "") + str(auth.get("public_key") or "")
+            if not uid or not signing_key:
+                raise SystemExit(f"missing authorization material for {field}")
+            value = int(item.get("value"))
+            policy_id = int(item.get("policy_id"))
+            if policy_id != int(field_defs[field]["id"]):
+                raise SystemExit(f"policy id mismatch for {field}")
+            command = [
+                "global_control_policy",
+                "-a", str(int(auth.get("auth_type") or 1)),
+                "-o", "0",
+                "-p", str(policy_id),
+                "-v", str(value),
+                "-u", uid,
+                "-k", signing_key,
+            ]
+            commands.append(run(f"set_{field}", command))
+            applied.append({
+                "field": field,
+                "value": value,
+                "auth_ref": auth.get("ref", ""),
+                "auth_uid": uid,
+            })
+
+        after = run("get_global_control_policy_after", ["get_global_control_policy"])
+        commands.append(after)
+        observed_after = parse_global_policy(after.get("stdout") or "")
+        failed = [item for item in commands if int(item.get("rc") or 0) != 0]
+        mismatches = []
+        for item in updates:
+            field = str(item.get("field") or "").strip()
+            expected = bool(item.get("value")) if field_defs[field]["value_type"] == "bool" else int(item.get("value"))
+            observed = observed_after.get(field, {}).get("value")
+            if observed != expected:
+                mismatches.append(f"{field}={observed!r} expected {expected!r}")
+
+        result = {
+            "hostname": socket.gethostname(),
+            "applied_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "applied": applied,
+            "observed_before": parse_global_policy(before.get("stdout") or ""),
+            "observed_after": observed_after,
+            "commands": commands,
+            "ok": not failed and not mismatches,
+            "error": "; ".join(f"{item['name']} rc={item['rc']}" for item in failed) or "; ".join(mismatches),
+        }
+        print(json.dumps(result, ensure_ascii=False))
+        if not result["ok"]:
+            sys.exit(1)
+        PY
+      register: opentcsm_global_policy_apply
+      ignore_errors: true
+      changed_when: opentcsm_global_policy_apply.rc == 0
+
+    - name: Store OpenTCSM global policy result on controller workspace
+      ansible.builtin.copy:
+        content: "{{ opentcsm_global_policy_apply.stdout }}\n"
+        dest: "{{ result_output_path }}"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+
+    - name: Fail when OpenTCSM global policy command failed
+      ansible.builtin.fail:
+        msg: "{{ opentcsm_global_policy_apply.stdout | default(opentcsm_global_policy_apply.stderr, true) }}"
+      when: opentcsm_global_policy_apply.rc != 0

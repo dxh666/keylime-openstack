@@ -37,6 +37,7 @@ export const nodeDetailMethods = {
     const trustCapabilities = evidenceSummary.trust_capabilities || {};
     const bootSummary = evidenceSummary.boot_measurement_summary || {};
     const dynamicSummary = evidenceSummary.dynamic_measurement_summary || {};
+    const licenseSummary = evidenceSummary.license_summary || keylimeNode.trust_report?.license || {};
     const agentIdentity = profile.agent_identity || node.agent_identity || {};
     const agentEndpoint = profile.agent_endpoint || node.agent_endpoint || {};
     const sections = [
@@ -139,6 +140,7 @@ export const nodeDetailMethods = {
           { label: "启动基线数量", value: this.countText(report.boot_measure_ref_number) },
           { label: "动态基线数量", value: this.countText(report.dynamic_measure_ref_number) },
           { label: "动态度量次数", value: this.countText(report.dmeasure_times) },
+          { label: "License", value: this.tpcmLicenseText(licenseSummary), state: this.tpcmLicenseClass(licenseSummary) },
           { label: "控制策略指纹", value: this.shortHash(report.global_control_policy_sha256) }
         ]
       });
@@ -179,5 +181,23 @@ export const nodeDetailMethods = {
   },
   closeNodeDetail() {
     this.detailNode = null;
+  },
+  tpcmLicenseText(license) {
+    const status = String(license?.status || "unknown").toLowerCase();
+    const text = {
+      valid: "有效",
+      expired: "已过期",
+      missing: "未配置",
+      unavailable: "不可用",
+      unknown: "未知"
+    }[status] || "未知";
+    const expires = license?.expires_at ? `，到期 ${license.expires_at}` : "";
+    return `${text}${expires}`;
+  },
+  tpcmLicenseClass(license) {
+    const status = String(license?.status || "unknown").toLowerCase();
+    if (status === "valid") return "ok";
+    if (status === "expired" || status === "missing") return "bad";
+    return "warn";
   },
 };

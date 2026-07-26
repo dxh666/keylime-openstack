@@ -46,6 +46,7 @@ from keylime_openstack.services.policy_artifacts import _content_hash, _external
 from keylime_openstack.services.policy_deployment_errors import AwaitingReboot
 from keylime_openstack.services.tpcm_dynamic_deployment import TpcmDynamicDeployment
 from keylime_openstack.services.tpcm_boot_deployment import TpcmBootDeployment
+from keylime_openstack.services.opentcsm_policy import opentcsm_auth_ref_for_profile
 from keylime_openstack.services.tpcm_dynamic_policies import (
     _dynamic_audit_object_name,
     _dynamic_object_configs,
@@ -56,6 +57,7 @@ from keylime_openstack.services.tpcm_dynamic_policies import (
     _opentcsm_dynamic_failure_details,
     _safe_int,
 )
+from keylime_openstack.services.trust_registration import ensure_trusted_node_profile
 
 __all__ = [
     "PolicyDeploymentService",
@@ -178,6 +180,10 @@ class PolicyDeploymentService:
                     )
                 if failure_details and policy_type == POLICY_TPCM_DYNAMIC_MEASUREMENT:
                     failure_details.update(_dynamic_policy_context(policy.content))
+                    auth_ref = self._opentcsm_policy_auth_ref(policy, node, purpose="dynamic")
+                    if auth_ref:
+                        failure_details["auth_ref"] = auth_ref
+                        failure_details["auth_material_ref"] = auth_ref
                 self.state.mark_failed(binding, error, failure_details)
                 details = {"error": error, **failure_details}
             self._audit(policy.name, policy_type, node.hostname, binding, details)
@@ -307,6 +313,24 @@ class PolicyDeploymentService:
             binding=binding,
             details=details,
         )
+
+    def _opentcsm_policy_auth_ref(
+        self,
+        policy: TrustPolicy,
+        node: ComputeNode,
+        *,
+        purpose: str,
+    ) -> str:
+        try:
+            profile = ensure_trusted_node_profile(self.session, node, self.settings)
+            return opentcsm_auth_ref_for_profile(
+                profile,
+                purpose,
+                self.settings,
+                policy.content,
+            )
+        except Exception:
+            return str(policy.content.get("auth_material_ref") or "").strip()
 
     @staticmethod
     def _require_ansible_success(rc: int, stdout: str, stderr: str) -> None:

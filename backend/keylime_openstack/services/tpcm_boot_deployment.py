@@ -20,7 +20,9 @@ from keylime_openstack.config import Settings
 from keylime_openstack.constants import TRUST_AGENT_OPENTCSM_TPCM, TRUST_ROOT_TPCM
 from keylime_openstack.models import ComputeNode, TrustPolicy
 from keylime_openstack.services.opentcsm_collect import OpenTcsmCollector
+from keylime_openstack.services.opentcsm_policy import opentcsm_auth_ref_for_profile
 from keylime_openstack.services.policy_artifacts import _content_hash, _external_name
+from keylime_openstack.services.trust_registration import ensure_trusted_node_profile
 
 
 @dataclass(frozen=True)
@@ -44,18 +46,25 @@ class TpcmBootDeployment:
         self.workspace_factory = workspace_factory
 
     def deploy(self, policy: TrustPolicy, node: ComputeNode) -> TpcmBootDeploymentResult:
+        profile = ensure_trusted_node_profile(self.session, node, self.settings)
+        auth_ref = opentcsm_auth_ref_for_profile(
+            profile,
+            "boot",
+            self.settings,
+            policy.content,
+        )
         result = OpenTcsmCollector(self.session, self.settings).collect(node)
         raw = result.get("raw") if isinstance(result.get("raw"), dict) else {}
         failures = _tpcm_boot_evidence_failures(policy.content, raw)
         if failures:
             raise RuntimeError("TPCM trusted boot baseline cannot be bound: " + "; ".join(failures))
 
-        rendered_policy = _tpcm_boot_baseline(policy.content, node, raw)
+        rendered_policy = _tpcm_boot_baseline(policy.content, node, raw, auth_ref=auth_ref)
         external_name = _external_name("tpcm-boot", policy.name, node.hostname, rendered_policy)
         rendered_sha256 = _content_hash(rendered_policy)
         records_sha256 = str(raw.get("boot_measure_records_sha256") or "")
         trust_report_sha256 = str(raw.get("trust_report_sha256") or "")
-        write_status = _tpcm_write_status(policy.content)
+        write_status = _tpcm_write_status(policy.content, auth_ref=auth_ref)
         deployment_details = {
             "keylime_artifact": "opentcsm_tpcm_boot_policy",
             "adapter_artifact": "opentcsm_tpcm_boot_policy",
@@ -87,6 +96,8 @@ class TpcmBootDeployment:
             "keylime_artifact": "opentcsm_tpcm_boot_policy",
             "baseline_status": "management_baseline_bound",
             "tpcm_write_status": write_status["status"],
+            "auth_ref": write_status["auth_ref"],
+            "tpcm_auth_ref": write_status["auth_ref"],
             "trusted_root_type": TRUST_ROOT_TPCM,
             "boot_measure_on": raw.get("boot_measure_on"),
             "boot_status": raw.get("boot_status") or "",
@@ -108,6 +119,8 @@ def _tpcm_boot_baseline(
     content: dict[str, Any],
     node: ComputeNode,
     raw: dict[str, Any],
+    *,
+    auth_ref: str = "",
 ) -> dict[str, Any]:
     boot_records = _boot_records(raw)
     boot_references = _boot_references(raw)
@@ -144,7 +157,7 @@ def _tpcm_boot_baseline(
         "apply": {
             "mode": str(content.get("tpcm_apply_mode") or "management_baseline"),
             "tpcm_write_enabled": bool(content.get("tpcm_write_enabled", False)),
-            "auth_material_ref": str(content.get("auth_material_ref") or ""),
+            "auth_material_ref": str(auth_ref or content.get("auth_material_ref") or ""),
             "operation": str(content.get("tpcm_operation") or "add"),
             "stage": content.get("tpcm_stage"),
         },
@@ -195,9 +208,9 @@ def _tpcm_boot_evidence_failures(content: dict[str, Any], raw: dict[str, Any]) -
     return failures
 
 
-def _tpcm_write_status(content: dict[str, Any]) -> dict[str, Any]:
+def _tpcm_write_status(content: dict[str, Any], *, auth_ref: str = "") -> dict[str, Any]:
     enabled = bool(content.get("tpcm_write_enabled", False))
-    auth_ref = str(content.get("auth_material_ref") or "").strip()
+    auth_ref = str(auth_ref or content.get("auth_material_ref") or "").strip()
     if not enabled:
         return {"enabled": False, "status": "not_enabled", "auth_ref": auth_ref}
     if not auth_ref:

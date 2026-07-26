@@ -479,6 +479,7 @@ def _sync_external_profile(
             "dmeasure_times": report.get("dmeasure_times"),
             "policy_sha256": report.get("dmeasure_policy_sha256") or "",
         },
+        "license_summary": report.get("license") or {},
         "reason": "TRUSTED" if trusted else reason,
         "source": report.get("provider") or "external",
     }
@@ -629,6 +630,10 @@ def _external_report_summary(record) -> dict[str, object]:
         "boot_measure_ref_number": raw.get("boot_measure_ref_number"),
         "dynamic_measure_ref_number": raw.get("dynamic_measure_ref_number"),
         "dmeasure_policy": dmeasure_policy,
+        "license": raw.get("license") if isinstance(raw.get("license"), dict) else {},
+        "global_control_policy": raw.get("global_control_policy")
+        if isinstance(raw.get("global_control_policy"), dict)
+        else {},
         "trust_report_sha256": raw.get("trust_report_sha256") or "",
         "dmeasure_policy_sha256": raw.get("dmeasure_policy_sha256") or "",
         "policy_report_sha256": raw.get("policy_report_sha256") or "",

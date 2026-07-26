@@ -16,6 +16,8 @@ const EVENT_TEXT = {
   tpcm_dynamic_policy_apply_queued: "动态度量策略生效已入队",
   tpcm_dynamic_policy_apply: "动态度量策略生效",
   tpcm_dynamic_global_switch: "动态度量全局控制",
+  tpcm_global_policy_apply_queued: "TPCM 全局策略下发已入队",
+  tpcm_global_policy_apply: "TPCM 全局策略下发",
   tpcm_boot_hardware_apply: "TPCM 可信启动硬件下发",
   host_integrity_evidence_collect: "采集节点完整性证据",
   opentcsm_evidence_collect: "采集 TPCM 可信报告",
@@ -93,7 +95,8 @@ const LOG_TYPE_TEXT = {
   ima_runtime: "IMA 运行时日志",
   node_management: "节点纳管日志",
   trust_verification: "可信验证日志",
-  system_operation: "系统操作日志"
+  system_operation: "系统操作日志",
+  tpcm_global_policy: "TPCM 全局策略日志"
 };
 
 function translateMessage(value) {

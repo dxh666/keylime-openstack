@@ -28,6 +28,7 @@ from keylime_openstack.services.policy import (
     validated_policy_payload,
 )
 from keylime_openstack.services.tasks import create_task, mark_failed, mark_running, mark_success
+from keylime_openstack.services.tpcm_global_policy import queue_tpcm_global_policy_apply
 from keylime_openstack.services.tpcm_boot_hardware_apply import (
     TpcmBootHardwareApplyError,
     TpcmBootHardwareApplyService,
@@ -45,6 +46,11 @@ def set_tpcm_dynamic_global_switch(
 ) -> dict[str, object]:
     ensure_default_environment(session)
     operation = "开启集群动态度量" if request.enabled else "关闭集群动态度量"
+    queued = queue_tpcm_global_policy_apply(
+        session,
+        {"dynamic_measure_on": request.enabled},
+        requested_by="api",
+    )
     record_audit_event(
         session,
         event_type="tpcm_dynamic_global_switch",
@@ -58,8 +64,9 @@ def set_tpcm_dynamic_global_switch(
             "measurement_type": "全局控制",
             "measurement_baseline": "",
             "operation": operation,
-            "result": "成功",
+            "result": "已入队",
             "global_dynamic_measure_enabled": request.enabled,
+            "global_policy_task_id": queued.get("task_id"),
             "hash": "",
         },
     )
@@ -67,7 +74,8 @@ def set_tpcm_dynamic_global_switch(
     return {
         "ok": True,
         "enabled": request.enabled,
-        "message": "TPCM 动态度量全局控制已更新",
+        "task_id": queued.get("task_id"),
+        "message": "TPCM 动态度量全局控制已更新，硬件下发任务已进入队列",
     }
 
 

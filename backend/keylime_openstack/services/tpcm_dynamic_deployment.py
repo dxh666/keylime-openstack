@@ -17,7 +17,10 @@ from keylime_openstack.constants import TRUST_AGENT_OPENTCSM_TPCM
 from keylime_openstack.models import ComputeNode, TrustPolicy
 from keylime_openstack.services.ansible import AnsibleExecutor
 from keylime_openstack.services.opentcsm_collect import OpenTcsmCollector
-from keylime_openstack.services.opentcsm_policy import load_opentcsm_auth_material
+from keylime_openstack.services.opentcsm_policy import (
+    load_opentcsm_auth_material,
+    opentcsm_auth_ref_for_profile,
+)
 from keylime_openstack.services.policy_artifacts import _content_hash, _external_name
 from keylime_openstack.services.tpcm_dynamic_policies import (
     _dynamic_object_configs,
@@ -25,6 +28,7 @@ from keylime_openstack.services.tpcm_dynamic_policies import (
     _safe_int,
 )
 from keylime_openstack.services.trust_agents import node_trusted_root
+from keylime_openstack.services.trust_registration import ensure_trusted_node_profile
 
 __all__ = ["TpcmDynamicDeployment", "TpcmDynamicDeploymentResult"]
 
@@ -53,9 +57,16 @@ class TpcmDynamicDeployment:
         self.require_ansible_success = require_ansible_success
 
     def deploy(self, policy: TrustPolicy, node: ComputeNode) -> TpcmDynamicDeploymentResult:
+        profile = ensure_trusted_node_profile(self.session, node, self.settings)
+        auth_ref = opentcsm_auth_ref_for_profile(
+            profile,
+            "dynamic",
+            self.settings,
+            policy.content,
+        )
         auth = load_opentcsm_auth_material(
             self.settings,
-            str(policy.content.get("auth_material_ref") or ""),
+            auth_ref,
         )
         with self.workspace_factory() as workspace:
             apply_result_path = workspace / "opentcsm-dynamic-apply.json"
@@ -204,6 +215,7 @@ class TpcmDynamicDeployment:
             "trust_agent_type": TRUST_AGENT_OPENTCSM_TPCM,
             "trusted_root": node_trusted_root(node, self.settings),
             "node_dynamic_measure_enabled": node_dynamic_measure_enabled,
+            "auth_ref": auth.ref,
             "auth_material_ref": auth.ref,
             "auth_uid": auth.uid,
             "auth_public_key_sha256": auth.public_fingerprint,
@@ -234,6 +246,9 @@ class TpcmDynamicDeployment:
             "policy_sha256": _content_hash(rendered_policy),
             "policy_apply_status": "consistent",
             "policy_apply_authorization_status": "normal",
+            "auth_ref": auth.ref,
+            "auth_uid": auth.uid,
+            "auth_public_key_sha256": auth.public_fingerprint,
             "policy_last_result": "success",
             "policy_last_result_summary": "TPCM 动态度量策略已生效。",
         }

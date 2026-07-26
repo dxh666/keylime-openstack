@@ -32,6 +32,7 @@ from keylime_openstack.services.ansible import AnsibleExecutor, AnsibleResult
 from keylime_openstack.services.audit import record_audit_event
 from keylime_openstack.services.opentcsm import opentcsm_report_to_evidence
 from keylime_openstack.services.opentcsm_policy import parse_dmeasure_policy
+from keylime_openstack.services.tpcm_global_policy import parse_global_control_policy
 from keylime_openstack.services.trust_agents import node_trust_agent_type
 from keylime_openstack.services.trust_registration import (
     ensure_trusted_node_profile,
@@ -209,8 +210,11 @@ def sync_tpcm_profile(
     boot_references = (
         raw.get("boot_references") if isinstance(raw.get("boot_references"), list) else []
     )
-    dmeasure_policy = raw.get("dmeasure_policy") if isinstance(raw.get("dmeasure_policy"), list) else []
+    dmeasure_policy = (
+        raw.get("dmeasure_policy") if isinstance(raw.get("dmeasure_policy"), list) else []
+    )
     boot_reference_count = raw.get("boot_measure_ref_number")
+    license_summary = raw.get("license") if isinstance(raw.get("license"), dict) else {}
     profile.agent_identity = identity
     profile.last_verified_at = datetime.now(timezone.utc)
     profile.last_evidence_summary = {
@@ -240,6 +244,7 @@ def sync_tpcm_profile(
             "dmeasure_times": raw.get("dmeasure_times"),
             "policy_sha256": raw.get("dmeasure_policy_sha256") or "",
         },
+        "license_summary": license_summary,
         "source": "opentcsm",
     }
     if report.get("trusted") is True:
@@ -255,6 +260,7 @@ def normalize_opentcsm_collection(node: ComputeNode, collected: dict[str, Any]) 
     trust_status = _stdout(commands, "trust_status")
     trust_report = _stdout(commands, "trust_report")
     global_policy = _stdout(commands, "global_control_policy")
+    license_status = _stdout(commands, "license_status")
     dmeasure_policy_text = _stdout(commands, "dmeasure_policy")
     boot_records_text = _stdout(commands, "boot_measure_records")
     boot_references_text = _stdout(commands, "boot_measure_references")
@@ -262,8 +268,13 @@ def normalize_opentcsm_collection(node: ComputeNode, collected: dict[str, Any]) 
     tpcm_id_text = _stdout(commands, "tpcm_id")
 
     trusted_status = bool(re.search(r"Trust status:\s*trusted\b", trust_status, re.IGNORECASE))
-    untrusted_status = bool(re.search(r"Trust status:\s*(untrusted|fail|failed)\b", trust_status, re.IGNORECASE))
-    boot_on = _policy_on(trust_report, "be_boot_measure_on") or _policy_on(global_policy, "boot_measure_on")
+    untrusted_status = bool(
+        re.search(r"Trust status:\s*(untrusted|fail|failed)\b", trust_status, re.IGNORECASE)
+    )
+    boot_on = _policy_on(trust_report, "be_boot_measure_on") or _policy_on(
+        global_policy,
+        "boot_measure_on",
+    )
     dynamic_on = _policy_on(trust_report, "be_dynamic_measure_on") or _policy_on(
         global_policy, "dynamic_measure_on"
     )
@@ -289,7 +300,9 @@ def normalize_opentcsm_collection(node: ComputeNode, collected: dict[str, Any]) 
         "hostname": collected.get("hostname") or node.hostname,
         "management_ip": node.management_ip,
         "tpcm_id": tpcm_id,
-        "trust_status": "trusted" if trusted_status else "untrusted" if untrusted_status else "unknown",
+        "trust_status": (
+            "trusted" if trusted_status else "untrusted" if untrusted_status else "unknown"
+        ),
         "boot_measure_on": boot_on,
         "boot_status": boot_status,
         "dynamic_measure_on": dynamic_on,
@@ -297,12 +310,15 @@ def normalize_opentcsm_collection(node: ComputeNode, collected: dict[str, Any]) 
         "trust_report_clean": trust_report_clean,
         "trust_report_eval": _trust_report_eval(trust_report),
         "trust_report_failures": _trust_report_failures(trust_report),
+        "license": _license_summary(license_status, commands.get("license_status")),
+        "license_status_sha256": _sha256(license_status),
         "boot_records": boot_records,
         "boot_references": boot_references,
         "boot_measure_records_sha256": _sha256(boot_records_text),
         "boot_measure_references_sha256": _sha256(boot_references_text),
         "trust_report_sha256": _sha256(trust_report),
         "policy_report_sha256": _sha256(_stdout(commands, "policy_report")),
+        "global_control_policy": parse_global_control_policy(global_policy),
         "global_control_policy_sha256": _sha256(global_policy),
         "dmeasure_policy": parse_dmeasure_policy(dmeasure_policy_text),
         "dmeasure_policy_sha256": _sha256(dmeasure_policy_text),
@@ -327,6 +343,52 @@ def normalize_opentcsm_collection(node: ComputeNode, collected: dict[str, Any]) 
         "raw": raw,
         "errors": _command_errors(commands),
     }
+
+
+def _license_summary(text: str, command_result: Any) -> dict[str, Any]:
+    item = command_result if isinstance(command_result, dict) else {}
+    rc = int(item.get("rc") or 0)
+    stderr = str(item.get("stderr") or "").strip()
+    content = str(text or "").strip()
+    lowered = f"{content}\n{stderr}".lower()
+    status = "unknown"
+    if rc != 0:
+        status = "unavailable"
+    elif not content:
+        status = "unknown"
+    elif "expired" in lowered or "expire" in lowered and re.search(r"\b(no|invalid|fail)", lowered):
+        status = "expired"
+    elif "not licensed" in lowered or "no license" in lowered or "license not" in lowered:
+        status = "missing"
+    elif "valid" in lowered or "licensed" in lowered or "license status: 0" in lowered:
+        status = "valid"
+    expires_at = _license_expiry(content)
+    return {
+        "status": status,
+        "available": rc == 0,
+        "summary": _first_nonempty_line(content or stderr),
+        "expires_at": expires_at,
+        "sha256": _sha256(content),
+        "command_rc": rc,
+    }
+
+
+def _license_expiry(text: str) -> str:
+    match = re.search(
+        r"(?:expire|expiry|expired|valid_until|end(?:\s+time)?)[^\d]{0,40}"
+        r"(\d{4}[-/]\d{1,2}[-/]\d{1,2})",
+        text or "",
+        re.IGNORECASE,
+    )
+    return match.group(1).replace("/", "-") if match else ""
+
+
+def _first_nonempty_line(text: str, *, limit: int = 160) -> str:
+    for line in str(text or "").splitlines():
+        stripped = line.strip()
+        if stripped:
+            return stripped[:limit]
+    return ""
 
 
 def _stdout(commands: dict[str, Any], name: str) -> str:

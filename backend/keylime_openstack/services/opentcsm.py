@@ -27,6 +27,10 @@ def opentcsm_report_to_evidence(
         "trusted": report.get("trusted"),
         "boot_measurement": _boot_measurement_summary(raw),
         "dynamic_measurement": _dynamic_measurement_summary(raw),
+        "license": raw.get("license") if isinstance(raw.get("license"), dict) else {},
+        "global_control_policy": raw.get("global_control_policy")
+        if isinstance(raw.get("global_control_policy"), dict)
+        else {},
         "raw": raw,
         "errors": report.get("errors") or [],
     }

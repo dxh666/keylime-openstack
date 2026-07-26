@@ -90,6 +90,10 @@ def test_tpcm_boot_deployment_binds_management_baseline(monkeypatch, tmp_path: P
         content=_tpcm_policy_content(),
     )
     node = ComputeNode(hostname="hygon23", management_ip="172.31.100.23")
+    node.trust_profile = TrustedNodeProfile(
+        hostname="hygon23",
+        agent_identity={"boot_auth_ref": "bmeasure-hygon23"},
+    )
 
     result = deployment.deploy(policy, node)
 
@@ -98,7 +102,11 @@ def test_tpcm_boot_deployment_binds_management_baseline(monkeypatch, tmp_path: P
     assert result.deployment_details["trusted_root_type"] == TRUST_ROOT_TPCM
     assert result.deployment_details["baseline_status"] == "management_baseline_bound"
     assert result.deployment_details["tpcm_write_status"] == "not_enabled"
+    assert result.deployment_details["tpcm_auth_ref"] == "bmeasure-hygon23"
+    assert result.response["auth_ref"] == "bmeasure-hygon23"
+    assert result.response["tpcm_auth_ref"] == "bmeasure-hygon23"
     assert result.rendered_policy["type"] == "tpcm_trusted_boot_baseline"
+    assert result.rendered_policy["apply"]["auth_material_ref"] == "bmeasure-hygon23"
     assert result.rendered_policy["expected"]["boot_record_count"] == 2
     assert result.rendered_policy["expected"]["boot_reference_count"] == 2
     assert result.response["boot_status"] == "pass"

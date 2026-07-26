@@ -15,6 +15,7 @@ from keylime_openstack.models import TaskRun
 from keylime_openstack.services.policy_deployment import PolicyDeploymentService
 from keylime_openstack.services.sync import TrustSyncService
 from keylime_openstack.services.tasks import create_task, mark_failed, mark_running, mark_success
+from keylime_openstack.services.tpcm_global_policy import TpcmGlobalPolicyApplyService
 
 LOG = logging.getLogger("keylime_openstack.worker")
 
@@ -40,6 +41,7 @@ class Worker:
 
     def run_once(self) -> dict[str, object]:
         with SessionLocal() as session:
+            global_policy_result = self._run_next_tpcm_global_policy_apply(session)
             policy_result = self._run_next_policy_deployment(session)
             task = create_task(session, "sync", requested_by="worker")
             mark_running(task)
@@ -49,10 +51,48 @@ class Worker:
                 LOG.exception("trust sync failed")
                 mark_failed(task, str(exc))
                 session.commit()
-                return {"ok": False, "error": str(exc), "policy_deployment": policy_result}
+                return {
+                    "ok": False,
+                    "error": str(exc),
+                    "global_policy": global_policy_result,
+                    "policy_deployment": policy_result,
+                }
             mark_success(task, result)
             session.commit()
-            return {"ok": True, "result": result, "policy_deployment": policy_result}
+            return {
+                "ok": True,
+                "result": result,
+                "global_policy": global_policy_result,
+                "policy_deployment": policy_result,
+            }
+
+    def _run_next_tpcm_global_policy_apply(self, session) -> dict[str, object] | None:
+        task = session.scalars(
+            select(TaskRun)
+            .where(TaskRun.task_type == "tpcm_global_policy_apply")
+            .where(TaskRun.status == TASK_PENDING)
+            .order_by(TaskRun.created_at)
+            .limit(1)
+            .with_for_update(skip_locked=True)
+        ).first()
+        if not task:
+            return None
+        mark_running(task)
+        session.commit()
+        try:
+            fields = task.task_args.get("fields") or {}
+            result = TpcmGlobalPolicyApplyService(session, self.settings).apply(fields)
+        except Exception as exc:  # pragma: no cover - remote execution boundary
+            LOG.exception("TPCM global policy apply failed")
+            mark_failed(task, str(exc))
+            session.commit()
+            return {"ok": False, "task_id": task.id, "error": str(exc)}
+        if result.get("failed"):
+            mark_failed(task, "one or more TPCM global policy updates failed", result)
+        else:
+            mark_success(task, result)
+        session.commit()
+        return {"ok": not bool(result.get("failed")), "task_id": task.id, "result": result}
 
     def _run_next_policy_deployment(self, session) -> dict[str, object] | None:
         task = session.scalars(

@@ -46,7 +46,13 @@ from keylime_openstack.api.routers.policies import (
     update_policy,
 )
 from keylime_openstack.api.routers.queries import _latest_decisions, _latest_openstack_states
-from keylime_openstack.api.routers.system import bootstrap, health, traits
+from keylime_openstack.api.routers.system import (
+    apply_tpcm_global_policy,
+    bootstrap,
+    health,
+    tpcm_global_policy_state,
+    traits,
+)
 from keylime_openstack.api.routers.tasks import run_sync_now, tasks
 from keylime_openstack.api.routers.trust import (
     register_trust_agent,
@@ -96,6 +102,8 @@ __all__ = [
     "check_opentcsm_access",
     "audit",
     "traits",
+    "tpcm_global_policy_state",
+    "apply_tpcm_global_policy",
     "_access_check_item",
     "_opentcsm_failed_access_checks",
     "_opentcsm_command_errors",

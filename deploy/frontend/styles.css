@@ -1183,6 +1183,12 @@ h3 {
   font-size: 13px;
 }
 
+.switch-item .number-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .switch {
   position: relative;
   width: 42px;

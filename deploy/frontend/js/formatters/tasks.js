@@ -4,7 +4,8 @@ export const taskFormatters = {
       sync: "可信状态同步",
       policy_deploy: "策略下发",
       opentcsm_collect: "采集 TPCM 可信报告",
-      tpcm_boot_hardware_apply: "TPCM 可信启动硬件下发"
+      tpcm_boot_hardware_apply: "TPCM 可信启动硬件下发",
+      tpcm_global_policy_apply: "TPCM 全局策略下发"
     };
     return names[value] || value || "任务";
   },
@@ -29,6 +30,7 @@ export const taskFormatters = {
     if (task?.task_type === "sync") return "全部计算节点";
     if (task?.task_type === "policy_deploy") return "策略目标节点";
     if (task?.task_type === "tpcm_boot_hardware_apply") return "TPCM 可信启动目标节点";
+    if (task?.task_type === "tpcm_global_policy_apply") return "TPCM 纳管计算节点";
     return "-";
   },
   taskSummaryText(task) {
@@ -48,6 +50,7 @@ export const taskFormatters = {
       return "下发可信策略到目标节点";
     }
     if (task?.task_type === "opentcsm_collect") return "采集 TPCM 可信报告";
+    if (task?.task_type === "tpcm_global_policy_apply") return "下发 TPCM 全局策略并读回验证";
     if (task?.task_type === "tpcm_boot_hardware_apply") {
       const status = task.result?.tpcm_write_status || task.result?.details?.tpcm_write_status || "";
       if (status) return `写入 TPCM 启动参考值并开启控制：${this.tpcmWriteStatusText(status)}`;

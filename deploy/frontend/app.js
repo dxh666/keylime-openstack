@@ -56,8 +56,10 @@ createApp({
       overview: null,
       keylime: { ok: null, nodes: [], nodes_total: 0, nodes_trusted: 0, trust_capabilities: {} },
       globalControls: {
-        tpcm_dynamic_measurement: { enabled: true, source: "default", updated_at: null }
+        tpcm_dynamic_measurement: { enabled: true, source: "default", updated_at: null },
+        tpcm_global_policy: { ok: true, nodes_total: 0, fields: {}, nodes: [] }
       },
+      globalPolicyDrafts: {},
       nodes: [],
       policies: [],
       auditEvents: [],

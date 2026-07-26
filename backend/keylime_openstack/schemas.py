@@ -146,6 +146,10 @@ class TpcmDynamicGlobalSwitchIn(BaseModel):
     enabled: bool
 
 
+class TpcmGlobalPolicyApplyIn(BaseModel):
+    fields: dict[str, Any] = Field(default_factory=dict)
+
+
 class LoginIn(BaseModel):
     username: str = Field(min_length=1, max_length=120)
     password: str = Field(min_length=1, max_length=255)

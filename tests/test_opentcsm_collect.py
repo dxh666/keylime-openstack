@@ -26,7 +26,9 @@ def test_trusted_tpcm_report_eval_is_not_a_failure_counter() -> None:
                 "global_control_policy": _command(
                     "policy->boot_measure_on: ON\n"
                     "policy->dynamic_measure_on: ON\n"
+                    "policy->dmeasure_max_busy_delay: 30\n"
                 ),
+                "license_status": _command("license status: valid\nexpire date: 2027-12-31\n"),
                 "boot_measure_records": _command(
                     "[0].name: BIOS/U-BOOT\n"
                     "[1].name: /EFI/anolis/shim.efi\n"
@@ -77,6 +79,10 @@ def test_trusted_tpcm_report_eval_is_not_a_failure_counter() -> None:
     assert report["raw"]["trust_report_failures"] == {}
     assert report["raw"]["boot_references"] == ["BIOS/U-BOOT", "/EFI/anolis/shim.efi"]
     assert report["raw"]["boot_measure_references_sha256"]
+    assert report["raw"]["license"]["status"] == "valid"
+    assert report["raw"]["license"]["expires_at"] == "2027-12-31"
+    assert report["raw"]["global_control_policy"]["dynamic_measure_on"]["value"] is True
+    assert report["raw"]["global_control_policy"]["dmeasure_max_busy_delay"]["value"] == 30
     assert report["raw"]["dmeasure_policy"] == [
         {"index": 0, "be_type": 0, "interval_milli": 60000, "object": "kernel_section"},
         {"index": 1, "be_type": 0, "interval_milli": 60000, "object": "syscall_table"},
@@ -96,6 +102,7 @@ def test_tpcm_boot_measurement_summary_is_first_class_evidence_payload() -> None
                     "policy->boot_measure_on: ON\n"
                     "policy->dynamic_measure_on: ON\n"
                 ),
+                "license_status": _command("license status: valid\n"),
                 "boot_measure_records": _command("[0].name: BIOS/U-BOOT\n[1].name: shim.efi\n"),
                 "boot_measure_references": _command(
                     "[0].name: BIOS/U-BOOT\n[1].name: shim.efi\n"
@@ -127,3 +134,5 @@ def test_tpcm_boot_measurement_summary_is_first_class_evidence_payload() -> None
     assert "records=2" in boot.summary
     assert runtime.payload["dynamic_measurement"]["object_count"] == 1
     assert runtime.payload["dynamic_measurement"]["dmeasure_times"] == 22
+    assert runtime.payload["license"]["status"] == "valid"
+    assert runtime.payload["global_control_policy"]["dynamic_measure_on"]["value"] is True

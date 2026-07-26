@@ -33,6 +33,7 @@ from keylime_openstack.constants import (
 )
 from keylime_openstack.models import ComputeNode, EvidenceRecord, TrustedNodeProfile
 from keylime_openstack.services.keylime import KeylimeClient
+from keylime_openstack.services.opentcsm_policy import opentcsm_auth_ref_fields_from_facts
 from keylime_openstack.services.trust_agents import normalize_trust_agent_type, parse_host_map
 from keylime_openstack.services.trust_registration import (
     ensure_trusted_node_profile,
@@ -494,6 +495,7 @@ def _tpcm_registration_payload(
         "agent_identity": {
             "tpcm_id": tpcm_id,
             "registration_source": source,
+            **opentcsm_auth_ref_fields_from_facts(node.facts or {}),
         },
         "capabilities": {
             CAPABILITY_TRUSTED_BOOT: True,

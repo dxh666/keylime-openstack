@@ -188,8 +188,10 @@ export const shellMethods = {
     this.overview = null;
     this.keylime = { ok: null, nodes: [], nodes_total: 0, nodes_trusted: 0, trust_capabilities: {} };
     this.globalControls = {
-      tpcm_dynamic_measurement: { enabled: true, source: "default", updated_at: null }
+      tpcm_dynamic_measurement: { enabled: true, source: "default", updated_at: null },
+      tpcm_global_policy: { ok: true, nodes_total: 0, fields: {}, nodes: [] }
     };
+    this.globalPolicyDrafts = {};
     this.nodes = [];
     this.policies = [];
     this.auditEvents = [];
@@ -221,6 +223,7 @@ export const shellMethods = {
       return {
         keylime: this.requestJson("/api/trust/check"),
         globalTpcmDynamic: this.requestJson("/api/policies/tpcm-dynamic/global-switch"),
+        globalTpcmPolicy: this.requestJson("/api/system/tpcm/global-policy"),
         nodes: this.requestJson("/api/nodes")
       };
     }
@@ -242,6 +245,7 @@ export const shellMethods = {
       return {
         overview: this.requestJson("/api/overview"),
         globalTpcmDynamic: this.requestJson("/api/policies/tpcm-dynamic/global-switch"),
+        globalTpcmPolicy: this.requestJson("/api/system/tpcm/global-policy"),
         nodes: this.requestJson("/api/nodes")
       };
     }
@@ -271,6 +275,7 @@ export const shellMethods = {
       overview: this.requestJson("/api/overview"),
       keylime: this.requestJson("/api/trust/check"),
       globalTpcmDynamic: this.requestJson("/api/policies/tpcm-dynamic/global-switch"),
+      globalTpcmPolicy: this.requestJson("/api/system/tpcm/global-policy"),
       nodes: this.requestJson("/api/nodes"),
       policies: this.requestJson("/api/policies"),
       audit: this.requestJson("/api/audit?limit=200"),
@@ -313,6 +318,10 @@ export const shellMethods = {
         if (key === "nodes" && value) this.nodes = value;
         if (key === "globalTpcmDynamic" && value) {
           this.globalControls.tpcm_dynamic_measurement = value;
+        }
+        if (key === "globalTpcmPolicy" && value) {
+          this.globalControls.tpcm_global_policy = value;
+          this.syncGlobalPolicyDrafts?.();
         }
         if (key === "policies" && value) this.policies = value;
         if (key === "audit" && value) this.auditEvents = value;

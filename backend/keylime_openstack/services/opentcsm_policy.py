@@ -14,6 +14,30 @@ from keylime_openstack.config import Settings
 
 SAFE_AUTH_REF = re.compile(r"^[A-Za-z0-9_.-]+$")
 OPEN_TCSM_DMEASURE_OBJECTS = ("kernel_section", "syscall_table", "idt_table")
+OPENTCSM_BOOT_AUTH_REF_FIELD = "boot_auth_ref"
+OPENTCSM_DYNAMIC_AUTH_REF_FIELD = "dynamic_auth_ref"
+OPENTCSM_AUTH_REF_FIELDS = (
+    OPENTCSM_BOOT_AUTH_REF_FIELD,
+    OPENTCSM_DYNAMIC_AUTH_REF_FIELD,
+    "opentcsm_boot_auth_ref",
+    "opentcsm_dynamic_auth_ref",
+    "tpcm_boot_auth_ref",
+    "tpcm_dynamic_auth_ref",
+)
+OPENTCSM_AUTH_REFS_FIELD = "auth_refs"
+_AUTH_REF_CONTAINER_FIELDS = ("auth_refs", "opentcsm_auth_refs", "registration_details")
+_DIRECT_AUTH_REF_KEYS_BY_PURPOSE = {
+    "boot": (OPENTCSM_BOOT_AUTH_REF_FIELD, "opentcsm_boot_auth_ref", "tpcm_boot_auth_ref"),
+    "dynamic": (
+        OPENTCSM_DYNAMIC_AUTH_REF_FIELD,
+        "opentcsm_dynamic_auth_ref",
+        "tpcm_dynamic_auth_ref",
+    ),
+}
+_NESTED_AUTH_REF_KEYS_BY_PURPOSE = {
+    purpose: (purpose, *fields)
+    for purpose, fields in _DIRECT_AUTH_REF_KEYS_BY_PURPOSE.items()
+}
 
 
 @dataclass(frozen=True)
@@ -94,6 +118,67 @@ def load_opentcsm_auth_material(settings: Settings, ref: str | None = None) -> O
     )
 
 
+def opentcsm_auth_ref_for_profile(
+    profile: Any,
+    purpose: str,
+    settings: Settings,
+    content: dict[str, Any] | None = None,
+) -> str:
+    """Select the OpenTCSM authorization reference for a node and policy path."""
+
+    normalized_purpose = purpose.strip().lower()
+    if normalized_purpose not in _DIRECT_AUTH_REF_KEYS_BY_PURPOSE:
+        raise ValueError(f"unsupported OpenTCSM auth reference purpose: {purpose}")
+
+    identity = dict(getattr(profile, "agent_identity", {}) or {})
+    policy_content = dict(content or {})
+    configured = (
+        _auth_ref_from_container(identity, normalized_purpose)
+        or _auth_ref_from_container(policy_content, normalized_purpose)
+        or str(policy_content.get("auth_material_ref") or policy_content.get("tpcm_auth_ref") or "")
+    )
+    if configured:
+        return configured.strip()
+    if normalized_purpose == "boot":
+        return str(settings.opentcsm_default_boot_auth_ref or "").strip()
+    return str(settings.opentcsm_default_dynamic_auth_ref or "").strip()
+
+
+def opentcsm_auth_ref_fields_from_facts(facts: dict[str, Any]) -> dict[str, Any]:
+    """Extract safe per-node OpenTCSM auth references from inventory facts."""
+
+    auth_refs: dict[str, str] = {}
+    for purpose in ("boot", "dynamic"):
+        value = _auth_ref_from_container(facts, purpose)
+        if value:
+            auth_refs[purpose] = value
+    return {OPENTCSM_AUTH_REFS_FIELD: auth_refs} if auth_refs else {}
+
+
+def preserve_opentcsm_auth_refs(
+    existing_identity: dict[str, Any],
+    incoming_identity: dict[str, Any],
+) -> dict[str, Any]:
+    """Keep node auth references when an inventory sync omits them."""
+
+    merged = dict(incoming_identity or {})
+    existing = dict(existing_identity or {})
+    auth_refs = dict(merged.get(OPENTCSM_AUTH_REFS_FIELD) or {})
+    for purpose in ("boot", "dynamic"):
+        if auth_refs.get(purpose):
+            continue
+        incoming_value = _auth_ref_from_container(merged, purpose)
+        existing_value = _auth_ref_from_container(existing, purpose)
+        value = incoming_value or existing_value
+        if value:
+            auth_refs[purpose] = value
+    if auth_refs:
+        merged[OPENTCSM_AUTH_REFS_FIELD] = auth_refs
+    for field in OPENTCSM_AUTH_REF_FIELDS:
+        merged.pop(field, None)
+    return merged
+
+
 def normalize_dmeasure_objects(value: Any) -> list[str]:
     """Return a stable, validated list of OpenTCSM environment measurement objects."""
 
@@ -110,6 +195,30 @@ def normalize_dmeasure_objects(value: Any) -> list[str]:
     if not normalized:
         raise ValueError("OpenTCSM dynamic measurement object list cannot be empty")
     return normalized
+
+
+def _auth_ref_from_container(
+    container: dict[str, Any],
+    purpose: str,
+    *,
+    allow_short_keys: bool = False,
+) -> str:
+    keys = (
+        _NESTED_AUTH_REF_KEYS_BY_PURPOSE[purpose]
+        if allow_short_keys
+        else _DIRECT_AUTH_REF_KEYS_BY_PURPOSE[purpose]
+    )
+    for key in keys:
+        if key in container:
+            return str(container.get(key) or "").strip()
+    for container_field in _AUTH_REF_CONTAINER_FIELDS:
+        nested = container.get(container_field)
+        if not isinstance(nested, dict):
+            continue
+        value = _auth_ref_from_container(nested, purpose, allow_short_keys=True)
+        if value:
+            return value
+    return ""
 
 
 def parse_dmeasure_policy(text: str) -> list[dict[str, Any]]:

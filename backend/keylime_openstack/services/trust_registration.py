@@ -30,6 +30,10 @@ from keylime_openstack.constants import (
     TRUST_ROOT_UNKNOWN,
 )
 from keylime_openstack.models import ComputeNode, TrustedNodeProfile
+from keylime_openstack.services.opentcsm_policy import (
+    opentcsm_auth_ref_fields_from_facts,
+    preserve_opentcsm_auth_refs,
+)
 from keylime_openstack.services.trust_agents import (
     node_trust_agent_type,
     node_trust_managed,
@@ -193,6 +197,10 @@ def upsert_trusted_node_profile(
         adapter_type,
         node.facts or {},
     )
+    agent_identity = preserve_opentcsm_auth_refs(
+        dict(profile.agent_identity or {}),
+        agent_identity,
+    )
     if registration_source:
         agent_identity["registration_source"] = registration_source
     profile.agent_identity = agent_identity
@@ -327,9 +335,11 @@ def _agent_identity(
             "keylime_agent_uuid": node.keylime_agent_uuid,
         }
     if adapter_type == ADAPTER_OPENTCSM:
-        return {
+        identity = {
             "tpcm_id": str(facts.get("tpcm_id") or ""),
         }
+        identity.update(opentcsm_auth_ref_fields_from_facts(facts))
+        return identity
     return {}
 
 

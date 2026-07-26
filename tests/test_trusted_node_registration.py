@@ -666,6 +666,56 @@ def test_opentcsm_evidence_ingestion_promotes_unmanaged_tpcm_profile() -> None:
     assert node.trust_profile.last_evidence_summary["trusted"] is True
 
 
+def test_tpcm_profile_upsert_preserves_per_node_auth_refs_when_omitted() -> None:
+    with _memory_session() as memory_session:
+        node = ComputeNode(
+            hostname="hygon23",
+            hypervisor_name="hygon23",
+            management_ip="172.31.100.23",
+            role="compute",
+            facts={"trust_agent_type": "opentcsm_tpcm", "trusted_root_type": "tpcm"},
+        )
+        memory_session.add(node)
+        memory_session.flush()
+
+        upsert_trusted_node_profile(
+            memory_session,
+            node,
+            Settings(),
+            {
+                "trust_managed": True,
+                "trusted_root_type": TRUST_ROOT_TPCM,
+                "adapter_type": ADAPTER_OPENTCSM,
+                "agent_identity": {
+                    "tpcm_id": "old-tpcm",
+                    "boot_auth_ref": "bmeasure-hygon23",
+                    "dynamic_auth_ref": "dmeasure-hygon23",
+                },
+            },
+        )
+        profile = upsert_trusted_node_profile(
+            memory_session,
+            node,
+            Settings(),
+            {
+                "trust_managed": True,
+                "trusted_root_type": TRUST_ROOT_TPCM,
+                "adapter_type": ADAPTER_OPENTCSM,
+                "agent_identity": {"tpcm_id": "new-tpcm"},
+                "registration_source": "opentcsm-evidence",
+            },
+        )
+
+    assert profile.agent_identity["tpcm_id"] == "new-tpcm"
+    assert profile.agent_identity["auth_refs"] == {
+        "boot": "bmeasure-hygon23",
+        "dynamic": "dmeasure-hygon23",
+    }
+    assert "boot_auth_ref" not in profile.agent_identity
+    assert "dynamic_auth_ref" not in profile.agent_identity
+    assert profile.agent_identity["registration_source"] == "opentcsm-evidence"
+
+
 def _memory_session() -> Session:
     engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
     Base.metadata.create_all(engine)

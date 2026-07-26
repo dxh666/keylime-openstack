@@ -467,7 +467,7 @@
                 <span>{{ item.summary || (item.enabled ? '已参与可信判定' : '未参与可信判定') }}</span>
               </div>
               <button
-                v-if="item.actionable"
+                v-if="item.actionable && item.control !== 'number'"
                 type="button"
                 class="switch-control"
                 :disabled="busy"
@@ -476,7 +476,19 @@
                 <em :class="['switch', item.enabled ? 'on' : 'off']"></em>
                 <span>{{ item.enabled ? '关闭' : '开启' }}</span>
               </button>
-              <em v-else :class="['switch', item.enabled ? 'on' : 'off']"></em>
+              <div v-else-if="item.actionable && item.control === 'number'" class="number-control">
+                <input
+                  v-model.number="globalPolicyDrafts[item.key]"
+                  class="inline-number"
+                  type="number"
+                  :min="item.min"
+                  :max="item.max"
+                  step="1"
+                  :disabled="busy"
+                >
+                <button type="button" class="small" :disabled="busy" @click="applyGlobalPolicyNumber(item)">设置</button>
+              </div>
+              <em v-else-if="item.control !== 'number'" :class="['switch', item.enabled ? 'on' : 'off']"></em>
             </article>
           </div>
         </section>

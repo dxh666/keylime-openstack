@@ -14,7 +14,14 @@ from keylime_openstack.api.router import (
 )
 from keylime_openstack.config import Settings
 from keylime_openstack.database import Base
-from keylime_openstack.models import AuditEvent, ComputeNode, PolicyBinding, TrustPolicy
+from keylime_openstack.models import (
+    AuditEvent,
+    ComputeNode,
+    PolicyBinding,
+    TaskRun,
+    TrustPolicy,
+    TrustedNodeProfile,
+)
 from keylime_openstack.schemas import TpcmDynamicGlobalSwitchIn
 from keylime_openstack.services.policy import _binding_last_error_for_output
 from keylime_openstack.services.policy_deployment_audit import PolicyDeploymentAuditRecorder
@@ -234,7 +241,13 @@ def test_tpcm_dynamic_deployment_returns_productized_result(monkeypatch, tmp_pat
     def workspace():
         yield tmp_path
 
-    monkeypatch.setattr(tpcm_dynamic_deployment, "load_opentcsm_auth_material", lambda *_: FakeAuth())
+    selected_auth_refs: list[str] = []
+
+    def fake_load_auth(_: Settings, ref: str) -> FakeAuth:
+        selected_auth_refs.append(ref)
+        return FakeAuth()
+
+    monkeypatch.setattr(tpcm_dynamic_deployment, "load_opentcsm_auth_material", fake_load_auth)
     monkeypatch.setattr(tpcm_dynamic_deployment, "OpenTcsmCollector", FakeCollector)
 
     deployment = TpcmDynamicDeployment(
@@ -257,13 +270,22 @@ def test_tpcm_dynamic_deployment_returns_productized_result(monkeypatch, tmp_pat
         },
     )
     node = ComputeNode(hostname="hygon23", facts={"trust_agent_type": "opentcsm_tpcm"})
+    node.trust_profile = TrustedNodeProfile(
+        hostname="hygon23",
+        agent_identity={"dynamic_auth_ref": "unit-test"},
+    )
 
     result = deployment.deploy(policy, node)
 
+    assert selected_auth_refs == ["unit-test"]
     assert result.external_name.startswith("klos-tpcm-dyn-hygon23-dynamic-hygon23-")
     assert result.deployment_details["keylime_artifact"] == "opentcsm_dynamic_measurement_policy"
     assert result.deployment_details["trust_agent_type"] == "opentcsm_tpcm"
     assert result.deployment_details["dynamic_measure_ref_number"] == 3
+    assert result.deployment_details["auth_ref"] == "unit-test"
+    assert result.response["auth_ref"] == "unit-test"
+    assert result.response["auth_uid"] == "unit-uid"
+    assert result.response["auth_public_key_sha256"] == "public-sha256"
     assert result.response["dynamic_measure_on"] is True
     assert result.response["environment_objects"] == ["kernel_section", "idt_table"]
     assert result.rendered_policy["observed"]["dmeasure_policy_sha256"] == "dmeasure-sha256"
@@ -302,8 +324,13 @@ def test_tpcm_dynamic_global_switch_does_not_change_node_policy() -> None:
         )
         session.refresh(policy)
         status = _tpcm_dynamic_global_control(session)
+        task = session.scalar(
+            select(TaskRun).where(TaskRun.task_type == "tpcm_global_policy_apply")
+        )
 
     assert result["ok"] is True
+    assert task is not None
+    assert task.task_args["fields"] == {"dynamic_measure_on": False}
     assert status["enabled"] is False
     assert policy.content["node_dynamic_measure_enabled"] is True
     assert policy.content["dynamic_measure_required"] is True

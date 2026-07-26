@@ -25,7 +25,10 @@ from keylime_openstack.models import ComputeNode, PolicyBinding, TrustPolicy, Tr
 from keylime_openstack.services.ansible import AnsibleExecutor
 from keylime_openstack.services.audit import record_audit_event
 from keylime_openstack.services.opentcsm_collect import OpenTcsmCollector
-from keylime_openstack.services.opentcsm_policy import load_opentcsm_auth_material
+from keylime_openstack.services.opentcsm_policy import (
+    load_opentcsm_auth_material,
+    opentcsm_auth_ref_for_profile,
+)
 from keylime_openstack.services.policy import canonical_policy_type
 from keylime_openstack.services.policy_artifacts import _content_hash
 from keylime_openstack.services.trust_agents import node_trust_agent_type
@@ -70,15 +73,12 @@ class TpcmBootHardwareApplyService:
             raise TpcmBootHardwareApplyError(summary, details)
 
         content = dict(policy.content or {})
-        auth_ref = str(
-            content.get("auth_material_ref")
-            or self.settings.opentcsm_default_boot_auth_ref
-            or ""
-        ).strip()
+        auth_ref = opentcsm_auth_ref_for_profile(profile, "boot", self.settings, content)
         try:
             auth = load_opentcsm_auth_material(self.settings, auth_ref)
         except RuntimeError as exc:
             details = _opentcsm_boot_failure_details(str(exc), status="authorization_failed")
+            details["tpcm_auth_ref"] = auth_ref
             self._mark_binding_result(binding, details)
             self._audit(policy, binding, node, details, success=False)
             raise TpcmBootHardwareApplyError(details["tpcm_write_error_summary"], details) from exc
@@ -201,6 +201,10 @@ class TpcmBootHardwareApplyService:
             "binding_id": binding.id,
             "node": node.hostname,
             "tpcm_write_status": "enabled",
+            "auth_ref": auth.ref,
+            "tpcm_auth_ref": auth.ref,
+            "tpcm_auth_uid": auth.uid,
+            "tpcm_auth_public_key_sha256": auth.public_fingerprint,
             "boot_measure_on": raw.get("boot_measure_on"),
             "boot_measure_ref_number": raw.get("boot_measure_ref_number"),
             "boot_measure_references_sha256": raw.get("boot_measure_references_sha256") or "",
@@ -319,7 +323,7 @@ def _precheck(
         failures.append("node does not support trusted boot capability")
     if not str(identity.get("tpcm_id") or "").strip():
         failures.append("node TPCM identity is missing")
-    if not str(content.get("auth_material_ref") or settings.opentcsm_default_boot_auth_ref or ""):
+    if not opentcsm_auth_ref_for_profile(profile, "boot", settings, content):
         failures.append("TPCM boot authorization material reference is missing")
     rendered = dict(binding.rendered_policy or {})
     expected = rendered.get("expected") if isinstance(rendered.get("expected"), dict) else {}

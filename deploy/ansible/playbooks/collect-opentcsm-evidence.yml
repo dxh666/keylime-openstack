@@ -32,6 +32,7 @@
             "tpcm_info": "get_tpcm_info",
             "tpcm_id": "get_tpcm_id",
             "tpcm_features": "get_tpcm_features",
+            "license_status": "get_license_status",
             "trust_status": "get_trust_status",
             "trust_report": "get_trust_report",
             "policy_report": "get_policy_report",
