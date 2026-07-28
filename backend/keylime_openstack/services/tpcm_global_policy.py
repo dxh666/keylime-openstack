@@ -24,6 +24,8 @@ from keylime_openstack.services.tasks import create_task
 from keylime_openstack.services.trust_registration import ensure_trusted_node_profile
 
 
+DMEASURE_MAX_BUSY_DELAY_MIN_SECONDS = 60
+
 GLOBAL_POLICY_FIELDS: dict[str, dict[str, Any]] = {
     "boot_measure_on": {
         "id": 1,
@@ -82,7 +84,7 @@ GLOBAL_POLICY_FIELDS: dict[str, dict[str, Any]] = {
         "purpose": "dynamic",
         "writable": True,
         "unit": "秒",
-        "min": 0,
+        "min": DMEASURE_MAX_BUSY_DELAY_MIN_SECONDS,
         "max": 86400,
     },
     "process_dmeasure_interval": {

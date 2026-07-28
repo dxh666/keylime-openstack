@@ -33,17 +33,22 @@ def test_global_policy_update_accepts_only_stage_one_writable_fields() -> None:
             "boot_measure_on": True,
             "boot_control": False,
             "dynamic_measure_on": True,
-            "dmeasure_max_busy_delay": 30,
+            "dmeasure_max_busy_delay": 60,
         }
     ) == {
         "boot_measure_on": True,
         "boot_control": False,
         "dynamic_measure_on": True,
-        "dmeasure_max_busy_delay": 30,
+        "dmeasure_max_busy_delay": 60,
     }
 
     with pytest.raises(ValueError, match="read-only"):
         validate_global_policy_updates({"program_control": True})
+
+
+def test_global_policy_update_rejects_busy_delay_below_opentcsm_minimum() -> None:
+    with pytest.raises(ValueError, match="must be >= 60"):
+        validate_global_policy_updates({"dmeasure_max_busy_delay": 10})
 
 
 def test_global_policy_apply_is_queued_as_task() -> None:

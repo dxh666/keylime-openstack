@@ -25,7 +25,7 @@ const GLOBAL_POLICY_CONTROLS = [
     key: "dmeasure_max_busy_delay",
     label: "动态忙等待上限",
     control: "number",
-    min: 0,
+    min: 60,
     max: 86400,
     unit: "秒"
   }
