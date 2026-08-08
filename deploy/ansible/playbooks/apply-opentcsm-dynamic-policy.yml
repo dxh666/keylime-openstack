@@ -135,6 +135,7 @@
         before = run("get_dmeasure_policy_before", ["get_dmeasure_policy"])
         commands.append(before)
         current = {item["object"]: item for item in parse_policy(before.get("stdout") or "")}
+        initialized = bool(current)
 
         for name, object_interval in desired_configs.items():
             existing = current.get(name)
@@ -148,7 +149,7 @@
                     "stderr": "",
                 })
                 continue
-            operation = "3" if existing else "1"
+            operation = "3" if existing else ("1" if initialized else "0")
             commands.append(run(
                 f"update_dmeasure_policy_{name}",
                 [
@@ -160,6 +161,7 @@
                     "-k", signing_key,
                 ],
             ))
+            initialized = True
 
         if delete_unmanaged_objects:
             for name in sorted(set(current) - set(desired_configs)):

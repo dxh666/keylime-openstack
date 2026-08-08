@@ -336,6 +336,20 @@ def test_tpcm_dynamic_global_switch_does_not_change_node_policy() -> None:
     assert policy.content["dynamic_measure_required"] is True
 
 
+def test_dynamic_policy_playbook_initializes_empty_policy_with_set_operation() -> None:
+    playbook = (
+        Path(__file__).parents[1]
+        / "deploy"
+        / "ansible"
+        / "playbooks"
+        / "apply-opentcsm-dynamic-policy.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "initialized = bool(current)" in playbook
+    assert 'operation = "3" if existing else ("1" if initialized else "0")' in playbook
+    assert "initialized = True" in playbook
+
+
 def _memory_session() -> Session:
     engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
     Base.metadata.create_all(engine)
