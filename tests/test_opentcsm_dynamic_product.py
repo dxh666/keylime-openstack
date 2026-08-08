@@ -345,9 +345,12 @@ def test_dynamic_policy_playbook_initializes_empty_policy_with_set_operation() -
         / "apply-opentcsm-dynamic-policy.yml"
     ).read_text(encoding="utf-8")
 
-    assert "initialized = bool(current)" in playbook
+    assert "if desired_configs and not current:" in playbook
+    assert '"initialize_dmeasure_policy_defaults"' in playbook
+    assert '"-o", "0",' in playbook
+    assert '"-d", str(default_interval),' in playbook
+    assert '"-n", name,' in playbook
     assert 'operation = "3" if existing else ("1" if initialized else "0")' in playbook
-    assert "initialized = True" in playbook
 
 
 def _memory_session() -> Session:

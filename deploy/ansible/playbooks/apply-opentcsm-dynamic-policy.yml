@@ -135,33 +135,57 @@
         before = run("get_dmeasure_policy_before", ["get_dmeasure_policy"])
         commands.append(before)
         current = {item["object"]: item for item in parse_policy(before.get("stdout") or "")}
-        initialized = bool(current)
-
-        for name, object_interval in desired_configs.items():
-            existing = current.get(name)
-            current_interval = int(existing.get("interval_milli") or 0) if existing else None
-            if existing and current_interval == object_interval:
-                commands.append({
-                    "name": f"noop_dmeasure_policy_{name}",
-                    "command": ["noop", name],
-                    "rc": 0,
-                    "stdout": f"{name} already enabled with interval {object_interval}",
-                    "stderr": "",
-                })
-                continue
-            operation = "3" if existing else ("1" if initialized else "0")
-            commands.append(run(
-                f"update_dmeasure_policy_{name}",
+        initialization_failed = False
+        if desired_configs and not current:
+            initial_set = run(
+                "initialize_dmeasure_policy_defaults",
                 [
                     "update_dmeasure_policy",
-                    "-o", operation,
-                    "-n", name,
-                    "-d", str(object_interval),
+                    "-o", "0",
+                    "-d", str(default_interval),
                     "-u", uid,
                     "-k", signing_key,
                 ],
-            ))
-            initialized = True
+            )
+            commands.append(initial_set)
+            if int(initial_set.get("rc") or 0) == 0:
+                initialized_read = run("get_dmeasure_policy_initialized", ["get_dmeasure_policy"])
+                commands.append(initialized_read)
+                if int(initialized_read.get("rc") or 0) == 0:
+                    current = {
+                        item["object"]: item
+                        for item in parse_policy(initialized_read.get("stdout") or "")
+                    }
+            else:
+                initialization_failed = True
+        initialized = bool(current)
+
+        if not initialization_failed:
+            for name, object_interval in desired_configs.items():
+                existing = current.get(name)
+                current_interval = int(existing.get("interval_milli") or 0) if existing else None
+                if existing and current_interval == object_interval:
+                    commands.append({
+                        "name": f"noop_dmeasure_policy_{name}",
+                        "command": ["noop", name],
+                        "rc": 0,
+                        "stdout": f"{name} already enabled with interval {object_interval}",
+                        "stderr": "",
+                    })
+                    continue
+                operation = "3" if existing else ("1" if initialized else "0")
+                commands.append(run(
+                    f"update_dmeasure_policy_{name}",
+                    [
+                        "update_dmeasure_policy",
+                        "-o", operation,
+                        "-n", name,
+                        "-d", str(object_interval),
+                        "-u", uid,
+                        "-k", signing_key,
+                    ],
+                ))
+                initialized = True
 
         if delete_unmanaged_objects:
             for name in sorted(set(current) - set(desired_configs)):
