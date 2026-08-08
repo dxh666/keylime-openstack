@@ -14,6 +14,7 @@
         import socket
         import subprocess
         import sys
+        import time
 
         auth = json.loads(r'''{{ opentcsm_dynamic_auth | to_json }}''')
         policy = json.loads(r'''{{ opentcsm_dynamic_policy | to_json }}''')
@@ -135,6 +136,7 @@
         before = run("get_dmeasure_policy_before", ["get_dmeasure_policy"])
         commands.append(before)
         current = {item["object"]: item for item in parse_policy(before.get("stdout") or "")}
+        initialized = bool(current)
         initialization_failed = False
         if desired_configs and not current:
             initial_set = run(
@@ -149,16 +151,24 @@
             )
             commands.append(initial_set)
             if int(initial_set.get("rc") or 0) == 0:
-                initialized_read = run("get_dmeasure_policy_initialized", ["get_dmeasure_policy"])
-                commands.append(initialized_read)
-                if int(initialized_read.get("rc") or 0) == 0:
-                    current = {
-                        item["object"]: item
-                        for item in parse_policy(initialized_read.get("stdout") or "")
-                    }
+                initialized = True
+                for attempt in range(1, 4):
+                    name = (
+                        "get_dmeasure_policy_initialized"
+                        if attempt == 1
+                        else f"get_dmeasure_policy_initialized_retry_{attempt}"
+                    )
+                    initialized_read = run(name, ["get_dmeasure_policy"])
+                    commands.append(initialized_read)
+                    if int(initialized_read.get("rc") or 0) == 0:
+                        parsed = parse_policy(initialized_read.get("stdout") or "")
+                        if parsed:
+                            current = {item["object"]: item for item in parsed}
+                            break
+                    if attempt < 3:
+                        time.sleep(1)
             else:
                 initialization_failed = True
-        initialized = bool(current)
 
         if not initialization_failed:
             for name, object_interval in desired_configs.items():

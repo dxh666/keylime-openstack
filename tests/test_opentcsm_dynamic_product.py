@@ -349,6 +349,8 @@ def test_dynamic_policy_playbook_initializes_empty_policy_with_set_operation() -
     assert '"initialize_dmeasure_policy_defaults"' in playbook
     assert '"-o", "0",' in playbook
     assert '"-d", str(default_interval),' in playbook
+    assert "initialized = True" in playbook
+    assert "get_dmeasure_policy_initialized_retry_" in playbook
     assert '"-n", name,' in playbook
     assert 'operation = "3" if existing else ("1" if initialized else "0")' in playbook
 
